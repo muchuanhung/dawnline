@@ -150,10 +150,7 @@ export function RouteHeader({ route, verdict, loading = false, departureLabel }:
         <div className="flex items-start justify-between gap-3 mb-3">
           <div>
             <h2 className="text-lg font-bold text-foreground text-balance">{route.name}</h2>
-            {/* 中文名和英文名相同時不重複顯示；改列路線經過的縣市與行政區 */}
-            {route.nameZh && route.nameZh !== route.name && (
-              <p className="text-sm text-muted-foreground">{route.nameZh}</p>
-            )}
+            {/* 副標題只列路線經過的縣市；nameZh 多半和名稱重複，不顯示 */}
             {areas && <p className="text-sm text-muted-foreground">{areas}</p>}
           </div>
           <div className="flex items-center gap-1.5 shrink-0 rounded-lg bg-secondary/40 px-2.5 py-1.5">

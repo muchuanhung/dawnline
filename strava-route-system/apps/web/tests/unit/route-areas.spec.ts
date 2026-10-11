@@ -14,7 +14,7 @@ test.describe("路線經過的縣市與行政區", () => {
       { county: "臺北市", districts: ["北投區", "士林區"] },
       { county: "新北市", districts: ["淡水區", "三芝區"] },
     ]);
-    expect(formatRouteAreas(areas)).toBe("臺北市 北投區、士林區・新北市 淡水區、三芝區");
+    expect(formatRouteAreas(areas)).toBe("臺北市、新北市");
   });
 
   test("沒有縣市或行政區的路段略過；全部沒有時回空字串", () => {

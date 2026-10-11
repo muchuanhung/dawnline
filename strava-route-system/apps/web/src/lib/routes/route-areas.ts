@@ -25,7 +25,7 @@ export function routeAreas(segments: readonly Pick<RouteSegment, "county" | "dis
   return areas;
 }
 
-/** 顯示用：「臺北市 北投區、士林區・新北市 淡水區」；沒有資料回空字串 */
+/** 顯示用：只列縣市，「臺北市、新北市」（行政區列出來太長）；沒有資料回空字串 */
 export function formatRouteAreas(areas: readonly RouteArea[]): string {
-  return areas.map((a) => `${a.county} ${a.districts.join("、")}`).join("・");
+  return areas.map((a) => a.county).join("、");
 }
