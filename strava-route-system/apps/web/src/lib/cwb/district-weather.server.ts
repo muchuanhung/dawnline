@@ -1,6 +1,6 @@
 /**
  * 中央氣象署（CWB）鄉鎮天氣：預報、日落、即時雨量
- * 伺服器端專用（需 CWB_API_KEY）。供 /api/weather/cwb 與 Server Component 共用。
+ * 伺服器端專用（需 CWB_API_KEY），供 Server Component 與判讀使用。
  */
 
 import { getCWBdatasetId, normalizeCountyForCWB } from "@/lib/cwb/county-map";

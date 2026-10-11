@@ -83,22 +83,6 @@ export async function stubEvents(page: Page, events: Events) {
 /** 依行政區設定降雨機率；"error" 模擬 CWB 失敗（判讀端沒有任何天氣） */
 export async function stubWeather(page: Page, rainByDistrict: Weather) {
   stateOf(page).weather = rainByDistrict;
-  // 仍在瀏覽器端直接查天氣的頁面（例：/lab）用這個
-  await page.route("**/api/weather/cwb?**", (r) => {
-    if (rainByDistrict === "error") {
-      return r.fulfill({ status: 500, json: { error: "CWB 請求失敗" } });
-    }
-    const district = new URL(r.request().url()).searchParams.get("district") ?? "";
-    const pop = rainByDistrict[district] ?? 0;
-    return r.fulfill({
-      json: {
-        temperature: 25,
-        windSpeedKmh: 8,
-        condition: pop >= 60 ? "rainy" : "cloudy",
-        rainfall12h: [{ pop, label: "下午06:00", endLabel: "上午06:00" }],
-      },
-    });
-  });
 }
 
 /** "error" 模擬 CCTV API 失敗 */
