@@ -5,6 +5,7 @@ import type { VerdictLevel } from "@/lib/routes/recon-geo";
 import type { RouteBriefing } from "@/lib/dashboard/briefing";
 import { UnknownReasons } from "@/components/verdict/unknown-reasons";
 import { withTrip, type TripParams } from "@/lib/routes/trip";
+import { formatRouteAreas, routeAreas } from "@/lib/routes/route-areas";
 import { DepartureSuggestionRow } from "./departure-suggestion";
 
 /** 判定牌的顏色跟著狀態走：危險紅、注意琥珀；安全與未判定用中性底，絕不用品牌綠表示危險 */
@@ -64,6 +65,7 @@ export function BriefingCard({
   trip: TripParams;
 }) {
   const { verdict } = featured;
+  const areas = formatRouteAreas(routeAreas(featured.segments));
   const s = LEVEL[verdict.level];
   const Icon = s.icon;
   const hasHazard = verdict.level === "risky" || verdict.level === "caution";
@@ -76,6 +78,7 @@ export function BriefingCard({
       <div>
         <p className="text-xs text-muted-foreground">今日路線</p>
         <p className="text-xl font-black leading-snug sm:text-2xl">{featured.name}</p>
+        {areas && <p className="mt-1 text-sm text-muted-foreground">{areas}</p>}
       </div>
 
       {/* 判定牌：危險／注意時頂端加警示斜紋，像路邊告示牌，戶外一眼可辨 */}
