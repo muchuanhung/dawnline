@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { Shield, Eye, EyeOff, Loader2, CheckCircle2 } from "lucide-react";
+import { Shield, Eye, EyeOff, CheckCircle2 } from "lucide-react";
+import Spinner from "@/components/ui/Spinner";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -268,7 +269,7 @@ export function PasswordChange() {
           >
             {isLoading ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Spinner size="sm" className="mr-2" dotClassName="bg-current" />
                 更新中...
               </>
             ) : (

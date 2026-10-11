@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ChevronDown, LogOut, User } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import Spinner from "@/components/ui/Spinner";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,7 +30,11 @@ export function UserMenu({ active }: { active: boolean }) {
 
   // 登入狀態載入中先留位置，避免載入完才把版面推開
   if (loading || !user) {
-    return <div aria-hidden className="h-10 w-32 animate-pulse rounded-full bg-secondary" />;
+    return (
+      <div aria-hidden className="flex h-10 w-32 items-center justify-center">
+        <Spinner size="sm" dotClassName="bg-primary" />
+      </div>
+    );
   }
   return (
     <UserMenuView

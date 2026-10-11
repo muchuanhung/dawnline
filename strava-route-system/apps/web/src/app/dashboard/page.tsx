@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUserId } from "@/lib/auth/server";
 import { AppShell } from "@/components/app-shell/app-shell";
 import { Briefing } from "@/components/dashboard/briefing/briefing";
-import { BriefingSkeleton } from "@/components/dashboard/briefing/briefing-skeleton";
+import { BriefingLoading } from "@/components/dashboard/briefing/briefing-loading";
 import { formatClock, parseActivity, parseDeparture } from "@/lib/routes/trip";
 
 export const metadata: Metadata = { title: "今日判讀" };
@@ -40,7 +40,7 @@ export default async function DashboardPage({
           {departure ? `${formatClock(departure, now)} 出發適合嗎？` : "現在出發適合嗎？"}
         </h1>
       </header>
-      <Suspense key={[route, depart, activity].join("|")} fallback={<BriefingSkeleton />}>
+      <Suspense key={[route, depart, activity].join("|")} fallback={<BriefingLoading />}>
         <Briefing routeId={route} trip={trip} />
       </Suspense>
     </AppShell>
