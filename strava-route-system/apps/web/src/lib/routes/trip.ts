@@ -116,3 +116,14 @@ export function withTrip(href: string, trip: TripParams): string {
   if (!qs) return href;
   return `${href}${href.includes("?") ? "&" : "?"}${qs}`;
 }
+
+/**
+ * 從記住的查詢字串（depart=&activity=）還原行程設定，給切頁回來時沿用。
+ * 出發時間已過（或無法解析）時退回「現在」，運動類型不合法時退回依路線類型。
+ */
+export function restoreTrip(stored: string | null | undefined, now: Date): TripParams {
+  if (!stored) return {};
+  const params = new URLSearchParams(stored);
+  const depart = parseDeparture(params.get("depart"), now);
+  return { depart: depart ? params.get("depart") : null, activity: parseActivity(params.get("activity")) };
+}

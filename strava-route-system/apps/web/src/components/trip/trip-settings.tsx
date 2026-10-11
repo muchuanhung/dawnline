@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useTransition } from "react";
+import { useEffect, useTransition } from "react";
 import { cn } from "@/lib/utils";
 import {
   ACTIVITIES,
@@ -11,6 +11,7 @@ import {
   formatClock,
   type Activity,
 } from "@/lib/routes/trip";
+import { saveTrip } from "@/lib/routes/trip-storage";
 
 const SELECT =
   "h-9 rounded-lg border border-border bg-card px-2 text-sm font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -27,6 +28,7 @@ function offsetOf(departure: Date | null, now: Date): number | null {
 /**
  * 行程設定：出發時間與運動類型，存在網址（?depart=&activity=），可分享、可上一頁。
  * 今日判讀與路線頁共用；改變後伺服器依新設定重新判讀。
+ * 目前生效的設定另記在 sessionStorage，從導覽列切頁回來時沿用（見 TripNavLink）。
  */
 export function TripSettings({
   departure,
@@ -56,6 +58,11 @@ export function TripSettings({
   const [pending, startTransition] = useTransition();
   const now = new Date();
   const offset = offsetOf(explicitDeparture ? new Date(explicitDeparture) : null, now);
+
+  // Remember what the page currently shows so the nav links can restore it
+  useEffect(() => {
+    saveTrip({ depart: explicitDeparture, activity: explicitActivity });
+  }, [explicitDeparture, explicitActivity]);
 
   const update = (key: "depart" | "activity", value: string | null) => {
     const params = new URLSearchParams(searchParams.toString());
