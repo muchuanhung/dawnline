@@ -9,6 +9,7 @@ import type { ReconVerdict, VerdictLevel } from "@/lib/routes/recon-geo";
 import { UnknownReasons } from "@/components/verdict/unknown-reasons";
 import { ROUTE_TYPE_ICONS } from "@/constants";
 import { getSvgPath } from "@/lib/routes/polyline";
+import { formatRouteAreas, routeAreas } from "@/lib/routes/route-areas";
 import { cn } from "@/lib/utils";
 
 /** 只有注意／危險用警示色；安全不做大面積綠 */
@@ -45,6 +46,7 @@ export function RouteHeader({ route, verdict, loading = false, departureLabel }:
   const svgPath = getSvgPath(route.gpxPreviewPath);
   const ends = pathEndpoints(svgPath);
   const TypeIcon = ROUTE_TYPE_ICONS[route.type];
+  const areas = formatRouteAreas(routeAreas(route.segments));
 
   // Build elevation profile SVG
   const maxElev = Math.max(...route.elevationProfile.map((p) => p[1]));
@@ -148,7 +150,8 @@ export function RouteHeader({ route, verdict, loading = false, departureLabel }:
         <div className="flex items-start justify-between gap-3 mb-3">
           <div>
             <h2 className="text-lg font-bold text-foreground text-balance">{route.name}</h2>
-            <p className="text-sm text-muted-foreground">{route.nameZh}</p>
+            {/* 副標題只列路線經過的縣市；nameZh 多半和名稱重複，不顯示 */}
+            {areas && <p className="text-sm text-muted-foreground">{areas}</p>}
           </div>
           <div className="flex items-center gap-1.5 shrink-0 rounded-lg bg-secondary/40 px-2.5 py-1.5">
             <TypeIcon className="h-4 w-4 text-strava" />
