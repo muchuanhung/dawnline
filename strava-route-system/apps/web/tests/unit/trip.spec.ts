@@ -8,6 +8,7 @@ import {
   paceFor,
   parseActivity,
   parseDeparture,
+  restoreTrip,
   withTrip,
 } from "@/lib/routes/trip";
 
@@ -76,5 +77,27 @@ test.describe("行程設定", () => {
     );
     expect(withTrip("/routes", { activity: "running" })).toBe("/routes?activity=running");
     expect(withTrip("/routes?route=a", {})).toBe("/routes?route=a");
+  });
+});
+
+test.describe("切頁沿用行程設定", () => {
+  test("還原記住的出發時間與運動類型", () => {
+    expect(restoreTrip("depart=2026-10-01T10%3A00%3A00%2B08%3A00&activity=hiking", NOW)).toEqual({
+      depart: "2026-10-01T10:00:00+08:00",
+      activity: "hiking",
+    });
+  });
+
+  test("出發時間已過退回現在，不合法的運動類型退回依路線類型", () => {
+    expect(restoreTrip("depart=2026-10-01T06%3A00%3A00%2B08%3A00&activity=swimming", NOW)).toEqual({
+      depart: null,
+      activity: null,
+    });
+    expect(restoreTrip(null, NOW)).toEqual({});
+    expect(restoreTrip("", NOW)).toEqual({});
+  });
+
+  test("還原結果接回 withTrip 連結", () => {
+    expect(withTrip("/routes", restoreTrip("activity=cycling", NOW))).toBe("/routes?activity=cycling");
   });
 });
