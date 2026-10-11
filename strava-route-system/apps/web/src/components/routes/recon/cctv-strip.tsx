@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import type { CctvMarker } from "@/lib/routes/recon-geo";
+import Spinner from "@/components/ui/Spinner";
 import { CCTV_STATUS } from "./cctv-viewer";
 
 /** 沿途監視器清單：點選後游標跳到該鏡頭的里程 */
@@ -36,10 +37,8 @@ export function CctvStrip({
 
   if (loading && markers.length === 0) {
     return (
-      <div className="flex gap-2 overflow-hidden" aria-label="監視器載入中">
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="h-14 w-36 shrink-0 animate-pulse rounded-md bg-muted/60" />
-        ))}
+      <div className="flex h-14 items-center justify-center" role="status" aria-label="監視器載入中">
+        <Spinner size="sm" dotClassName="bg-primary" />
       </div>
     );
   }

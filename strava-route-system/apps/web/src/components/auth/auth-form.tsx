@@ -7,7 +7,6 @@ import {
   Lock,
   Eye,
   EyeOff,
-  Loader2,
   AlertCircle,
   User,
 } from "lucide-react";
@@ -16,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { GoogleLogoIcon } from "@/components/auth/google-logo-icon";
+import Spinner from "@/components/ui/Spinner";
 
 type AuthMode = "login" | "signup" | "forgot";
 
@@ -189,7 +189,7 @@ export function AuthForm({
               disabled={isGoogleLoading || isLoading}
             >
               {isGoogleLoading ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
+                <Spinner size="sm" dotClassName="bg-current" />
               ) : (
                 <GoogleLogoIcon size={20} />
               )}
@@ -314,7 +314,7 @@ export function AuthForm({
               disabled={isLoading || isGoogleLoading}
             >
               {isLoading ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Spinner size="sm" className="mr-2" dotClassName="bg-current" />
               ) : null}
               {authFormConfig.form.submit[mode]}
             </Button>
