@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Search, SlidersHorizontal, Bike, Footprints, Mountain, Trophy, X } from "lucide-react";
 import Spinner from "@/components/ui/Spinner";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer";
 import { cn } from "@/lib/utils";
 import type { Route } from "@/lib/routes/route-data";
@@ -135,7 +134,8 @@ export function RoutesClient({
         <div className="border-b border-border p-4">
           <RouteFilters search={search} onSearch={setSearch} typeFilter={typeFilter} onFilter={setTypeFilter} />
         </div>
-        <ScrollArea className="min-h-0 flex-1">
+        {/* 側欄只有 max-height，Radix ScrollArea 的 viewport（height: 100%）會撐成內容高度而無法捲動；改用原生捲動 */}
+        <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="space-y-2 p-3">
             <AnimatePresence mode="popLayout">
               {filteredRoutes.length > 0 ? (
@@ -149,7 +149,7 @@ export function RoutesClient({
               )}
             </AnimatePresence>
           </div>
-        </ScrollArea>
+        </div>
         <p className="border-t border-border p-3 text-center text-xs text-muted-foreground">
           {filteredRoutes.length} / {routes.length} 條路線
         </p>
