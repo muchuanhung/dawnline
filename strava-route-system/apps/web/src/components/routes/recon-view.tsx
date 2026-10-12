@@ -111,7 +111,7 @@ export function ReconView({
       />
 
       <div className="space-y-3">
-        <CctvViewer marker={activeMarker} positionKm={positionKm} />
+        <CctvViewer marker={activeMarker} positionKm={positionKm} onJump={moveTo} />
         <CctvStrip
           markers={cctvMarkers}
           activeId={activeMarker?.id ?? null}
