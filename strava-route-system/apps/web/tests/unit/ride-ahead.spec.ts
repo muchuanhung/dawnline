@@ -13,7 +13,7 @@ import {
   POSITION_MAX_ACCURACY_M,
   type RoutePolylineKm,
 } from "@/lib/routes/recon-geo";
-import { paceFor } from "@/lib/routes/trip";
+import { paceFor, parseFromKm } from "@/lib/routes/trip";
 import { flatProfile, makeRoute, segment, slopeProfile } from "../fixtures/route";
 
 const KM_PER_DEG_LAT = 111;
@@ -217,5 +217,16 @@ test.describe("briefRoute fromKm（途中模式）", () => {
     expect(briefRoute(route, lookup, { now: at("08:00"), fromKm: 99 }).fromKm).toBe(10);
     expect(briefRoute(route, lookup, { now: at("08:00"), fromKm: 0 }).fromKm).toBeNull();
     expect(briefRoute(route, lookup, { now: at("08:00") }).fromKm).toBeNull();
+  });
+});
+
+test.describe("parseFromKm", () => {
+  test("只接受非負有限數字", () => {
+    expect(parseFromKm("5.25")).toBe(5.25);
+    expect(parseFromKm("0")).toBe(0);
+    expect(parseFromKm("-1")).toBeNull();
+    expect(parseFromKm("abc")).toBeNull();
+    expect(parseFromKm("Infinity")).toBeNull();
+    expect(parseFromKm(null)).toBeNull();
   });
 });

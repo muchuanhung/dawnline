@@ -5,7 +5,7 @@
 
 import { NextResponse } from "next/server";
 import { getRouteBriefing } from "@/lib/dashboard/get-briefing.server";
-import { parseActivity, parseDeparture } from "@/lib/routes/trip";
+import { parseActivity, parseDeparture, parseFromKm } from "@/lib/routes/trip";
 
 export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
@@ -15,6 +15,7 @@ export async function GET(request: Request) {
     const briefing = await getRouteBriefing(routeId, {
       departure: parseDeparture(params.get("depart"), new Date()) ?? undefined,
       activity: parseActivity(params.get("activity")) ?? undefined,
+      fromKm: parseFromKm(params.get("from")) ?? undefined,
     });
     if (!briefing) return NextResponse.json({ error: "找不到路線" }, { status: 404 });
     return NextResponse.json(briefing, { headers: { "Cache-Control": "no-store" } });

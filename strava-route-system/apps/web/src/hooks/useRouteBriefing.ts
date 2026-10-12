@@ -21,8 +21,15 @@ export interface RouteBriefingState {
   error: boolean;
 }
 
-/** 單一路線的伺服器端判讀；換路線或行程設定時先清空，避免顯示上一次的判定 */
-export function useRouteBriefing(routeId: string | null | undefined, trip: TripParams = {}): RouteBriefingState {
+/**
+ * 單一路線的伺服器端判讀；換路線或行程設定時先清空，避免顯示上一次的判定。
+ * fromKm：途中模式的目前里程，只判讀前方；不放進 TripParams，避免位置跟著連結帶到別頁或別條路線。
+ */
+export function useRouteBriefing(
+  routeId: string | null | undefined,
+  trip: TripParams = {},
+  fromKm: number | null = null
+): RouteBriefingState {
   const { depart, activity } = trip;
   const [state, setState] = useState<RouteBriefingState>({ briefing: null, loading: false, error: false });
 
@@ -33,7 +40,8 @@ export function useRouteBriefing(routeId: string | null | undefined, trip: TripP
     }
     let cancelled = false;
     setState({ briefing: null, loading: true, error: false });
-    fetch(withTrip(`/api/routes/briefing?route=${encodeURIComponent(routeId)}`, { depart, activity }))
+    const url = withTrip(`/api/routes/briefing?route=${encodeURIComponent(routeId)}`, { depart, activity });
+    fetch(fromKm != null ? `${url}&from=${fromKm.toFixed(2)}` : url)
       .then((res) => {
         if (!res.ok) throw new Error(`路線判讀 ${res.status}`);
         return res.json() as Promise<RouteBriefing>;
@@ -47,7 +55,7 @@ export function useRouteBriefing(routeId: string | null | undefined, trip: TripP
     return () => {
       cancelled = true;
     };
-  }, [routeId, depart, activity]);
+  }, [routeId, depart, activity, fromKm]);
 
   return state;
 }

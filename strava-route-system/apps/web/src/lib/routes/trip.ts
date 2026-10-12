@@ -58,6 +58,13 @@ export function parseActivity(value: string | null | undefined): Activity | null
   return value && (ACTIVITIES as string[]).includes(value) ? (value as Activity) : null;
 }
 
+/** 途中模式的目前里程參數：非負有限數字才接受，其餘視為未提供（整條路線判讀） */
+export function parseFromKm(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const km = Number(value);
+  return Number.isFinite(km) && km >= 0 ? km : null;
+}
+
 /** 早於現在 15 分鐘以上、晚於 7 天或無法解析的出發時間一律視為「現在」（回 null） */
 const PAST_TOLERANCE_MS = 15 * 60_000;
 const MAX_AHEAD_MS = 7 * 24 * 3_600_000;
