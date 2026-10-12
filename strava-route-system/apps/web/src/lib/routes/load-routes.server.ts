@@ -51,16 +51,15 @@ function buildDemoRoute(): Route {
 }
 
 /**
- * 全部路線（依名稱排序），快取 10 分鐘。
- * Storage 讀取失敗或沒有任何路線時改回傳示意路線；失敗不進快取，下次仍會重試 Storage。
+ * 全部路線：示意路線固定排第一筆（demo 用），其後為 Storage 的真實路線（依名稱排序，快取 10 分鐘）。
+ * Storage 讀取失敗時只剩示意路線；失敗不進快取，下次仍會重試 Storage。
  */
 export async function loadRoutes(): Promise<Route[]> {
+  const demo = buildDemoRoute();
   try {
-    const routes = await loadStorageRoutes();
-    if (routes.length > 0) return routes;
-    console.warn("Storage 沒有可用的 GPX 路線，改用示意路線");
+    return [demo, ...(await loadStorageRoutes())];
   } catch (err) {
-    console.warn("Storage 路線讀取失敗，改用示意路線:", err instanceof Error ? err.message : err);
+    console.warn("Storage 路線讀取失敗，只顯示示意路線:", err instanceof Error ? err.message : err);
+    return [demo];
   }
-  return [buildDemoRoute()];
 }

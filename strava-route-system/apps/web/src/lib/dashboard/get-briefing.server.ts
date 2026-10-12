@@ -53,7 +53,8 @@ export async function getDashboardBriefing(routeId?: string, trip: TripOptions =
   return {
     status: "ok",
     featured,
-    alternative: pickAlternative(featured, briefings),
+    // 示意路線的示警是假資料，不和真實路線互相比較、推薦
+    alternative: featured.demo ? null : pickAlternative(featured, briefings.filter((b) => !b.demo)),
     // 切換列維持原本路線順序（判讀時為了抓取優先順序重排過）
     routes: routes.flatMap((r) => briefings.filter((b) => b.id === r.id).map((b) => ({ id: b.id, name: b.name }))),
     weatherCoverage,
