@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import {
+  buildCctvMarkers,
   windLevel,
   computeHazards,
   deriveStages,
@@ -8,7 +9,7 @@ import {
   stageAtKm,
   summarizeVerdict,
 } from "@/lib/routes/recon-geo";
-import { makeRoute, segment, slopeProfile, withWeather } from "../fixtures/route";
+import { CCTV_FEED, makeRoute, segment, slopeProfile, withWeather } from "../fixtures/route";
 
 test.describe("風速門檻（蒲福風級）", () => {
   test("5 級起注意、7 級起危險；沿海常見的 36 km/h 為注意", () => {
@@ -274,5 +275,18 @@ test.describe("summarizeVerdict", () => {
     const verdict = summarizeVerdict(hazards, stages);
     expect(verdict.level).toBe("risky");
     expect(verdict.reasons).toBeUndefined();
+  });
+});
+
+test.describe("buildCctvMarkers", () => {
+  test("帶出行政區與未探測（unknown）狀態，供標題與狀態燈使用", () => {
+    const route = makeRoute();
+    const [marker] = buildCctvMarkers(route, [{ ...CCTV_FEED, township: "士林區", status: "unknown" }]);
+    expect(marker?.township).toBe("士林區");
+    expect(marker?.status).toBe("unknown");
+  });
+
+  test("沒有鏡頭時回傳空陣列", () => {
+    expect(buildCctvMarkers(makeRoute(), [])).toEqual([]);
   });
 });

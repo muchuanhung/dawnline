@@ -68,10 +68,10 @@ export const CCTV_FEED: CCTVFeed = {
   id: "static-bot236",
   label: "故宮路-至善路口",
   location: "故宮路-至善路口 (士林區)",
-  lastUpdated: "即時",
+  lastUpdated: "手動維護的鏡頭清單",
   lat: 25.1,
   lon: 121.55,
   imageSeed: 1,
-  status: "online",
+  status: "unknown",
   videoUrl: "https://tw.live/cam/?id=test",
 };
