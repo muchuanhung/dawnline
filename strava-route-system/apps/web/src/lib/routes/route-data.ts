@@ -56,6 +56,8 @@ export interface CCTVFeed {
     gpxPreviewPath: string;
     elevationProfile: [number, number][];
     estimatedTime: string;
+    /** 示意路線（固定排第一筆）；帶假路況事件，畫面需標示「示意資料」 */
+    demo?: boolean;
   }
 
 export function getStatusColor(status: Route["status"]): string {

@@ -5,6 +5,7 @@
 
 import { loadRoutes } from "@/lib/routes/load-routes.server";
 import type { Route } from "@/lib/routes/route-data";
+import { demoRoadEvents } from "@/lib/routes/demo-route";
 import type { Activity } from "@/lib/routes/trip";
 import { getCountyRainfallStations, getDistrictWeather } from "@/lib/cwb/district-weather.server";
 import { getRoadEvents } from "@/lib/tdx/road-events.server";
@@ -52,7 +53,8 @@ export async function getDashboardBriefing(routeId?: string, trip: TripOptions =
   return {
     status: "ok",
     featured,
-    alternative: pickAlternative(featured, briefings),
+    // 示意路線的示警是假資料，不和真實路線互相比較、推薦
+    alternative: featured.demo ? null : pickAlternative(featured, briefings.filter((b) => !b.demo)),
     // 切換列維持原本路線順序（判讀時為了抓取優先順序重排過）
     routes: routes.flatMap((r) => briefings.filter((b) => b.id === r.id).map((b) => ({ id: b.id, name: b.name }))),
     weatherCoverage,
@@ -117,7 +119,8 @@ async function briefRoutes(routes: Route[], trip: TripOptions = {}, suggestFor?:
   const eventsFailed = eventsResult ? eventsResult.failed : null;
   const briefings = routes.map((route) =>
     briefRoute(route, withRouteObservedRain(route, lookup, stationsByCounty), {
-      events: eventsResult?.events ?? [],
+      // 示意路線另加假事件；真實路線只看 TDX
+      events: route.demo ? [...(eventsResult?.events ?? []), ...demoRoadEvents(route, now)] : (eventsResult?.events ?? []),
       now,
       departure: trip.departure ?? now,
       activity: trip.activity,

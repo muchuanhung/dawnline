@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import { Mountain, Route as RouteIcon, Clock, Sun } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { DemoNotice } from "@/components/verdict/demo-notice";
 import type { Route } from "@/lib/routes/route-data";
 import { getStatusLabel } from "@/lib/routes/route-data";
 import type { ReconVerdict, VerdictLevel } from "@/lib/routes/recon-geo";
@@ -158,6 +159,7 @@ export function RouteHeader({ route, verdict, loading = false, departureLabel }:
             <span className="text-xs font-medium text-foreground">{route.type}</span>
           </div>
         </div>
+        {route.demo && <DemoNotice className="mb-3" />}
 
         <div className={`grid gap-3 ${suggestTime ? "grid-cols-4" : "grid-cols-3"}`}>
           <StatPill icon={RouteIcon} label="距離" value={`${route.distance} km`} />
