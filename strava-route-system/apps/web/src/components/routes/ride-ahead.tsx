@@ -93,7 +93,7 @@ export function RideAhead({ routeId, polyline, totalKm, fromKm, activity, onChan
       {fromKm != null && activity && (
         <p className="text-xs text-muted-foreground">
           以現在為抵達 {fromKm.toFixed(1)} km 的時間，依{ACTIVITY[activity].label}均速 {ACTIVITY[activity].speedKmh} km/h
-          {ACTIVITY[activity].climbMinPer100m > 0 && `、每爬升 100 m 加 ${ACTIVITY[activity].climbMinPer100m} 分鐘`}
+          {ACTIVITY[activity].climbMinPer100m > 0 && `、每爬升 100 m 加 ${ACTIVITY[activity].climbMinPer100m} 分鐘`}{" "}
           估算前方抵達時間。位置只在手機上換算里程，不會上傳。
         </p>
       )}
