@@ -162,23 +162,42 @@ export function CctvViewer({
         </div>
       </div>
 
-      <DialogContent className="max-w-4xl gap-3 p-4 sm:p-6">
+      {/* 手機與平板（< lg）改全螢幕黑底：置中小框放大後幾乎沒比原本大；橫放時影像撐滿高度 */}
+      <DialogContent
+        className={cn(
+          "max-w-4xl gap-3 p-4 sm:p-6",
+          "max-lg:inset-0 max-lg:left-0 max-lg:top-0 max-lg:h-[100dvh] max-lg:max-w-none max-lg:translate-x-0 max-lg:translate-y-0",
+          "max-lg:grid-rows-[auto_minmax(0,1fr)_auto] max-lg:rounded-none! max-lg:border-0 max-lg:bg-black max-lg:p-3",
+          "max-lg:data-[state=open]:slide-in-from-left-0 max-lg:data-[state=open]:slide-in-from-top-0",
+          "max-lg:data-[state=closed]:slide-out-to-left-0 max-lg:data-[state=closed]:slide-out-to-top-0"
+        )}
+      >
         <DialogHeader className="flex-row items-start justify-between gap-2 space-y-0 text-left">
-          <DialogTitle className="min-w-0 text-base leading-snug">
+          <DialogTitle className="min-w-0 text-base leading-snug max-lg:text-white">
             {title}・{marker.km.toFixed(1)} km
           </DialogTitle>
           <DialogClose asChild>
-            <Button size="icon" variant="ghost" className="-mr-2 -mt-1 h-9 w-9 shrink-0" aria-label="關閉">
-              <X className="h-4 w-4" />
+            <Button
+              size="icon"
+              variant="ghost"
+              className="-mr-2 -mt-1 h-10 w-10 shrink-0 max-lg:text-white max-lg:hover:bg-white/10 max-lg:hover:text-white"
+              aria-label="關閉"
+            >
+              <X className="h-5 w-5" />
             </Button>
           </DialogClose>
         </DialogHeader>
-        <div className="relative flex aspect-video w-full items-center justify-center overflow-hidden rounded-md bg-black">
-          <CctvFrame key={marker.id} marker={marker} large />
+        <div className="flex min-h-0 items-center justify-center">
+          <div className="relative flex aspect-video w-full items-center justify-center overflow-hidden rounded-md bg-black max-lg:rounded-none max-lg:landscape:h-full max-lg:landscape:w-auto">
+            <CctvFrame key={marker.id} marker={marker} large />
+          </div>
         </div>
-        {marker.lastUpdated && (
-          <p className="text-xs text-muted-foreground">{marker.lastUpdated}</p>
-        )}
+        <div className="space-y-1">
+          <p className="hidden text-center text-xs text-white/60 max-lg:portrait:block">橫放手機可看大畫面</p>
+          {marker.lastUpdated && (
+            <p className="text-xs text-muted-foreground max-lg:text-white/60">{marker.lastUpdated}</p>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );
