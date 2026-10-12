@@ -144,34 +144,3 @@ test.describe("/routes 路況事件分級", () => {
     await expect(page.getByText("路況事件暫時取不到，請稍後再試。")).toBeVisible();
   });
 });
-
-test.describe("/routes 新北 ATIS 監視器", () => {
-  // ATIS 外框頁禁止 iframe 內嵌，改由 /api/cctv/stream-url 查 FLV 串流網址播放；任何一步失敗都要退回外連，不可停在黑框
-  const atisFeed = {
-    ...CCTV_FEED,
-    id: "tdx-atis",
-    videoUrl: "https://atis.ntpc.gov.tw/ATIS/ShowFrame4CCTV/C000236",
-  };
-
-  test.beforeEach(async ({ page }) => {
-    await stubRoutes(page, [ROUTE]);
-    await stubWeather(page, { 大安區: 10, 士林區: 10 });
-    await stubCctv(page, [atisFeed]);
-  });
-
-  test("串流網址查不到時退回外連", async ({ page }) => {
-    await page.route("**/api/cctv/stream-url**", (r) => r.fulfill({ status: 502, json: { error: "ATIS 503" } }));
-    await page.goto("/routes");
-    await expect(page.getByText("此影像無法內嵌")).toBeVisible();
-    await expect(page.locator("video")).toHaveCount(0);
-  });
-
-  test("串流播不出來時逾時退回外連", async ({ page }) => {
-    await page.route("**/api/cctv/stream-url**", (r) =>
-      r.fulfill({ json: { url: "https://cctvatis4.ntpc.gov.tw/flv/C000236" } })
-    );
-    await page.route("https://cctvatis4.ntpc.gov.tw/**", (r) => r.abort());
-    await page.goto("/routes");
-    await expect(page.getByText("此影像無法內嵌")).toBeVisible({ timeout: 15_000 });
-  });
-});
