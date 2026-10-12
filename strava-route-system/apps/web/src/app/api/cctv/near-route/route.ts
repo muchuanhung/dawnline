@@ -26,9 +26,11 @@ function toCCTVFeed(doc: { id: string; label: string; roadName?: string; county?
     lat: doc.lat,
     lon: doc.lon,
     township,
-    lastUpdated: `同步於 ${new Date(doc.syncedAt).toLocaleString("zh-TW", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`,
+    // 這是每日鏡頭清單的同步時間，不是影像時間
+    lastUpdated: `鏡頭清單同步於 ${new Date(doc.syncedAt).toLocaleString("zh-TW", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`,
     imageSeed: seed,
-    status: "online",
+    // 沒有探測過鏡頭是否在線，不可標成直播
+    status: "unknown",
     videoUrl: doc.videoUrl || undefined,
   };
 }
