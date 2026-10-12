@@ -1,10 +1,11 @@
-import Spinner from "@/components/ui/Spinner";
+import { AppShell } from "@/components/app-shell/app-shell";
+import { RoutesLoading } from "@/components/routes/routes-loading";
 
-/** 換頁進來時，伺服器還在準備頁面的這段時間顯示整頁 spinner（同登入後轉場的樣式） */
+/** 換頁進來時，伺服器還在準備頁面的這段時間：保留外框導覽，spinner 和 RoutesClient 讀取路線時同一個位置 */
 export default function Loading() {
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-background" role="status" aria-label="載入路線中">
-      <Spinner size="lg" dotClassName="bg-primary" />
-    </div>
+    <AppShell current="routes">
+      <RoutesLoading />
+    </AppShell>
   );
 }
