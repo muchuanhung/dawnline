@@ -7,6 +7,7 @@ import { UnknownReasons } from "@/components/verdict/unknown-reasons";
 import { withTrip, type TripParams } from "@/lib/routes/trip";
 import { formatRouteAreas, routeAreas } from "@/lib/routes/route-areas";
 import { DepartureSuggestionRow } from "./departure-suggestion";
+import { DemoNotice } from "@/components/verdict/demo-notice";
 
 /** 判定牌的顏色跟著狀態走：危險紅、注意琥珀；安全與未判定用中性底，絕不用品牌綠表示危險 */
 const LEVEL: Record<
@@ -79,6 +80,7 @@ export function BriefingCard({
         <p className="text-xs text-muted-foreground">今日路線</p>
         <p className="text-xl font-black leading-snug sm:text-2xl">{featured.name}</p>
         {areas && <p className="mt-1 text-sm text-muted-foreground">{areas}</p>}
+        {featured.demo && <DemoNotice className="mt-2" />}
       </div>
 
       {/* 判定牌：危險／注意時頂端加警示斜紋，像路邊告示牌，戶外一眼可辨 */}

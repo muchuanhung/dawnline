@@ -8,6 +8,7 @@ import { getFirebaseAdmin } from "@/lib/firebase/admin";
 import { parseGpxPoints, parseGpxToRoute } from "@/lib/routes/parse-gpx";
 import { getSegmentsFromPoints } from "@/lib/routes/geocode-districts";
 import type { Route } from "@/lib/routes/route-data";
+import { DEMO_ROUTE_ID, DEMO_ROUTE_NAME, demoRouteGpx } from "@/lib/routes/demo-route";
 
 const ROUTES_FOLDER = "gpx/routes";
 /** 下載並解析 8 條 GPX 約需 10 秒；路線很少變動，快取 10 分鐘 */
@@ -36,9 +37,30 @@ async function fetchRoutesFromStorage(): Promise<Route[]> {
   return parsed.filter((r): r is Route => r !== null).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** 全部路線（依名稱排序），快取 10 分鐘 */
 /** 快取鍵帶版本：路段取樣方式改變時遞增，避免沿用舊格式的快取 */
-export const loadRoutes = unstable_cache(fetchRoutesFromStorage, ["gpx-routes", "segments-v2"], {
+const loadStorageRoutes = unstable_cache(fetchRoutesFromStorage, ["gpx-routes", "segments-v2"], {
   revalidate: ROUTES_REVALIDATE_SECONDS,
   tags: ["gpx-routes"],
 });
+
+/** 示意路線：與真實路線同一套 GPX 解析與行政區取樣 */
+function buildDemoRoute(): Route {
+  const xml = demoRouteGpx();
+  const route = parseGpxToRoute(xml, DEMO_ROUTE_ID, getSegmentsFromPoints(parseGpxPoints(xml).points));
+  return { ...route, name: DEMO_ROUTE_NAME, nameZh: DEMO_ROUTE_NAME, demo: true };
+}
+
+/**
+ * 全部路線（依名稱排序），快取 10 分鐘。
+ * Storage 讀取失敗或沒有任何路線時改回傳示意路線；失敗不進快取，下次仍會重試 Storage。
+ */
+export async function loadRoutes(): Promise<Route[]> {
+  try {
+    const routes = await loadStorageRoutes();
+    if (routes.length > 0) return routes;
+    console.warn("Storage 沒有可用的 GPX 路線，改用示意路線");
+  } catch (err) {
+    console.warn("Storage 路線讀取失敗，改用示意路線:", err instanceof Error ? err.message : err);
+  }
+  return [buildDemoRoute()];
+}

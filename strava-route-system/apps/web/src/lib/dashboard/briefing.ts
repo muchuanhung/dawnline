@@ -251,6 +251,8 @@ export interface RouteBriefing {
   speedKmh: number;
   /** 這條路線依類型的預設運動類型（未指定 activity 時採用） */
   defaultActivity: Activity;
+  /** 示意路線：沿途路況事件為假資料，畫面需標示 */
+  demo: boolean;
 }
 
 export interface BriefRouteOptions {
@@ -309,6 +311,7 @@ export function briefRoute(
     activity: tripActivity,
     speedKmh,
     defaultActivity,
+    demo: route.demo === true,
   };
 }
 
