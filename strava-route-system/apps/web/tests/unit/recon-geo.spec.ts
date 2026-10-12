@@ -279,7 +279,7 @@ test.describe("summarizeVerdict", () => {
 });
 
 test.describe("buildCctvMarkers", () => {
-  test("帶出行政區與未確認狀態，供標題與狀態燈使用", () => {
+  test("帶出行政區與未探測（unknown）狀態，供標題與狀態燈使用", () => {
     const route = makeRoute();
     const [marker] = buildCctvMarkers(route, [{ ...CCTV_FEED, township: "士林區", status: "unknown" }]);
     expect(marker?.township).toBe("士林區");

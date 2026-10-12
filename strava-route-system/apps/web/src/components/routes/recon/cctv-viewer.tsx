@@ -20,8 +20,8 @@ export const CCTV_STATUS: Record<CctvMarker["status"], { text: string; dot: stri
   online: { text: "直播", dot: "bg-success" },
   degraded: { text: "不穩", dot: "bg-warning" },
   offline: { text: "離線", dot: "bg-muted-foreground" },
-  // 沒探測過連線狀態：空心灰點，不可看起來像直播
-  unknown: { text: "未確認", dot: "border border-muted-foreground bg-transparent" },
+  // 沒探測過連線狀態：中性灰「影像」，不可看起來像直播
+  unknown: { text: "影像", dot: "bg-muted-foreground" },
 };
 
 /** 游標離最近鏡頭超過這個距離，就明講「此處附近沒有監視器」 */
@@ -37,7 +37,7 @@ function cctvTitle(marker: CctvMarker): string {
 /** 影像本體：可內嵌就用 iframe，被擋就給外連，離線或沒有網址就直說 */
 function CctvFrame({ marker, large = false }: { marker: CctvMarker; large?: boolean }) {
   // iframe 無法偵測載入失敗（失敗也會觸發 onLoad），這裡只用來收掉載入指示；
-  // 看不到畫面時靠框外固定的「開啟原始直播」連結。父層以 key={marker.id} 換鏡頭時重置
+  // 看不到畫面時靠標題列的外連按鈕。父層以 key={marker.id} 換鏡頭時重置
   const [loaded, setLoaded] = useState(false);
   const url = marker.videoUrl;
 
@@ -78,26 +78,6 @@ function CctvFrame({ marker, large = false }: { marker: CctvMarker; large?: bool
         )}
       />
     </>
-  );
-}
-
-/** 影像框下方固定的外連：內嵌失敗時（http 來源、iOS 不支援的串流）使用者還有路可走 */
-function OpenSourceLink({ marker }: { marker: CctvMarker }) {
-  const url = marker.videoUrl;
-  // 被擋的來源框內已有「開啟直播」按鈕；離線不給連結
-  if (!url || marker.status === "offline" || isBlockedByCSP(url)) return null;
-  return (
-    <div className="flex justify-end">
-      <a
-        href={url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="inline-flex items-center gap-1 py-2 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-      >
-        看不到畫面？開啟原始直播
-        <ExternalLink className="h-3.5 w-3.5" aria-hidden />
-      </a>
-    </div>
   );
 }
 
@@ -161,17 +141,25 @@ export function CctvViewer({
               {offset && <span className="font-sans">・{offset}</span>}
             </p>
           </div>
-          <DialogTrigger asChild>
-            <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" aria-label="放大監視器畫面">
-              <Maximize2 className="h-4 w-4" />
-            </Button>
-          </DialogTrigger>
+          <div className="flex shrink-0 items-center gap-1">
+            {marker.videoUrl && marker.status !== "offline" && (
+              <Button asChild size="icon" variant="ghost" className="h-8 w-8">
+                <a href={marker.videoUrl} target="_blank" rel="noopener noreferrer" aria-label="在新分頁開啟直播">
+                  <ExternalLink className="h-4 w-4" />
+                </a>
+              </Button>
+            )}
+            <DialogTrigger asChild>
+              <Button size="icon" variant="ghost" className="h-8 w-8" aria-label="放大監視器畫面">
+                <Maximize2 className="h-4 w-4" />
+              </Button>
+            </DialogTrigger>
+          </div>
         </div>
 
         <div className="relative flex h-44 items-center justify-center overflow-hidden bg-black sm:h-52">
           <CctvFrame key={marker.id} marker={marker} />
         </div>
-        <OpenSourceLink marker={marker} />
       </div>
 
       <DialogContent className="max-w-4xl gap-3 p-4 sm:p-6">
@@ -188,14 +176,9 @@ export function CctvViewer({
         <div className="relative flex aspect-video w-full items-center justify-center overflow-hidden rounded-md bg-black">
           <CctvFrame key={marker.id} marker={marker} large />
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-x-4">
-          {marker.lastUpdated && (
-            <p className="text-xs text-muted-foreground">{marker.lastUpdated}</p>
-          )}
-          <div className="ml-auto">
-            <OpenSourceLink marker={marker} />
-          </div>
-        </div>
+        {marker.lastUpdated && (
+          <p className="text-xs text-muted-foreground">{marker.lastUpdated}</p>
+        )}
       </DialogContent>
     </Dialog>
   );
