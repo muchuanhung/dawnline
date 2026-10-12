@@ -30,3 +30,24 @@ export function isRateLimited(url: string | undefined): boolean {
 export function hasWhiteBorderInEmbed(url: string | undefined): boolean {
   return hostMatches(url, RATE_LIMITED_IFRAME_DOMAINS);
 }
+
+/**
+ * 新北 ATIS 鏡頭：外框頁（ShowFrame4CCTV）禁止內嵌，但頁內實際影像是 HTTP-FLV 串流，
+ * 可由伺服器查出串流網址後在前端用 mpegts.js 播放。回傳鏡頭 ID（例：C000236），不是 ATIS 網址回傳 null
+ */
+export function atisCctvId(url: string | undefined): string | null {
+  if (!url || !hostMatches(url, ["atis.ntpc.gov.tw"])) return null;
+  const match = new URL(url).pathname.match(/\/ShowFrame4CCTV\/(C\d{6})\/?$/i);
+  return match ? match[1]!.toUpperCase() : null;
+}
+
+/** ATIS 查詢 API 回傳的串流網址只接受新北 CCTV 主機的 https FLV，避免把任意網址交給播放器 */
+export function isAtisFlvUrl(url: string | undefined): boolean {
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" && /^cctvatis\d*\.ntpc\.gov\.tw$/.test(u.hostname) && u.pathname.startsWith("/flv/");
+  } catch {
+    return false;
+  }
+}

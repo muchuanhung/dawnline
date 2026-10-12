@@ -14,7 +14,8 @@ import {
 import Spinner from "@/components/ui/Spinner";
 import { cn } from "@/lib/utils";
 import type { CctvMarker } from "@/lib/routes/recon-geo";
-import { isBlockedByCSP, hasWhiteBorderInEmbed } from "@/lib/cctv/embed-policy";
+import { atisCctvId, isBlockedByCSP, hasWhiteBorderInEmbed } from "@/lib/cctv/embed-policy";
+import { AtisFlvFrame } from "./atis-flv-frame";
 
 export const CCTV_STATUS: Record<CctvMarker["status"], { text: string; dot: string }> = {
   online: { text: "直播", dot: "bg-success" },
@@ -34,7 +35,7 @@ function cctvTitle(marker: CctvMarker): string {
     : marker.name;
 }
 
-/** 影像本體：可內嵌就用 iframe，被擋就給外連，離線或沒有網址就直說 */
+/** 影像本體：新北 ATIS 用 FLV 播放、可內嵌就用 iframe、被擋就給外連，離線或沒有網址就直說 */
 function CctvFrame({ marker, large = false }: { marker: CctvMarker; large?: boolean }) {
   // iframe 無法偵測載入失敗（失敗也會觸發 onLoad），這裡只用來收掉載入指示；
   // 看不到畫面時靠標題列的外連按鈕。父層以 key={marker.id} 換鏡頭時重置
@@ -47,19 +48,23 @@ function CctvFrame({ marker, large = false }: { marker: CctvMarker; large?: bool
   if (!url) {
     return <p className="text-sm text-muted-foreground">此鏡頭沒有影像網址</p>;
   }
-  if (isBlockedByCSP(url)) {
-    return (
-      <div className="flex flex-col items-center gap-3 px-4 text-center">
-        <p className="text-sm text-muted-foreground">此影像無法內嵌</p>
-        <Button asChild size={large ? "default" : "sm"} variant="secondary">
-          <a href={url} target="_blank" rel="noopener noreferrer">
-            <ExternalLink className="h-4 w-4" />
-            開啟直播
-          </a>
-        </Button>
-      </div>
-    );
+  // 被擋的來源只能外連；新北 ATIS 鏡頭先試 FLV 播放，失敗再退回外連
+  const externalOnly = (
+    <div className="flex flex-col items-center gap-3 px-4 text-center">
+      <p className="text-sm text-muted-foreground">此影像無法內嵌</p>
+      <Button asChild size={large ? "default" : "sm"} variant="secondary">
+        <a href={url} target="_blank" rel="noopener noreferrer">
+          <ExternalLink className="h-4 w-4" />
+          開啟直播
+        </a>
+      </Button>
+    </div>
+  );
+  const atisId = atisCctvId(url);
+  if (atisId) {
+    return <AtisFlvFrame cctvId={atisId} title={marker.name} fallback={externalOnly} />;
   }
+  if (isBlockedByCSP(url)) return externalOnly;
   return (
     <>
       {!loaded && (
