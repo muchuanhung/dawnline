@@ -102,3 +102,10 @@ export function getStaticCCTVInBbox(
     toCCTVFeed
   );
 }
+
+/** 依 CCTVFeed.id（static- 開頭）取靜態鏡頭的 videoUrl（探測用） */
+export function getStaticCCTVVideoUrl(feedId: string): string | undefined {
+  if (!feedId.startsWith("static-")) return undefined;
+  const id = feedId.slice("static-".length);
+  return STATIC_CCTV.find((c) => c.id === id)?.videoUrl;
+}

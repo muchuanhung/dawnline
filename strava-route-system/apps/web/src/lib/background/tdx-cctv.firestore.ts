@@ -123,3 +123,17 @@ export async function getCCTVInBbox(
     .slice(0, limit)
     .sort((a, b) => (a.lat ?? 0) - (b.lat ?? 0));
 }
+
+/** 依 id 取 TDX 鏡頭的 videoUrl（探測用）；查不到的 id 不會出現在結果裡 */
+export async function getCCTVVideoUrls(ids: string[]): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  if (ids.length === 0) return result;
+  const db = getFirestoreAdmin();
+  const col = db.collection(COLLECTION);
+  const snaps = await db.getAll(...ids.map((id) => col.doc(id)));
+  for (const snap of snaps) {
+    const data = snap.exists ? (snap.data() as CCTVFirestoreDoc) : undefined;
+    if (data?.videoUrl) result.set(snap.id, data.videoUrl);
+  }
+  return result;
+}
