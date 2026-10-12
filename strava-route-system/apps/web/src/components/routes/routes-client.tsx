@@ -9,6 +9,7 @@ import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from 
 import { cn } from "@/lib/utils";
 import type { Route } from "@/lib/routes/route-data";
 import { useRoutesFromStorage } from "@/hooks/useRoutesFromStorage";
+import { RoutesLoading } from "@/components/routes/routes-loading";
 import { useRouteCCTV } from "@/hooks/useRouteCCTV";
 import { useRouteBriefing, verdictOf } from "@/hooks/useRouteBriefing";
 import { RouteCard } from "@/components/routes/route-card";
@@ -90,11 +91,7 @@ export function RoutesClient({
   }
 
   if (loading) {
-    return (
-      <div className="flex min-h-[50dvh] items-center justify-center" role="status" aria-label="載入路線中">
-        <Spinner size="lg" dotClassName="bg-primary" />
-      </div>
-    );
+    return <RoutesLoading />;
   }
 
   if (error) {

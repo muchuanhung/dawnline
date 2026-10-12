@@ -1,10 +1,12 @@
-import Spinner from "@/components/ui/Spinner";
+import { AppShell } from "@/components/app-shell/app-shell";
+import { DashboardHeader } from "@/components/dashboard/dashboard-header";
+import { BriefingLoading } from "@/components/dashboard/briefing/briefing-loading";
 
-/** 換頁進來時，伺服器還在準備頁面的這段時間顯示整頁 spinner（同登入後轉場的樣式） */
 export default function Loading() {
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-background" role="status" aria-label="載入今日判讀中">
-      <Spinner size="lg" dotClassName="bg-primary" />
-    </div>
+    <AppShell current="dashboard">
+      <DashboardHeader title="現在出發適合嗎？" placeholder />
+      <BriefingLoading />
+    </AppShell>
   );
 }
