@@ -26,7 +26,7 @@ const DESKTOP_NAV = NAV.filter((item) => item.id !== "profile");
  */
 export function AppShell({ current, children }: { current: AppSection; children: React.ReactNode }) {
   return (
-    <div className="min-h-dvh">
+    <div className="min-h-dvh" data-app-shell>
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-card focus:px-3 focus:py-2"

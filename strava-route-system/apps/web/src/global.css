@@ -157,6 +157,10 @@
   .dark body::before {
     display: none;
   }
+  /* 有導覽外框的頁面固定預留捲軸寬度：載入中內容短、沒有捲軸，載入完變長出現捲軸時，置中的導覽列（logo、分頁）才不會左右位移 */
+  html:has([data-app-shell]) {
+    scrollbar-gutter: stable;
+  }
 }
 
 /* Spinner 三點動畫 */
