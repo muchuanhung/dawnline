@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronDown, LogOut, User } from "lucide-react";
+import { ChevronDown, LogIn, LogOut, User } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import Spinner from "@/components/ui/Spinner";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,11 +30,22 @@ export function UserMenu({ active }: { active: boolean }) {
   const handleSignOut = useSignOut();
 
   // 登入狀態載入中先留位置，避免載入完才把版面推開
-  if (loading || !user) {
+  if (loading) {
     return (
       <div aria-hidden className="flex h-10 w-32 items-center justify-center">
         <Spinner size="sm" dotClassName="bg-primary" />
       </div>
+    );
+  }
+  // Auth resolved with no user (e.g. guest browsing the demo route): offer sign-in instead of a spinner that never ends
+  if (!user) {
+    return (
+      <Button asChild variant="outline" className="h-10 rounded-full px-4">
+        <Link href="/login">
+          <LogIn aria-hidden />
+          登入
+        </Link>
+      </Button>
     );
   }
   return (
