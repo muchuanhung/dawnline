@@ -116,3 +116,21 @@ function isPrivateHost(host: string): boolean {
     (a === 100 && b >= 64 && b <= 127)
   );
 }
+
+/**
+ * 把 /api/cctv/status 的結果套回鏡頭清單
+ * 沒有回傳狀態、或回傳值不是四種之一的鏡頭維持原狀（near-route 給的是 unknown）
+ */
+export function applyProbeStatuses<T extends { id: string; status: CctvProbeStatus }>(
+  feeds: T[],
+  statuses: Record<string, unknown>
+): T[] {
+  return feeds.map((feed) => {
+    const status = statuses[feed.id];
+    return isProbeStatus(status) && status !== feed.status ? { ...feed, status } : feed;
+  });
+}
+
+function isProbeStatus(value: unknown): value is CctvProbeStatus {
+  return value === "online" || value === "degraded" || value === "offline" || value === "unknown";
+}

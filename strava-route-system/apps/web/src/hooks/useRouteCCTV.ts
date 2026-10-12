@@ -3,6 +3,20 @@
 import { useState, useEffect } from "react";
 import type { Route } from "@/lib/routes/route-data";
 import type { CCTVFeed } from "@/lib/routes/route-data";
+import { applyProbeStatuses } from "@/lib/cctv/probe-status";
+
+/** 補抓鏡頭連線狀態；失敗時回 null，鏡頭維持 unknown */
+async function fetchProbeStatuses(ids: string[]): Promise<Record<string, unknown> | null> {
+  if (ids.length === 0) return null;
+  try {
+    const res = await fetch(`/api/cctv/status?ids=${ids.map(encodeURIComponent).join(",")}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data && typeof data.statuses === "object" ? data.statuses : null;
+  } catch {
+    return null;
+  }
+}
 
 export function useRouteCCTV(route: Route | null): {
   feeds: CCTVFeed[];
@@ -36,7 +50,12 @@ export function useRouteCCTV(route: Route | null): {
         return data.feeds ?? [];
       })
       .then((f: CCTVFeed[]) => {
-        if (!cancelled) setFeeds(f);
+        if (cancelled) return;
+        // 先顯示清單（狀態為 unknown），探測結果回來再更新狀態燈，不讓探測拖慢清單
+        setFeeds(f);
+        fetchProbeStatuses(f.map((feed) => feed.id)).then((statuses) => {
+          if (!cancelled && statuses) setFeeds((prev) => applyProbeStatuses(prev, statuses));
+        });
       })
       .catch(() => {
         if (cancelled) return;

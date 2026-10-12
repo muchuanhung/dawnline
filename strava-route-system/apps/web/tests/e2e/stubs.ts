@@ -92,4 +92,6 @@ export async function stubCctv(page: Page, feeds: CCTVFeed[] | "error") {
       ? r.fulfill({ status: 500, json: { error: "TDX 請求失敗" } })
       : r.fulfill({ json: feeds })
   );
+  // 不打真的探測；回空結果，鏡頭維持清單給的狀態
+  await page.route("**/api/cctv/status**", (r) => r.fulfill({ json: { statuses: {} } }));
 }

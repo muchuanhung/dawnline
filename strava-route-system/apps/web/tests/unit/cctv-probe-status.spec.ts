@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import {
   appendProbeAttempt,
+  applyProbeStatuses,
   classifyProbeHistory,
   isProbeFresh,
   isProbeableUrl,
@@ -114,5 +115,23 @@ test.describe("isProbeableUrl", () => {
     expect(isProbeableUrl("http://169.254.169.254/latest/meta-data")).toBe(false);
     expect(isProbeableUrl("http://192.168.0.1/x")).toBe(false);
     expect(isProbeableUrl("http://[::1]/x")).toBe(false);
+  });
+});
+
+test.describe("applyProbeStatuses", () => {
+  const feeds = [
+    { id: "a", status: "unknown" as const },
+    { id: "b", status: "unknown" as const },
+    { id: "c", status: "unknown" as const },
+  ];
+
+  test("套用回傳的狀態，沒回傳或不合法的維持 unknown", () => {
+    const next = applyProbeStatuses(feeds, { a: "online", b: "bogus" });
+    expect(next.map((f) => f.status)).toEqual(["online", "unknown", "unknown"]);
+  });
+
+  test("狀態沒變時保留原物件", () => {
+    const next = applyProbeStatuses(feeds, { a: "unknown" });
+    expect(next[0]).toBe(feeds[0]);
   });
 });

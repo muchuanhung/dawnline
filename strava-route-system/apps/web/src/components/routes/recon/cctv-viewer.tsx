@@ -19,7 +19,8 @@ import { isBlockedByCSP, hasWhiteBorderInEmbed } from "@/lib/cctv/embed-policy";
 export const CCTV_STATUS: Record<CctvMarker["status"], { text: string; dot: string }> = {
   online: { text: "直播", dot: "bg-success" },
   degraded: { text: "不穩", dot: "bg-warning" },
-  offline: { text: "離線", dot: "bg-muted-foreground" },
+  // 探測確認連不上：與 unknown 的灰點區分開來
+  offline: { text: "離線", dot: "bg-destructive" },
   // 沒探測過連線狀態：中性灰「影像」，不可看起來像直播
   unknown: { text: "影像", dot: "bg-muted-foreground" },
 };
