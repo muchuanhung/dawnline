@@ -83,14 +83,18 @@ function offsetLabel(offsetKm: number): string | null {
 export function CctvViewer({
   marker,
   positionKm,
+  loading = false,
   onJump,
 }: {
   marker: CctvMarker | null;
   positionKm: number;
+  /** 鏡頭清單載入中：還不知道有沒有鏡頭，先不顯示「此處無監視器」（載入指示由 CctvStrip 負責） */
+  loading?: boolean;
   /** 把游標移到鏡頭所在里程（附近沒有鏡頭時用） */
   onJump?: (km: number) => void;
 }) {
   if (!marker) {
+    if (loading) return null;
     return (
       <div className="flex h-44 items-center justify-center gap-2 bg-muted/40 text-sm text-muted-foreground sm:h-52">
         <Camera className="h-4 w-4" aria-hidden />
