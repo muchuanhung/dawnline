@@ -137,3 +137,10 @@ export async function getCCTVVideoUrls(ids: string[]): Promise<Map<string, strin
   }
   return result;
 }
+
+/** 全部鏡頭的網址與縣市（來源統計用），只取需要的欄位 */
+export async function getAllCCTVSources(): Promise<{ videoUrl?: string; county?: string }[]> {
+  const db = getFirestoreAdmin();
+  const snap = await db.collection(COLLECTION).select("videoUrl", "county").get();
+  return snap.docs.map((d) => d.data() as { videoUrl?: string; county?: string });
+}
