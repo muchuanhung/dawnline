@@ -38,33 +38,59 @@ export function trackTicks(totalKm: number): TrackTick[] {
   return ticks;
 }
 
-/** 里程差在這個距離內的鏡頭視為同一個地點 */
-const SAME_SPOT_KM = 0.3;
+/** 一般路段：里程差在這個距離內的鏡頭只留一台（貼很近的鏡頭看到的路況天氣差不多） */
+const NEARBY_KM = 3;
+/** 示警附近：離示警範圍這個距離內最近的那台鏡頭一定保留，方便看示警處的實況 */
+const HAZARD_CAM_KM = 1;
 
-/** 同一地點挑哪台：能內嵌播放優先，其次離路線最近 */
+const playable = (m: CctvMarker) => (m.videoUrl && !isBlockedByCSP(m.videoUrl) ? 1 : 0);
+
+/** 挑哪台：能內嵌播放優先，其次離路線最近 */
 function betterMarker(a: CctvMarker, b: CctvMarker): CctvMarker {
-  const playable = (m: CctvMarker) => (m.videoUrl && !isBlockedByCSP(m.videoUrl) ? 1 : 0);
   if (playable(a) !== playable(b)) return playable(a) > playable(b) ? a : b;
   return (a.distToRouteKm ?? Infinity) <= (b.distToRouteKm ?? Infinity) ? a : b;
 }
 
+/** 每個示警最近的鏡頭（在示警範圍外 HAZARD_CAM_KM 內才算） */
+function hazardCameraIds(markers: CctvMarker[], hazards: Hazard[]): Set<string> {
+  const ids = new Set<string>();
+  for (const h of hazards) {
+    let best: CctvMarker | null = null;
+    let bestGap = Infinity;
+    for (const m of markers) {
+      const gap = m.km < h.startKm ? h.startKm - m.km : m.km > h.endKm ? m.km - h.endKm : 0;
+      if (gap < bestGap || (gap === bestGap && best && betterMarker(m, best) === m)) {
+        best = m;
+        bestGap = gap;
+      }
+    }
+    if (best && bestGap <= HAZARD_CAM_KM) ids.add(best.id);
+  }
+  return ids;
+}
+
 /**
- * 同一地點附近的多台鏡頭只留一台（例：起點路口有 3 台，只顯示 1 台），依里程排序。
- * 以每群第一台的里程為基準分群，群內挑能播放、離路線最近的那台。
+ * 鏡頭精簡：一般路段 3 km 內只留一台（能播放優先，其次離路線最近）；
+ * 但每個示警附近最近的鏡頭一定保留，示警處要看得到實況。依里程排序。
+ * 以每群第一台的里程為基準分群，不會串成一長串。
  */
-export function dedupeMarkers(markers: CctvMarker[]): CctvMarker[] {
+export function dedupeMarkers(markers: CctvMarker[], hazards: Hazard[] = []): CctvMarker[] {
+  const keep = hazardCameraIds(markers, hazards);
   const sorted = [...markers].sort((a, b) => a.km - b.km);
   const kept: CctvMarker[] = [];
-  let anchorKm = -Infinity;
+  let group: CctvMarker[] = [];
+  const flush = () => {
+    if (group.length === 0) return;
+    const pinned = group.filter((m) => keep.has(m.id));
+    if (pinned.length > 0) kept.push(...pinned);
+    else kept.push(group.reduce(betterMarker));
+    group = [];
+  };
   for (const m of sorted) {
-    const last = kept[kept.length - 1];
-    if (last && m.km - anchorKm <= SAME_SPOT_KM) {
-      kept[kept.length - 1] = betterMarker(last, m);
-    } else {
-      kept.push(m);
-      anchorKm = m.km;
-    }
+    if (group.length > 0 && m.km - group[0]!.km > NEARBY_KM) flush();
+    group.push(m);
   }
+  flush();
   return kept;
 }
 

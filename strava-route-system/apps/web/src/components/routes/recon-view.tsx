@@ -54,10 +54,12 @@ export function ReconView({
 }: ReconViewProps) {
   const routePolyline = useMemo(() => buildRoutePolylineKm(route), [route]);
 
-  // 同一地點附近的多台鏡頭只留一台，軌道與 ‹ › 才不會在同一點重複
+  const verdictHazards = useMemo(() => briefing.briefing?.hazards ?? [], [briefing.briefing]);
+  // 鏡頭精簡：一般路段 3 km 內只留一台能播放的，示警附近的鏡頭另外保留
   const cctvMarkers = useMemo(
-    () => dedupeMarkers(buildCctvMarkers(route, cctvFeedsProp ?? route.cctvFeeds ?? [], routePolyline)),
-    [route, cctvFeedsProp, routePolyline]
+    () =>
+      dedupeMarkers(buildCctvMarkers(route, cctvFeedsProp ?? route.cctvFeeds ?? [], routePolyline), verdictHazards),
+    [route, cctvFeedsProp, routePolyline, verdictHazards]
   );
   const initialMarker = useMemo(
     () => pickInitialMarker(cctvMarkers, routePolyline),
@@ -67,7 +69,6 @@ export function ReconView({
   // 高程圖游標處天氣用伺服器合併後的路段；判讀未回來前沿用原路段（hasWeather 皆為 false）
   const segments = briefing.briefing?.segments;
   const stages = useMemo(() => deriveStages(segments ? { ...route, segments } : route), [route, segments]);
-  const verdictHazards = useMemo(() => briefing.briefing?.hazards ?? [], [briefing.briefing]);
   const verdict = verdictOf(briefing);
   const roadEvents = roadEventsOf(briefing);
   const trip = briefing.briefing;

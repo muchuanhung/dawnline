@@ -73,31 +73,53 @@ test.describe("trackTicks 依路線長度給整數刻度", () => {
   });
 });
 
-test.describe("dedupeMarkers 同一地點只留一台", () => {
+test.describe("dedupeMarkers 鏡頭精簡", () => {
   const cam = (id: string, km: number, extra: Partial<CctvMarker> = {}): CctvMarker => ({ ...marker(id, km), ...extra });
+  const ids = (list: CctvMarker[]) => list.map((m) => m.id);
 
-  test("起點路口 3 台只留 1 台，其他地點不受影響", () => {
-    const kept = dedupeMarkers([cam("a", 0), cam("b", 0.1), cam("c", 0.2), cam("d", 4.2)]);
-    expect(kept.map((m) => m.km)).toEqual([expect.any(Number), 4.2]);
-    expect(kept).toHaveLength(2);
+  test("3 km 內只留一台，超過 3 km 另成一台", () => {
+    expect(ids(dedupeMarkers([cam("a", 0), cam("b", 0.1), cam("c", 2.5), cam("d", 4.2)]))).toEqual(["a", "d"]);
   });
 
   test("能內嵌播放的優先，其次離路線最近", () => {
     const kept = dedupeMarkers([
       cam("blocked", 0, { videoUrl: "https://tw.live/cam/?id=1", distToRouteKm: 0.01 }),
-      cam("far", 0.1, { videoUrl: "https://cctv.example.tw/a.jpg", distToRouteKm: 0.2 }),
-      cam("near", 0.2, { videoUrl: "https://cctv.example.tw/b.jpg", distToRouteKm: 0.05 }),
+      cam("far", 1, { videoUrl: "https://cctv.example.tw/a.jpg", distToRouteKm: 0.2 }),
+      cam("near", 2, { videoUrl: "https://cctv.example.tw/b.jpg", distToRouteKm: 0.05 }),
     ]);
-    expect(kept.map((m) => m.id)).toEqual(["near"]);
+    expect(ids(kept)).toEqual(["near"]);
   });
 
-  test("相距超過 0.3 km 的鏡頭各自保留", () => {
-    expect(dedupeMarkers([cam("a", 1), cam("b", 1.4), cam("c", 1.8)]).map((m) => m.id)).toEqual(["a", "b", "c"]);
+  test("不會串成一長串：以每群第一台為基準", () => {
+    // 0、2、4、6：4 距第一台超過 3 km，另成一群
+    expect(dedupeMarkers([cam("a", 0), cam("b", 2), cam("c", 4), cam("d", 6)])).toHaveLength(2);
   });
 
-  test("不會串連成一長串：以每群第一台為基準", () => {
-    // 0、0.25、0.5：0.5 距第一台 0.5 km，另成一群
-    expect(dedupeMarkers([cam("a", 0), cam("b", 0.25), cam("c", 0.5)])).toHaveLength(2);
+  test("示警附近最近的鏡頭一定保留，即使不能內嵌播放", () => {
+    const kept = dedupeMarkers(
+      [
+        cam("play", 0, { videoUrl: "https://cctv.example.tw/a.jpg" }),
+        cam("atAccident", 1.2, { videoUrl: "https://tw.live/cam/?id=2" }),
+        cam("other", 2),
+      ],
+      [hazard("acc", 1.3)]
+    );
+    expect(ids(kept)).toEqual(["atAccident"]);
+  });
+
+  test("兩個示警各留自己最近的鏡頭", () => {
+    const kept = dedupeMarkers([cam("a", 0.5), cam("b", 1.5), cam("c", 2.5)], [hazard("x", 0.4), hazard("y", 2.6)]);
+    expect(ids(kept)).toEqual(["a", "c"]);
+  });
+
+  test("示警 1 km 內沒有鏡頭時照一般規則挑", () => {
+    const kept = dedupeMarkers([cam("a", 0), cam("b", 1, { videoUrl: "https://cctv.example.tw/a.jpg" })], [hazard("x", 2.5)]);
+    expect(ids(kept)).toEqual(["b"]);
+  });
+
+  test("鏡頭落在示警範圍內也算最近", () => {
+    const kept = dedupeMarkers([cam("a", 0), cam("inRain", 2)], [hazard("rain", 1, "risky", 5)]);
+    expect(ids(kept)).toEqual(["inRain"]);
   });
 
   test("沒有鏡頭時為空", () => {
