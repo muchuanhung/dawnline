@@ -161,14 +161,27 @@ export function mapLatLonToKm(
   );
 }
 
-/** 途中模式定位：定位精度（m）超過此值不換算里程，改讓使用者手動選 */
-export const POSITION_MAX_ACCURACY_M = 100;
+/**
+ * 途中模式定位：定位精度（m）超過此值不換算里程，改讓使用者手動選。
+ * 判定以行政區（通常數公里）與 3 小時預報為單位，200 m 誤差換成里程約 ±0.2 km，不影響判定；畫面另顯示里程範圍。
+ */
+export const POSITION_MAX_ACCURACY_M = 200;
 /** 途中模式定位：離路線超過此距離（km）視為不在路線上 */
 export const POSITION_MAX_OFF_ROUTE_KM = 0.3;
 /** 同一位置對到的兩個里程相差超過此值（km），才視為不同次經過（往返、繞圈） */
 const DISTINCT_PASS_KM = 0.5;
 /** 有上次里程時，容許往回對到的距離（km）：GPS 誤差、走回頭找東西 */
 const BACKTRACK_TOLERANCE_KM = 0.5;
+
+/**
+ * 定位誤差換成里程範圍（取到 0.1 km）：沿路線方向最多偏差約一個定位精度，夾在 0 與總里程之間。
+ * 只是給使用者看的不確定範圍，判讀仍用中心里程。
+ */
+export function kmRangeOf(km: number, accuracyM: number, totalKm: number): [number, number] {
+  const spread = Math.max(0, accuracyM) / 1000;
+  const round = (v: number) => Math.round(v * 10) / 10;
+  return [round(Math.max(0, km - spread)), round(Math.min(totalKm, km + spread))];
+}
 
 export interface PositionFix {
   lat: number;
@@ -178,7 +191,8 @@ export interface PositionFix {
 }
 
 export type RoutePosition =
-  | { status: "on_route"; km: number; distKm: number }
+  /** accuracyM：定位精度（m），畫面用來顯示里程範圍 */
+  | { status: "on_route"; km: number; distKm: number; accuracyM: number }
   /** 往返或繞圈：同一位置對到多個里程，又無法用上次里程判斷，由使用者選 */
   | { status: "ambiguous"; candidates: number[] }
   | { status: "inaccurate"; accuracyM: number }
@@ -222,10 +236,10 @@ export function locateOnRoute(
     lastKm = p.km;
   }
 
-  if (passes.length === 1) return { status: "on_route", ...passes[0]! };
+  if (passes.length === 1) return { status: "on_route", ...passes[0]!, accuracyM: fix.accuracyM };
   if (previousKm != null) {
     const next = passes.find((p) => p.km >= previousKm - BACKTRACK_TOLERANCE_KM);
-    if (next) return { status: "on_route", ...next };
+    if (next) return { status: "on_route", ...next, accuracyM: fix.accuracyM };
   }
   return { status: "ambiguous", candidates: passes.map((p) => Math.round(p.km * 10) / 10) };
 }

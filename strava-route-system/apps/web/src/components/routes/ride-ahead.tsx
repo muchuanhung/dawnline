@@ -5,7 +5,7 @@ import { LocateFixed, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { usePositionOnRoute } from "@/hooks/usePositionOnRoute";
-import type { RoutePolylineKm } from "@/lib/routes/recon-geo";
+import { kmRangeOf, type RoutePolylineKm } from "@/lib/routes/recon-geo";
 import { ACTIVITY, type Activity } from "@/lib/routes/trip";
 
 interface RideAheadProps {
@@ -49,6 +49,9 @@ export function RideAhead({ routeId, polyline, totalKm, fromKm, activity, onChan
   };
 
   const locating = state.status === "locating";
+  // 由定位換算的里程才有誤差範圍；手動輸入或選擇後 state 會被 reset，不顯示範圍
+  const range = state.status === "on_route" && fromKm != null ? kmRangeOf(fromKm, state.accuracyM, totalKm) : null;
+  const showRange = range != null && range[1] - range[0] >= 0.1;
   const needsManual =
     state.status === "inaccurate" ||
     state.status === "off_route" ||
@@ -75,7 +78,13 @@ export function RideAhead({ routeId, polyline, totalKm, fromKm, activity, onChan
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm text-foreground">
-            目前在 <span className="font-mono font-semibold">{fromKm.toFixed(1)} km</span>，以下只判讀前方路段
+            目前在 <span className="font-mono font-semibold">{fromKm.toFixed(1)} km</span>
+            {showRange && (
+              <span className="text-muted-foreground">
+                （定位誤差，約 {range[0].toFixed(1)}–{range[1].toFixed(1)} km）
+              </span>
+            )}
+            ，以下只判讀前方路段
           </p>
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" onClick={locate} disabled={locating}>

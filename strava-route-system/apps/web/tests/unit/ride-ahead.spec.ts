@@ -9,6 +9,7 @@ import {
   clipRouteFrom,
   clipStagesFrom,
   deriveStages,
+  kmRangeOf,
   locateOnRoute,
   POSITION_MAX_ACCURACY_M,
   type RoutePolylineKm,
@@ -86,6 +87,18 @@ test.describe("locateOnRoute", () => {
     });
     // 精度不明（NaN）也不可當成準確
     expect(locateOnRoute(fix(3, Number.NaN), polyline).status).toBe("inaccurate");
+  });
+
+  test("精度 150 m 仍換算里程，並帶回精度供畫面顯示範圍", () => {
+    const r = locateOnRoute(fix(3, 150), polyline);
+    expect(r.status).toBe("on_route");
+    if (r.status === "on_route") expect(r.accuracyM).toBe(150);
+  });
+
+  test("里程範圍：依精度展開，夾在 0 與總里程之間", () => {
+    expect(kmRangeOf(4.3, 114, 10)).toEqual([4.2, 4.4]);
+    expect(kmRangeOf(0.05, 200, 10)).toEqual([0, 0.3]);
+    expect(kmRangeOf(9.9, 200, 10)).toEqual([9.7, 10]);
   });
 
   test("離路線 500 m：不在路線上", () => {
