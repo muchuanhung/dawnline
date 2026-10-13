@@ -15,7 +15,7 @@ test.describe("/routes 路線偵察", () => {
     await stubRoutes(page, [ROUTE]);
   });
 
-  test("危險天氣時，判定列在最上層並說明原因", async ({ page }) => {
+  test("危險天氣時，判定疊在主視覺最上層並說明原因", async ({ page }) => {
     await stubWeather(page, { 大安區: 10, 士林區: 70 });
     await stubCctv(page, [CCTV_FEED]);
     await page.goto("/routes");
@@ -24,13 +24,13 @@ test.describe("/routes 路線偵察", () => {
     await expect(verdict).toContainText("危險");
     await expect(verdict).toContainText("5.0 km 起降雨 70%");
 
-    // 資訊層級：判定 → 示警 → 高程圖 → 監視器
+    // 資訊層級：主視覺（判定疊在影像上） → 示警 → 高程圖
     const order = await Promise.all(
       [
+        page.getByRole("region", { name: "沿線影像與判定" }),
         verdict,
         page.getByRole("region", { name: /沿途示警/ }),
         page.getByRole("region", { name: "海拔與位置" }),
-        page.getByRole("region", { name: /沿途監視器/ }),
       ].map(async (l) => (await l.boundingBox())!.y)
     );
     expect(order).toEqual([...order].sort((a, b) => a - b));

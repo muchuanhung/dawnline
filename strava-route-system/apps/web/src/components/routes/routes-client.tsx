@@ -204,8 +204,6 @@ export function RoutesClient({
             >
               <RouteHeader
                 route={selectedRoute}
-                verdict={verdict}
-                loading={briefing.loading}
                 departureLabel={(() => {
                   const s = briefing.briefing?.departureSuggestion;
                   if (!s) return null;

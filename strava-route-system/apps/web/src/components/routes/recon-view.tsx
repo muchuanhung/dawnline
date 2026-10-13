@@ -15,11 +15,9 @@ import {
 import { useReconPosition } from "@/hooks/useReconPosition";
 import { etaLabel, paceFor } from "@/lib/routes/trip";
 import { roadEventsOf, verdictOf, type RouteBriefingState } from "@/hooks/useRouteBriefing";
-import { RouteVerdictBar } from "./recon/route-verdict-bar";
 import { HazardList } from "./recon/hazard-list";
 import { ElevationScrubber } from "./recon/elevation-scrubber";
-import { CctvViewer } from "./recon/cctv-viewer";
-import { CctvStrip } from "./recon/cctv-strip";
+import { ReconHero } from "./recon/recon-hero";
 
 export type { RouteStage, CctvMarker } from "@/lib/routes/recon-geo";
 
@@ -35,8 +33,9 @@ interface ReconViewProps {
 }
 
 /**
- * 路線偵察畫面。資訊層級依危險度排序：
- * 1 全線判定 → 2 沿途示警 → 3 高程圖（游標處天氣）→ 4 監視器
+ * 路線偵察畫面：
+ * 1 主視覺（判定疊在即時影像上＋里程軌道）→ 2 沿途示警 → 3 高程圖（游標處天氣）
+ * 軌道與高程圖共用同一個游標位置
  */
 export function ReconView({
   route,
@@ -79,7 +78,7 @@ export function ReconView({
     [chartData]
   );
 
-  const { positionKm, moveTo, activeMarker } = useReconPosition(route.id, cctvMarkers, initialMarker);
+  const { positionKm, moveTo, selectMarker, activeMarker } = useReconPosition(route.id, cctvMarkers, initialMarker);
 
   const currentStage = useMemo(() => stageAtKm(stages, positionKm), [stages, positionKm]);
   const currentElevation = useMemo(
@@ -89,7 +88,20 @@ export function ReconView({
 
   return (
     <div className="w-full min-w-0 max-w-full space-y-6">
-      <RouteVerdictBar verdict={verdict} />
+      <ReconHero
+        verdict={verdict}
+        verdictLoading={briefing.loading && !briefing.briefing}
+        markers={cctvMarkers}
+        activeMarker={activeMarker}
+        cctvLoading={cctvLoading}
+        cctvError={cctvError}
+        positionKm={positionKm}
+        totalKm={routeTotalKm(route)}
+        hazards={verdictHazards}
+        etaOf={etaOf}
+        onMove={moveTo}
+        onSelectMarker={selectMarker}
+      />
 
       <HazardList
         hazards={verdictHazards}
@@ -109,17 +121,6 @@ export function ReconView({
         stage={currentStage}
         onScrub={moveTo}
       />
-
-      <div className="space-y-3">
-        <CctvViewer marker={activeMarker} positionKm={positionKm} loading={cctvLoading} onJump={moveTo} />
-        <CctvStrip
-          markers={cctvMarkers}
-          activeId={activeMarker?.id ?? null}
-          loading={cctvLoading}
-          error={cctvError}
-          onSelect={moveTo}
-        />
-      </div>
     </div>
   );
 }
