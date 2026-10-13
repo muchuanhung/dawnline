@@ -2,7 +2,14 @@ import { test, expect } from "@playwright/test";
 import { parseGpxToRoute } from "@/lib/routes/parse-gpx";
 import { buildRoutePolylineKm } from "@/lib/routes/recon-geo";
 import { eventHazards, groupRouteEvents, matchEventsToRoute } from "@/lib/routes/road-events";
-import { DEMO_EVENT_PREFIX, DEMO_ROUTE_ID, demoRoadEvents, demoRouteGpx } from "@/lib/routes/demo-route";
+import {
+  applyDemoCctvStatuses,
+  DEMO_EVENT_PREFIX,
+  DEMO_ROUTE_ID,
+  demoRoadEvents,
+  demoRouteGpx,
+} from "@/lib/routes/demo-route";
+import { CCTV_FEED } from "../fixtures/route";
 
 const NOW = new Date("2026-10-12T08:00:00+08:00");
 const route = parseGpxToRoute(demoRouteGpx(), DEMO_ROUTE_ID);
@@ -54,5 +61,16 @@ test.describe("示意路線（Storage 讀不到時的備援）", () => {
     const ids = (now: Date) =>
       matchEventsToRoute(demoRoadEvents(route, now), buildRoutePolylineKm(route), { now }).map((e) => e.id);
     expect(ids(later)).toEqual(ids(NOW));
+  });
+});
+
+test.describe("示意路線的鏡頭狀態", () => {
+  test("依序輪流四種狀態，並註明是示意", () => {
+    const feeds = Array.from({ length: 5 }, (_, i) => ({ ...CCTV_FEED, id: `cam-${i}` }));
+    const next = applyDemoCctvStatuses(feeds);
+    expect(next.map((f) => f.status)).toEqual(["online", "degraded", "offline", "unknown", "online"]);
+    expect(next.every((f) => f.lastUpdated?.includes("示意"))).toBe(true);
+    // 不改動原陣列
+    expect(feeds[0]?.status).toBe("unknown");
   });
 });
