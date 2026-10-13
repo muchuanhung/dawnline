@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import type { CCTVFeed, Route } from "@/lib/routes/route-data";
 import {
   buildRoutePolylineKm,
@@ -79,6 +79,12 @@ export function ReconView({
   );
 
   const { positionKm, moveTo, selectMarker, activeMarker } = useReconPosition(route.id, cctvMarkers, initialMarker);
+
+  // 途中模式：高程圖游標移到目前里程
+  const fromKm = briefing.briefing?.fromKm ?? null;
+  useEffect(() => {
+    if (fromKm != null) moveTo(fromKm);
+  }, [fromKm, moveTo]);
 
   const currentStage = useMemo(() => stageAtKm(stages, positionKm), [stages, positionKm]);
   const currentElevation = useMemo(

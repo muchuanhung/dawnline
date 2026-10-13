@@ -106,22 +106,18 @@ export function normalizeLatLon(lat?: number, lon?: number): { lat: number; lon:
   return { lat, lon };
 }
 
-/** 將座標投影到路線 polyline，回傳對應里程與離路距離 */
-export function mapLatLonToKm(
+/** 將座標投影到 polyline 的每個線段，回傳各線段上最近點的里程與離路距離（略過長度為 0 的線段） */
+function projectOnSegments(
   lat: number,
   lon: number,
   points: [number, number][],
   cumulativeKm: number[]
-): { km: number; distKm: number } | null {
-  if (points.length < 2) return null;
-  if (points.length !== cumulativeKm.length) return null;
+): { km: number; distKm: number }[] {
+  if (points.length < 2 || points.length !== cumulativeKm.length) return [];
 
-  // 對整條 polyline 的每個線段做投影，取距離最小的那段，
-  // 避免「後段彎曲時只看附近窗口會投錯里程」的問題。
   // 經緯度差是「度」，必須先轉弧度再乘地球半徑；漏轉會讓離路距離放大 57.3 倍
   const Rm = 6371000 * (Math.PI / 180); // 每度的公尺數
-  let bestKm: number | null = null;
-  let bestDistKm = Infinity;
+  const out: { km: number; distKm: number }[] = [];
 
   for (let i = 0; i < points.length - 1; i++) {
     const [aLat, aLon] = points[i]!;
@@ -145,16 +141,108 @@ export function mapLatLonToKm(
 
     const t = Math.max(0, Math.min(1, ((px - ax) * vx + (py - ay) * vy) / vLen2));
     const distKm = Math.hypot(px - (ax + t * vx), py - (ay + t * vy)) / 1000;
+    const segKm = (cumulativeKm[i + 1] ?? 0) - (cumulativeKm[i] ?? 0);
+    out.push({ km: (cumulativeKm[i] ?? 0) + t * segKm, distKm });
+  }
+  return out;
+}
 
-    if (distKm < bestDistKm) {
-      const segKm = (cumulativeKm[i + 1] ?? 0) - (cumulativeKm[i] ?? 0);
-      bestKm = (cumulativeKm[i] ?? 0) + t * segKm;
-      bestDistKm = distKm;
+/** 將座標投影到路線 polyline，回傳對應里程與離路距離 */
+export function mapLatLonToKm(
+  lat: number,
+  lon: number,
+  points: [number, number][],
+  cumulativeKm: number[]
+): { km: number; distKm: number } | null {
+  // 對整條 polyline 的每個線段做投影，取距離最小的那段，
+  // 避免「後段彎曲時只看附近窗口會投錯里程」的問題。
+  return projectOnSegments(lat, lon, points, cumulativeKm).reduce<{ km: number; distKm: number } | null>(
+    (best, p) => (!best || p.distKm < best.distKm ? p : best),
+    null
+  );
+}
+
+/**
+ * 途中模式定位：定位精度（m）超過此值不換算里程，改讓使用者手動選。
+ * 判定以行政區（通常數公里）與 3 小時預報為單位，200 m 誤差換成里程約 ±0.2 km，不影響判定；畫面另顯示里程範圍。
+ */
+export const POSITION_MAX_ACCURACY_M = 200;
+/** 途中模式定位：離路線超過此距離（km）視為不在路線上 */
+export const POSITION_MAX_OFF_ROUTE_KM = 0.3;
+/** 同一位置對到的兩個里程相差超過此值（km），才視為不同次經過（往返、繞圈） */
+const DISTINCT_PASS_KM = 0.5;
+/** 有上次里程時，容許往回對到的距離（km）：GPS 誤差、走回頭找東西 */
+const BACKTRACK_TOLERANCE_KM = 0.5;
+
+/**
+ * 定位誤差換成里程範圍（取到 0.1 km）：沿路線方向最多偏差約一個定位精度，夾在 0 與總里程之間。
+ * 只是給使用者看的不確定範圍，判讀仍用中心里程。
+ */
+export function kmRangeOf(km: number, accuracyM: number, totalKm: number): [number, number] {
+  const spread = Math.max(0, accuracyM) / 1000;
+  const round = (v: number) => Math.round(v * 10) / 10;
+  return [round(Math.max(0, km - spread)), round(Math.min(totalKm, km + spread))];
+}
+
+export interface PositionFix {
+  lat: number;
+  lon: number;
+  /** 定位精度（m），GeolocationCoordinates.accuracy */
+  accuracyM: number;
+}
+
+export type RoutePosition =
+  /** accuracyM：定位精度（m），畫面用來顯示里程範圍 */
+  | { status: "on_route"; km: number; distKm: number; accuracyM: number }
+  /** 往返或繞圈：同一位置對到多個里程，又無法用上次里程判斷，由使用者選 */
+  | { status: "ambiguous"; candidates: number[] }
+  | { status: "inaccurate"; accuracyM: number }
+  | { status: "off_route"; distKm: number }
+  /** 路線沒有可用的 polyline */
+  | { status: "no_route" };
+
+/**
+ * 手機定位 → 路線里程。資料不足一律不猜：
+ * 精度太差回 inaccurate、離路太遠回 off_route、同一位置對到多次經過且無法判斷時回 ambiguous。
+ * 多次經過的判斷：各線段投影中，離路距離與最近者相差不超過定位精度（至少 50 m）的才算候選，
+ * 候選依里程分群（相差超過 0.5 km 才算另一次經過）；有上次里程時取「不早於上次里程」的第一群。
+ * 之字形山路相鄰兩段雖然直線距離近，離路距離差超過定位精度就不會被當成候選。
+ */
+export function locateOnRoute(
+  fix: PositionFix,
+  polyline: RoutePolylineKm | null,
+  { previousKm }: { previousKm?: number } = {}
+): RoutePosition {
+  if (!polyline) return { status: "no_route" };
+  if (!(fix.accuracyM <= POSITION_MAX_ACCURACY_M)) return { status: "inaccurate", accuracyM: fix.accuracyM };
+  const projections = projectOnSegments(fix.lat, fix.lon, polyline.points, polyline.cumulativeKm);
+  if (projections.length === 0) return { status: "no_route" };
+
+  const bestDist = Math.min(...projections.map((p) => p.distKm));
+  if (bestDist > POSITION_MAX_OFF_ROUTE_KM) return { status: "off_route", distKm: bestDist };
+
+  const slackKm = Math.max(fix.accuracyM, 50) / 1000;
+  const near = projections.filter((p) => p.distKm <= bestDist + slackKm).sort((a, b) => a.km - b.km);
+
+  // 依里程分群，每群取離路最近的點作代表
+  const passes: { km: number; distKm: number }[] = [];
+  let lastKm = -Infinity;
+  for (const p of near) {
+    const current = passes[passes.length - 1];
+    if (current && p.km - lastKm <= DISTINCT_PASS_KM) {
+      if (p.distKm < current.distKm) passes[passes.length - 1] = p;
+    } else {
+      passes.push(p);
     }
+    lastKm = p.km;
   }
 
-  if (bestKm == null) return null;
-  return { km: bestKm, distKm: bestDistKm };
+  if (passes.length === 1) return { status: "on_route", ...passes[0]!, accuracyM: fix.accuracyM };
+  if (previousKm != null) {
+    const next = passes.find((p) => p.km >= previousKm - BACKTRACK_TOLERANCE_KM);
+    if (next) return { status: "on_route", ...next, accuracyM: fix.accuracyM };
+  }
+  return { status: "ambiguous", candidates: passes.map((p) => Math.round(p.km * 10) / 10) };
 }
 
 /** 路線總里程 */
@@ -209,6 +297,39 @@ export function deriveStages(route: Route): RouteStage[] {
       outOfCoverage: seg?.outOfCoverage ?? false,
     };
   });
+}
+
+/**
+ * 途中模式：只保留第 fromKm 公里以後的路段。
+ * 各路段的 sampleKms 只留不早於 fromKm 的取樣點；fromKm 所在路段（依 deriveStages 的交界判斷）即使取樣點都在後方，
+ * 也以 fromKm 作為它的取樣點保留，確保目前所在的行政區仍列入判定。已完全走過的路段移除。
+ * 沒有 sampleKms 的舊資料無法判斷，原樣回傳（由呼叫端再裁切 stage）。
+ */
+export function clipRouteFrom(route: Route, fromKm: number): Route {
+  const segs = route.segments ?? [];
+  if (fromKm <= 0 || !segs.some((s) => s.sampleKms?.length)) return route;
+
+  // 與 deriveStages 相同：所有取樣點依里程排序，fromKm 落在前後兩點中點之前就屬於前一點的路段
+  const samples = segs.flatMap((seg) => (seg.sampleKms ?? []).map((km) => ({ km, seg }))).sort((a, b) => a.km - b.km);
+  const nextIdx = samples.findIndex((s) => s.km >= fromKm);
+  const prev = nextIdx === -1 ? samples[samples.length - 1] : samples[nextIdx - 1];
+  const next = nextIdx === -1 ? undefined : samples[nextIdx];
+  const current = prev && (!next || fromKm < (prev.km + next.km) / 2) ? prev.seg : next?.seg;
+
+  const segments = segs.flatMap((seg) => {
+    const ahead = (seg.sampleKms ?? []).filter((km) => km >= fromKm);
+    if (seg === current && (ahead.length === 0 || ahead[0]! > fromKm)) return [{ ...seg, sampleKms: [fromKm, ...ahead] }];
+    return ahead.length > 0 ? [{ ...seg, sampleKms: ahead }] : [];
+  });
+  return { ...route, segments };
+}
+
+/** 途中模式：只留 fromKm 以後的 stage，第一段的起點改為 fromKm */
+export function clipStagesFrom(stages: RouteStage[], fromKm: number): RouteStage[] {
+  if (fromKm <= 0) return stages;
+  return stages
+    .filter((s) => s.endKm > fromKm)
+    .map((s) => (s.startKm >= fromKm ? s : { ...s, km: fromKm, startKm: fromKm }));
 }
 
 /** 里程所在的 stage（依 startKm/endKm 區間，不是最近的代表點） */

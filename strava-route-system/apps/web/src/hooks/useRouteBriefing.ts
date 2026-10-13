@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { RouteBriefing } from "@/lib/dashboard/briefing";
 import type { ReconVerdict } from "@/lib/routes/recon-geo";
 import type { RouteEvent } from "@/lib/routes/road-events";
@@ -21,10 +21,21 @@ export interface RouteBriefingState {
   error: boolean;
 }
 
-/** 單一路線的伺服器端判讀；換路線或行程設定時先清空，避免顯示上一次的判定 */
-export function useRouteBriefing(routeId: string | null | undefined, trip: TripParams = {}): RouteBriefingState {
+/**
+ * 單一路線的伺服器端判讀；換路線或行程設定時先清空，避免顯示上一次的判定。
+ * fromKm：途中模式的目前里程，只判讀前方；不放進 TripParams，避免位置跟著連結帶到別頁或別條路線。
+ * refreshAt：途中模式套用里程的時間；里程沒變但時間變了（定時刷新）也要重抓，因為 ETA 以現在起算。
+ * 途中模式中只有里程或 refreshAt 改變時，重抓期間保留上一次判讀，避免騎乘中畫面每 0.5 km 閃一次載入。
+ */
+export function useRouteBriefing(
+  routeId: string | null | undefined,
+  trip: TripParams = {},
+  fromKm: number | null = null,
+  refreshAt: number | null = null
+): RouteBriefingState {
   const { depart, activity } = trip;
   const [state, setState] = useState<RouteBriefingState>({ briefing: null, loading: false, error: false });
+  const tripKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!routeId) {
@@ -32,8 +43,13 @@ export function useRouteBriefing(routeId: string | null | undefined, trip: TripP
       return;
     }
     let cancelled = false;
-    setState({ briefing: null, loading: true, error: false });
-    fetch(withTrip(`/api/routes/briefing?route=${encodeURIComponent(routeId)}`, { depart, activity }))
+    // 進出途中模式也算換判讀範圍（整條 vs 前方），要清空
+    const tripKey = `${routeId}|${depart ?? ""}|${activity ?? ""}|${fromKm != null}`;
+    const keep = tripKeyRef.current === tripKey;
+    tripKeyRef.current = tripKey;
+    setState((s) => ({ briefing: keep ? s.briefing : null, loading: true, error: false }));
+    const url = withTrip(`/api/routes/briefing?route=${encodeURIComponent(routeId)}`, { depart, activity });
+    fetch(fromKm != null ? `${url}&from=${fromKm.toFixed(2)}` : url)
       .then((res) => {
         if (!res.ok) throw new Error(`路線判讀 ${res.status}`);
         return res.json() as Promise<RouteBriefing>;
@@ -47,7 +63,7 @@ export function useRouteBriefing(routeId: string | null | undefined, trip: TripP
     return () => {
       cancelled = true;
     };
-  }, [routeId, depart, activity]);
+  }, [routeId, depart, activity, fromKm, refreshAt]);
 
   return state;
 }

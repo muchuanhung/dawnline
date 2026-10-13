@@ -36,6 +36,8 @@ export type DashboardBriefing =
 export interface TripOptions {
   departure?: Date;
   activity?: Activity;
+  /** 途中模式：目前在路線上的里程；只對 getRouteBriefing 的單一路線有意義 */
+  fromKm?: number;
 }
 
 export async function getDashboardBriefing(routeId?: string, trip: TripOptions = {}): Promise<DashboardBriefing> {
@@ -126,6 +128,8 @@ async function briefRoutes(routes: Route[], trip: TripOptions = {}, suggestFor?:
       activity: trip.activity,
       eventsFailed,
       suggest: route.id === suggestFor,
+      // 里程只對應這條路線，不能套到其他路線
+      fromKm: route.id === suggestFor ? trip.fromKm : undefined,
     })
   );
   return { briefings, weatherCoverage: { ok: lookup.size, total: keys.length }, eventsFailed };
