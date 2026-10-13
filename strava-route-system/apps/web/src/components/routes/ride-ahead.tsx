@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { usePositionOnRoute } from "@/hooks/usePositionOnRoute";
 import { kmRangeOf, type RoutePolylineKm } from "@/lib/routes/recon-geo";
-import { ACTIVITY, type Activity } from "@/lib/routes/trip";
 
 interface RideAheadProps {
   routeId: string;
@@ -14,8 +13,6 @@ interface RideAheadProps {
   totalKm: number;
   /** 目前生效的里程；null 為整條路線判讀 */
   fromKm: number | null;
-  /** 判讀實際用的運動類型，用來說明前方 ETA 怎麼估 */
-  activity: Activity | null;
   onChange: (km: number | null) => void;
 }
 
@@ -23,11 +20,10 @@ interface RideAheadProps {
  * 途中模式「從我現在位置往前看」：定位換算里程後只判讀前方。
  * 定位不準、不在路線上、往返路線無法判斷、拒絕定位時都不猜，改讓使用者手動選里程。
  */
-export function RideAhead({ routeId, polyline, totalKm, fromKm, activity, onChange }: RideAheadProps) {
-  const { state, tracking, locate, choose: chooseKm, dismiss } = usePositionOnRoute({
+export function RideAhead({ routeId, polyline, totalKm, fromKm, onChange }: RideAheadProps) {
+  const { state, locate, choose: chooseKm, dismiss } = usePositionOnRoute({
     routeId,
     polyline,
-    totalKm,
     riding: fromKm != null,
     onKm: onChange,
   });
@@ -55,6 +51,7 @@ export function RideAhead({ routeId, polyline, totalKm, fromKm, activity, onChan
   // 由定位換算的里程才有誤差範圍；手動輸入或選擇後 state 會被 reset，不顯示範圍
   const range = state.status === "on_route" && shownKm != null ? kmRangeOf(shownKm, state.accuracyM, totalKm) : null;
   const showRange = range != null && range[1] - range[0] >= 0.1;
+  const offRoute = state.status === "off_route" && fromKm != null;
   const needsManual =
     state.status === "inaccurate" ||
     state.status === "off_route" ||
@@ -81,17 +78,14 @@ export function RideAhead({ routeId, polyline, totalKm, fromKm, activity, onChan
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm text-foreground">
-            {state.status === "remembered" ? "上次在" : state.status === "off_route" ? "離開路線前在" : "目前在"}{" "}
+            {offRoute ? "離開路線前在" : "目前在"}{" "}
             <span className="font-mono font-semibold">{(shownKm ?? fromKm).toFixed(1)} km</span>
-            {state.status === "remembered" && (
-              <span className="text-muted-foreground">（{agoLabel(state.ageMin)}）</span>
-            )}
             {showRange && (
               <span className="text-muted-foreground">
-                （定位誤差，約 {range[0].toFixed(1)}–{range[1].toFixed(1)} km）
+                （約 {range[0].toFixed(1)}–{range[1].toFixed(1)} km）
               </span>
             )}
-            ，以下只判讀前方路段
+            ，只看前方
           </p>
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" onClick={locate} disabled={locating}>
@@ -106,19 +100,9 @@ export function RideAhead({ routeId, polyline, totalKm, fromKm, activity, onChan
         </div>
       )}
 
-      {fromKm != null && activity && (
-        <p className="text-xs text-muted-foreground">
-          以現在為抵達 {fromKm.toFixed(1)} km 的時間，依{ACTIVITY[activity].label}均速 {ACTIVITY[activity].speedKmh} km/h
-          {ACTIVITY[activity].climbMinPer100m > 0 && `、每爬升 100 m 加 ${ACTIVITY[activity].climbMinPer100m} 分鐘`}{" "}
-          估算前方抵達時間。
-          {tracking ? "畫面開著時會自動更新位置，移動 0.5 km 或每 5 分鐘重新判讀；" : ""}
-          位置只在手機上換算里程，不會上傳。
-        </p>
-      )}
-
       {state.status === "ambiguous" && (
         <div className="space-y-1.5" role="status">
-          <p className="text-sm text-foreground">這條路線會經過這裡不只一次，你現在在哪一段？</p>
+          <p className="text-sm text-foreground">這裡會經過不只一次，你在哪一段？</p>
           <div className="flex flex-wrap gap-2">
             {state.candidates.map((km, i) => (
               <Button key={km} size="sm" variant="outline" onClick={() => choose(km)}>
@@ -129,39 +113,37 @@ export function RideAhead({ routeId, polyline, totalKm, fromKm, activity, onChan
         </div>
       )}
 
-      {needsManual && (
+      {needsManual && !offRoute && (
         <p className="text-sm text-muted-foreground" role="status">
-          {positionMessage(state, fromKm)}
+          {positionMessage(state)}
         </p>
       )}
 
-      {(manualOpen || needsManual) && <ManualKm totalKm={totalKm} initialKm={fromKm} onSubmit={choose} />}
+      {(manualOpen || (needsManual && !offRoute)) && (
+        <ManualKm totalKm={totalKm} initialKm={fromKm} onSubmit={choose} />
+      )}
     </section>
   );
 }
 
-function positionMessage(state: ReturnType<typeof usePositionOnRoute>["state"], fromKm: number | null): string {
+function positionMessage(state: ReturnType<typeof usePositionOnRoute>["state"]): string {
   switch (state.status) {
     case "inaccurate":
-      return `定位不準（誤差約 ${Math.round(state.accuracyM)} m），請手動選目前里程。`;
+      return `定位不準（誤差約 ${Math.round(state.accuracyM)} m），請手動選里程。`;
     case "off_route":
-      return fromKm != null
-        ? `你現在離路線約 ${distanceLabel(state.distKm)}，下面仍是從 ${fromKm.toFixed(1)} km 往前的判讀；回到路線上會自動更新。`
-        : `你不在這條路線上（離路約 ${distanceLabel(state.distKm)}），不提供前方判定；若確定在路線上，可手動選里程。`;
+      return `你不在這條路線上（離路約 ${distanceLabel(state.distKm)}）。`;
     case "denied":
-      return "沒有定位權限，可以手動選目前里程。";
+      return "沒有定位權限，請手動選里程。";
     case "no_route":
-      return "這條路線沒有軌跡資料，無法定位，可以手動選目前里程。";
+      return "這條路線沒有軌跡資料，請手動選里程。";
     default:
-      return "暫時取不到定位，可以手動選目前里程。";
+      return "取不到定位，請手動選里程。";
   }
 }
 
 const roundKm = (km: number) => Math.round(km * 10) / 10;
 
 const distanceLabel = (km: number) => (km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`);
-
-const agoLabel = (min: number) => (min < 1 ? "剛剛的位置" : `${min} 分鐘前的位置`);
 
 function ManualKm({
   totalKm,

@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { locateOnRoute, type RoutePolylineKm, type RoutePosition } from "@/lib/routes/recon-geo";
 import { RIDE_REBRIEF_MAX_AGE_MS, shouldRebrief, type AppliedKm } from "@/lib/routes/ride-position";
-import { clearRideKm, loadRideKm, saveRideKm } from "@/lib/routes/ride-position-storage";
 
 /**
  * 途中模式定位：在手機端把高精度定位換算成路線里程；座標不上傳、不儲存，只記里程。
@@ -11,7 +10,6 @@ import { clearRideKm, loadRideKm, saveRideKm } from "@/lib/routes/ride-position-
  *
  * - 已授權定位時自動定位：進路線頁、切路線、回到畫面；第一次授權仍要使用者按按鈕（不主動跳權限詢問）。
  * - 途中模式且畫面在前景時持續定位，移動滿 0.5 km 或距上次判讀滿 5 分鐘才重新判讀。
- * - 每條路線記住上次里程：切回來先顯示，並作為往返路線判斷「第幾次經過」的依據。
  * - 自動定位不準、不在路線上時不打擾使用者（多半是在家規劃路線）；按按鈕才顯示原因。
  */
 export type PositionOnRouteState =
@@ -20,8 +18,6 @@ export type PositionOnRouteState =
   | { status: "denied" }
   /** 瀏覽器不支援、逾時或其他定位錯誤 */
   | { status: "unavailable" }
-  /** 切回路線時套用的上次里程，尚未重新定位；ageMin 為距今分鐘數 */
-  | { status: "remembered"; ageMin: number }
   | RoutePosition;
 
 /** 定位來源：tap 為使用者按按鈕，auto 為自動單次定位，watch 為途中模式持續定位 */
@@ -39,14 +35,13 @@ const roundKm = (km: number) => Math.round(km * 10) / 10;
 interface Options {
   routeId: string;
   polyline: RoutePolylineKm | null;
-  totalKm: number;
   /** 目前是否在途中模式（已有生效里程） */
   riding: boolean;
   /** 套用新的里程（觸發重新判讀） */
   onKm: (km: number) => void;
 }
 
-export function usePositionOnRoute({ routeId, polyline, totalKm, riding, onKm }: Options) {
+export function usePositionOnRoute({ routeId, polyline, riding, onKm }: Options) {
   const [state, setState] = useState<PositionOnRouteState>({ status: "idle" });
   const { state: permission, markGranted } = useGeolocationPermission();
   const visible = usePageVisible();
@@ -64,19 +59,12 @@ export function usePositionOnRoute({ routeId, polyline, totalKm, riding, onKm }:
     onKmRef.current = onKm;
   }, [routeId, onKm]);
 
-  // 切路線：帶回這條路線上次的里程（未過期才用）
+  // 切路線：清掉上一條路線的狀態；自動定位的 effect 會對新路線重新定位
   useEffect(() => {
-    const now = Date.now();
-    const remembered = loadRideKm(routeId, now, totalKm);
-    previousKmRef.current = remembered?.km;
-    appliedRef.current = remembered;
-    if (remembered && !dismissedRef.current.has(routeId)) {
-      setState({ status: "remembered", ageMin: Math.round((now - remembered.at) / 60_000) });
-      onKmRef.current(remembered.km);
-    } else {
-      setState({ status: "idle" });
-    }
-  }, [routeId, totalKm]);
+    previousKmRef.current = undefined;
+    appliedRef.current = null;
+    setState({ status: "idle" });
+  }, [routeId]);
 
   /** 套用里程：force 為使用者操作或定時刷新，否則依移動距離與時間節流 */
   const apply = useCallback(
@@ -86,10 +74,9 @@ export function usePositionOnRoute({ routeId, polyline, totalKm, riding, onKm }:
       if (!force && !shouldRebrief(appliedRef.current, rounded, now)) return;
       const applied = { km: rounded, at: now };
       appliedRef.current = applied;
-      saveRideKm(routeId, applied);
       onKmRef.current(rounded);
     },
-    [routeId]
+    []
   );
 
   const handleFix = useCallback(
@@ -103,8 +90,6 @@ export function usePositionOnRoute({ routeId, polyline, totalKm, riding, onKm }:
       );
       if (result.status === "on_route") {
         previousKmRef.current = result.km;
-        // 記最新位置（不只判讀用的里程），切回來時才接近實際所在
-        saveRideKm(forRouteId, { km: roundKm(result.km), at: Date.now() });
         setState(result);
         apply(result.km, source === "tap");
         return;
@@ -190,18 +175,14 @@ export function usePositionOnRoute({ routeId, polyline, totalKm, riding, onKm }:
     [routeId, apply]
   );
 
-  /** 離開途中模式：忘掉這條路線的里程，本次瀏覽不再自動進入 */
+  /** 離開途中模式：本次瀏覽不再對這條路線自動進入，按定位才恢復 */
   const dismiss = useCallback(() => {
     dismissedRef.current.add(routeId);
-    clearRideKm(routeId);
     appliedRef.current = null;
     setState({ status: "idle" });
   }, [routeId]);
 
-  /** 畫面開著時會自動更新位置 */
-  const tracking = permission === "granted" && visible && riding && polyline != null;
-
-  return { state, tracking, locate, choose, dismiss };
+  return { state, locate, choose, dismiss };
 }
 
 /** 定位權限狀態；不支援 Permissions API 時為 null（只能靠使用者按按鈕） */

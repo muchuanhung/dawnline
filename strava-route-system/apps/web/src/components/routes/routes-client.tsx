@@ -231,7 +231,6 @@ export function RoutesClient({
                 polyline={selectedPolyline}
                 totalKm={routeTotalKm(selectedRoute)}
                 fromKm={aheadKm}
-                activity={briefing.briefing?.activity ?? null}
                 onChange={setAheadKm}
               />
               {/* 途中模式的出發時間是由目前位置反推的，不提供出發時間設定，避免與「現在」矛盾 */}
