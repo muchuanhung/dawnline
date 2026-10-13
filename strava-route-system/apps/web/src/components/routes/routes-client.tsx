@@ -188,12 +188,12 @@ export function RoutesClient({
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    <RouteFilters search={search} onSearch={setSearch} typeFilter={typeFilter} onFilter={setTypeFilter} />
-                    <div className="space-y-2">
-                      {filteredRoutes.map((route, i) => (
-                        <RouteCard key={route.id} {...cardProps(route, i)} />
-                      ))}
-                    </div>
+                      <RouteFilters search={search} onSearch={setSearch} typeFilter={typeFilter} onFilter={setTypeFilter} />
+                      <div className="space-y-2">
+                        {filteredRoutes.map((route, i) => (
+                          <RouteCard key={route.id} {...cardProps(route, i)} />
+                        ))}
+                      </div>
                   </div>
                 )}
               </div>
@@ -218,38 +218,40 @@ export function RoutesClient({
             >
               <RouteHeader
                 route={selectedRoute}
-                verdict={verdict}
-                loading={briefing.loading}
                 departureLabel={(() => {
                   const s = briefing.briefing?.departureSuggestion;
                   if (!s) return null;
                   return s.nowIsBest ? "現在" : formatClock(new Date(s.from), new Date());
                 })()}
               />
-              <RideAhead
-                routeId={selectedRoute.id}
-                polyline={selectedPolyline}
-                totalKm={routeTotalKm(selectedRoute)}
-                fromKm={aheadKm}
-                onChange={setAheadKm}
-              />
-              {/* 途中模式的出發時間是由目前位置反推的，不提供出發時間設定，避免與「現在」矛盾 */}
-              {briefing.briefing && aheadKm == null && (
-                <TripSettings
-                  departure={briefing.briefing.departure}
-                  activity={briefing.briefing.activity}
-                  speedKmh={briefing.briefing.speedKmh}
-                  defaultActivity={briefing.briefing.defaultActivity}
-                  explicitActivity={trip.activity}
-                  explicitDeparture={trip.depart}
-                />
-              )}
               <ReconView
                 route={selectedRoute}
                 cctvFeeds={cctvFeeds}
                 cctvLoading={cctvLoading}
                 cctvError={cctvError}
                 briefing={briefing}
+                afterHero={
+                  <div className="space-y-3">
+                  <RideAhead
+                    routeId={selectedRoute.id}
+                    polyline={selectedPolyline}
+                    totalKm={routeTotalKm(selectedRoute)}
+                    fromKm={aheadKm}
+                    onChange={setAheadKm}
+                  />
+                  {/* 途中模式的出發時間是由目前位置反推的，不提供出發時間設定，避免與「現在」矛盾 */}
+                  {briefing.briefing && aheadKm == null && (
+                    <TripSettings
+                      departure={briefing.briefing.departure}
+                      activity={briefing.briefing.activity}
+                      speedKmh={briefing.briefing.speedKmh}
+                      defaultActivity={briefing.briefing.defaultActivity}
+                      explicitActivity={trip.activity}
+                      explicitDeparture={trip.depart}
+                    />
+                  )}
+                  </div>
+                }
               />
             </motion.div>
           )}

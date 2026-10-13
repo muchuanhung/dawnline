@@ -35,8 +35,6 @@ export interface CCTVFeed {
     lat?: number;
     lon?: number;
     imageSeed: number;
-    /** unknown：鏡頭沒有探測過連線狀態（目前所有來源都是），不可顯示成直播 */
-    status: "online" | "offline" | "degraded" | "unknown";
     videoUrl?: string;
     township?: string;
   }

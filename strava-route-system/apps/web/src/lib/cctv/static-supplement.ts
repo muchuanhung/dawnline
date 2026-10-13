@@ -70,8 +70,6 @@ function toCCTVFeed(item: StaticCCTVItem): CCTVFeed {
     township: item.township,
     lastUpdated: "手動維護的鏡頭清單",
     imageSeed: seed,
-    // 沒有探測過鏡頭是否在線，不可標成直播
-    status: "unknown",
     videoUrl: item.videoUrl,
   };
 }

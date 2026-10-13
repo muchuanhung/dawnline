@@ -72,6 +72,5 @@ export const CCTV_FEED: CCTVFeed = {
   lat: 25.1,
   lon: 121.55,
   imageSeed: 1,
-  status: "unknown",
   videoUrl: "https://tw.live/cam/?id=test",
 };

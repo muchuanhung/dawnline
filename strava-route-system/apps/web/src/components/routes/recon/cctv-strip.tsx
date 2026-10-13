@@ -4,7 +4,6 @@ import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import type { CctvMarker } from "@/lib/routes/recon-geo";
 import Spinner from "@/components/ui/Spinner";
-import { CCTV_STATUS } from "./cctv-viewer";
 
 /** 沿途監視器清單：點選後游標跳到該鏡頭的里程 */
 export function CctvStrip({
@@ -60,7 +59,6 @@ export function CctvStrip({
         <div className="flex w-max gap-2">
           {markers.map((m) => {
             const isActive = m.id === activeId;
-            const status = CCTV_STATUS[m.status];
             return (
               <button
                 key={m.id}
@@ -77,10 +75,8 @@ export function CctvStrip({
                   isActive ? "border-foreground bg-muted/60" : "border-border hover:bg-muted/40"
                 )}
               >
-                <span className="flex items-center gap-1.5 font-mono text-xs tabular-nums text-muted-foreground">
-                  <span className={cn("h-1.5 w-1.5 rounded-full", status.dot)} aria-hidden />
+                <span className="font-mono text-xs tabular-nums text-muted-foreground">
                   {m.km.toFixed(1)} km
-                  <span className="sr-only">{status.text}</span>
                 </span>
                 <span className="w-full truncate text-sm text-foreground">{m.name}</span>
               </button>

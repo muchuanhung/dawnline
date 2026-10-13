@@ -43,7 +43,6 @@ export type CctvMarker = {
   lon?: number;
   /** CCTV 座標投影到 route polyline 的最短距離（km），用來排除離路很遠的鏡頭 */
   distToRouteKm?: number;
-  status: CCTVFeed["status"];
   /** 鏡頭所在行政區，標題用「鏡頭名・行政區」，避免與 location 重複 */
   township?: string;
   lastUpdated?: string;
@@ -366,7 +365,6 @@ export function buildCctvMarkers(
         videoUrl: feed.videoUrl,
         lat: normalized?.lat,
         lon: normalized?.lon,
-        status: feed.status,
         township: feed.township,
         lastUpdated: feed.lastUpdated,
       } satisfies CctvMarker;

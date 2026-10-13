@@ -173,7 +173,7 @@ export function RouteSimClient() {
 
   const cctvBlock = (
     <div className="space-y-3">
-      <CctvViewer marker={activeMarker} positionKm={km} />
+      <CctvViewer marker={activeMarker} positionKm={km} loading={cctvLoading} />
       <CctvCoverageBar markers={markers} totalKm={totalKm} coverKm={COVER_KM} positionKm={km} onSelect={setKm} />
       <CctvStrip
         markers={markers}

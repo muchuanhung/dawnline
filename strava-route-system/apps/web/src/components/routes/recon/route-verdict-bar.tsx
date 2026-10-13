@@ -5,7 +5,7 @@ import { UnknownReasons } from "@/components/verdict/unknown-reasons";
 import { cn } from "@/lib/utils";
 import type { ReconVerdict, VerdictLevel } from "@/lib/routes/recon-geo";
 
-const LEVEL_STYLE: Record<
+export const VERDICT_LEVEL_STYLE: Record<
   VerdictLevel,
   { word: string; icon: React.ComponentType<{ className?: string }>; box: string; iconClass: string; wordClass: string }
 > = {
@@ -41,7 +41,7 @@ const LEVEL_STYLE: Record<
 
 /** 第 1 層：全線判定，一行看懂危險等級與原因 */
 export function RouteVerdictBar({ verdict }: { verdict: ReconVerdict }) {
-  const style = LEVEL_STYLE[verdict.level];
+  const style = VERDICT_LEVEL_STYLE[verdict.level];
   const Icon = style.icon;
 
   return (

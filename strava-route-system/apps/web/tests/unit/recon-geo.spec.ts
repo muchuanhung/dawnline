@@ -279,11 +279,10 @@ test.describe("summarizeVerdict", () => {
 });
 
 test.describe("buildCctvMarkers", () => {
-  test("帶出行政區與未探測（unknown）狀態，供標題與狀態燈使用", () => {
+  test("帶出行政區，供標題顯示「鏡頭名・行政區」", () => {
     const route = makeRoute();
-    const [marker] = buildCctvMarkers(route, [{ ...CCTV_FEED, township: "士林區", status: "unknown" }]);
+    const [marker] = buildCctvMarkers(route, [{ ...CCTV_FEED, township: "士林區" }]);
     expect(marker?.township).toBe("士林區");
-    expect(marker?.status).toBe("unknown");
   });
 
   test("沒有鏡頭時回傳空陣列", () => {

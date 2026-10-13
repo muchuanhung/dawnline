@@ -1,6 +1,6 @@
 /**
  * CCTV iframe 嵌入政策（X-Frame-Options／CSP、並發上限、白邊裁切）
- * cctv-gallery 與路線偵察畫面共用
+ * 路線偵察畫面共用
  */
 
 /** 來源設有 X-Frame-Options／CSP，iframe 會空白，只能外連 */
