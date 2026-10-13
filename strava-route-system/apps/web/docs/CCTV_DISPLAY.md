@@ -13,7 +13,7 @@ TDX 回傳的 CCTV 資料來自各縣市、高公局、公路總局等不同來�
 
 部分政府網站設定 `X-Frame-Options: DENY` 或 CSP `frame-ancestors 'none'`，瀏覽器會阻擋 iframe 載入。
 
-**已列入黑名單的網域**（`cctv-gallery.tsx` 內 `BLOCKED_IFRAME_DOMAINS`）：
+**已列入黑名單的網域**（`src/lib/cctv/embed-policy.ts` 內 `BLOCKED_IFRAME_DOMAINS`）：
 
 - `atis.ntpc.gov.tw`（新北市交通局）
 - `nfb.gov.tw`（高公局）
