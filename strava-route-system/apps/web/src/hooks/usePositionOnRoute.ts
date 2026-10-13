@@ -103,6 +103,8 @@ export function usePositionOnRoute({ routeId, polyline, totalKm, riding, onKm }:
       );
       if (result.status === "on_route") {
         previousKmRef.current = result.km;
+        // 記最新位置（不只判讀用的里程），切回來時才接近實際所在
+        saveRideKm(forRouteId, { km: roundKm(result.km), at: Date.now() });
         setState(result);
         apply(result.km, source === "tap");
         return;

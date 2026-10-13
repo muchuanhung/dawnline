@@ -81,7 +81,7 @@ export function RideAhead({ routeId, polyline, totalKm, fromKm, activity, onChan
       ) : (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm text-foreground">
-            {state.status === "remembered" ? "上次在" : "目前在"}{" "}
+            {state.status === "remembered" ? "上次在" : state.status === "off_route" ? "離開路線前在" : "目前在"}{" "}
             <span className="font-mono font-semibold">{(shownKm ?? fromKm).toFixed(1)} km</span>
             {state.status === "remembered" && (
               <span className="text-muted-foreground">（{agoLabel(state.ageMin)}）</span>
@@ -131,7 +131,7 @@ export function RideAhead({ routeId, polyline, totalKm, fromKm, activity, onChan
 
       {needsManual && (
         <p className="text-sm text-muted-foreground" role="status">
-          {positionMessage(state)}
+          {positionMessage(state, fromKm)}
         </p>
       )}
 
@@ -140,12 +140,14 @@ export function RideAhead({ routeId, polyline, totalKm, fromKm, activity, onChan
   );
 }
 
-function positionMessage(state: ReturnType<typeof usePositionOnRoute>["state"]): string {
+function positionMessage(state: ReturnType<typeof usePositionOnRoute>["state"], fromKm: number | null): string {
   switch (state.status) {
     case "inaccurate":
       return `定位不準（誤差約 ${Math.round(state.accuracyM)} m），請手動選目前里程。`;
     case "off_route":
-      return `你不在這條路線上（離路約 ${Math.round(state.distKm * 1000)} m），不提供前方判定；若確定在路線上，可手動選里程。`;
+      return fromKm != null
+        ? `你現在離路線約 ${distanceLabel(state.distKm)}，下面仍是從 ${fromKm.toFixed(1)} km 往前的判讀；回到路線上會自動更新。`
+        : `你不在這條路線上（離路約 ${distanceLabel(state.distKm)}），不提供前方判定；若確定在路線上，可手動選里程。`;
     case "denied":
       return "沒有定位權限，可以手動選目前里程。";
     case "no_route":
@@ -156,6 +158,8 @@ function positionMessage(state: ReturnType<typeof usePositionOnRoute>["state"]):
 }
 
 const roundKm = (km: number) => Math.round(km * 10) / 10;
+
+const distanceLabel = (km: number) => (km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`);
 
 const agoLabel = (min: number) => (min < 1 ? "剛剛的位置" : `${min} 分鐘前的位置`);
 
