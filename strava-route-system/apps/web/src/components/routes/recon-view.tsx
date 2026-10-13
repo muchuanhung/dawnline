@@ -14,6 +14,7 @@ import {
   type RouteStage,
 } from "@/lib/routes/recon-geo";
 import { useReconPosition } from "@/hooks/useReconPosition";
+import { dedupeMarkers } from "@/lib/routes/route-track";
 import { etaLabel, paceFor } from "@/lib/routes/trip";
 import { roadEventsOf, verdictOf, type RouteBriefingState } from "@/hooks/useRouteBriefing";
 import { HazardList } from "./recon/hazard-list";
@@ -53,8 +54,9 @@ export function ReconView({
 }: ReconViewProps) {
   const routePolyline = useMemo(() => buildRoutePolylineKm(route), [route]);
 
+  // 同一地點附近的多台鏡頭只留一台，軌道與 ‹ › 才不會在同一點重複
   const cctvMarkers = useMemo(
-    () => buildCctvMarkers(route, cctvFeedsProp ?? route.cctvFeeds ?? [], routePolyline),
+    () => dedupeMarkers(buildCctvMarkers(route, cctvFeedsProp ?? route.cctvFeeds ?? [], routePolyline)),
     [route, cctvFeedsProp, routePolyline]
   );
   const initialMarker = useMemo(

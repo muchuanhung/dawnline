@@ -1,8 +1,9 @@
 /**
- * 里程軌道（影像主視覺下方的拖曳條）用的純函式：刻度、鏡頭序號、路況色段、停點
+ * 里程軌道（影像主視覺下方的拖曳條）用的純函式：刻度、鏡頭去重與序號、路況色段、停點
  * 不依賴 React，可單獨測試
  */
 
+import { isBlockedByCSP } from "@/lib/cctv/embed-policy";
 import type { CctvMarker, Hazard, HazardLevel, RouteStage, VerdictLevel } from "./recon-geo";
 
 export interface TrackTick {
@@ -35,6 +36,36 @@ export function trackTicks(totalKm: number): TrackTick[] {
   }
   ticks.push({ at: 1, km: endKm });
   return ticks;
+}
+
+/** 里程差在這個距離內的鏡頭視為同一個地點 */
+const SAME_SPOT_KM = 0.3;
+
+/** 同一地點挑哪台：能內嵌播放優先，其次離路線最近 */
+function betterMarker(a: CctvMarker, b: CctvMarker): CctvMarker {
+  const playable = (m: CctvMarker) => (m.videoUrl && !isBlockedByCSP(m.videoUrl) ? 1 : 0);
+  if (playable(a) !== playable(b)) return playable(a) > playable(b) ? a : b;
+  return (a.distToRouteKm ?? Infinity) <= (b.distToRouteKm ?? Infinity) ? a : b;
+}
+
+/**
+ * 同一地點附近的多台鏡頭只留一台（例：起點路口有 3 台，只顯示 1 台），依里程排序。
+ * 以每群第一台的里程為基準分群，群內挑能播放、離路線最近的那台。
+ */
+export function dedupeMarkers(markers: CctvMarker[]): CctvMarker[] {
+  const sorted = [...markers].sort((a, b) => a.km - b.km);
+  const kept: CctvMarker[] = [];
+  let anchorKm = -Infinity;
+  for (const m of sorted) {
+    const last = kept[kept.length - 1];
+    if (last && m.km - anchorKm <= SAME_SPOT_KM) {
+      kept[kept.length - 1] = betterMarker(last, m);
+    } else {
+      kept.push(m);
+      anchorKm = m.km;
+    }
+  }
+  return kept;
 }
 
 /** 目前鏡頭在全部鏡頭中的序號（1 起算）；找不到為 null */

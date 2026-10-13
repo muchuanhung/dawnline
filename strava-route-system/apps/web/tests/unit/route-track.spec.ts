@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import type { CctvMarker, Hazard, RouteStage } from "@/lib/routes/recon-geo";
 import {
+  dedupeMarkers,
   hazardZones,
   markerOrdinal,
   nearestStop,
@@ -69,6 +70,38 @@ test.describe("trackTicks 依路線長度給整數刻度", () => {
     expect(kms(0)).toEqual([0]);
     expect(kms(0.4)).toEqual([0]);
     expect(kms(Number.NaN)).toEqual([0]);
+  });
+});
+
+test.describe("dedupeMarkers 同一地點只留一台", () => {
+  const cam = (id: string, km: number, extra: Partial<CctvMarker> = {}): CctvMarker => ({ ...marker(id, km), ...extra });
+
+  test("起點路口 3 台只留 1 台，其他地點不受影響", () => {
+    const kept = dedupeMarkers([cam("a", 0), cam("b", 0.1), cam("c", 0.2), cam("d", 4.2)]);
+    expect(kept.map((m) => m.km)).toEqual([expect.any(Number), 4.2]);
+    expect(kept).toHaveLength(2);
+  });
+
+  test("能內嵌播放的優先，其次離路線最近", () => {
+    const kept = dedupeMarkers([
+      cam("blocked", 0, { videoUrl: "https://tw.live/cam/?id=1", distToRouteKm: 0.01 }),
+      cam("far", 0.1, { videoUrl: "https://cctv.example.tw/a.jpg", distToRouteKm: 0.2 }),
+      cam("near", 0.2, { videoUrl: "https://cctv.example.tw/b.jpg", distToRouteKm: 0.05 }),
+    ]);
+    expect(kept.map((m) => m.id)).toEqual(["near"]);
+  });
+
+  test("相距超過 0.3 km 的鏡頭各自保留", () => {
+    expect(dedupeMarkers([cam("a", 1), cam("b", 1.4), cam("c", 1.8)]).map((m) => m.id)).toEqual(["a", "b", "c"]);
+  });
+
+  test("不會串連成一長串：以每群第一台為基準", () => {
+    // 0、0.25、0.5：0.5 距第一台 0.5 km，另成一群
+    expect(dedupeMarkers([cam("a", 0), cam("b", 0.25), cam("c", 0.5)])).toHaveLength(2);
+  });
+
+  test("沒有鏡頭時為空", () => {
+    expect(dedupeMarkers([])).toEqual([]);
   });
 });
 

@@ -37,7 +37,7 @@ const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
  * 里程軌道：軌道本身就是路況條（綠安全、橘注意、紅危險、斜線未判定），上面一顆拇指點。
  * 拖曳與 ‹ › 只停在鏡頭與示警路段的起點（停點），中間的公里數不停；停到示警路段時展開說明。
  * 示警再密也只是一段顏色，不會被拇指蓋住。沒有任何停點的路線才連續拖曳。
- * 只標整數刻度、不畫鏡頭刻度（見 lib/routes/route-track）。
+ * 軌道下方的小點是鏡頭位置；刻度只標整數公里（見 lib/routes/route-track）。
  */
 export function RouteTrack({
   totalKm,
@@ -188,7 +188,7 @@ export function RouteTrack({
           }}
           onPointerUp={() => setDragging(false)}
           onPointerCancel={() => setDragging(false)}
-          className="relative h-11 cursor-pointer touch-none select-none rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="relative h-14 cursor-pointer touch-none select-none rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           {/* 軌道本身就是路況條；沒有色段的地方（判讀未回來、途中已走過）只留底色 */}
           <div className="absolute inset-x-0 top-1/2 h-3.5 -translate-y-1/2 overflow-hidden rounded-full bg-border" aria-hidden>
@@ -204,6 +204,21 @@ export function RouteTrack({
               />
             ))}
           </div>
+          {/* 鏡頭位置：軌道正下方的小點，目前這台放大；看得出鏡頭之間相距多遠 */}
+          {markers.map((m) => {
+            const active = m.id === activeMarker?.id;
+            return (
+              <span
+                key={m.id}
+                className={cn(
+                  "absolute top-[calc(50%+20px)] -translate-x-1/2 -translate-y-1/2 rounded-full",
+                  active ? "size-2.5 bg-foreground" : "size-1.5 bg-foreground/45"
+                )}
+                style={{ left: `${at(m.km) * 100}%` }}
+                aria-hidden
+              />
+            );
+          })}
           <div
             className={cn(
               "absolute top-1/2 size-7 -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-foreground bg-card shadow-md transition-transform",
