@@ -1,5 +1,5 @@
 /**
- * 里程軌道（影像主視覺下方的拖曳條）用的純函式：刻度、逐台切換、吸附、示警旗標合併
+ * 里程軌道（影像主視覺下方的拖曳條）用的純函式：刻度、逐台切換、停點、示警旗標合併
  * 不依賴 React，可單獨測試
  */
 
@@ -37,44 +37,12 @@ export function trackTicks(totalKm: number): TrackTick[] {
   return ticks;
 }
 
-/** 依里程排序後的上一台／下一台鏡頭；已在頭尾時回傳 null */
-export function stepMarker(
-  markers: CctvMarker[],
-  current: CctvMarker | null,
-  dir: 1 | -1
-): CctvMarker | null {
-  const sorted = [...markers].sort((a, b) => a.km - b.km);
-  if (sorted.length === 0) return null;
-  if (!current) return dir === 1 ? sorted[0]! : null;
-  const i = sorted.findIndex((m) => m.id === current.id);
-  if (i === -1) return null;
-  return sorted[i + dir] ?? null;
-}
-
 /** 目前鏡頭在全部鏡頭中的序號（1 起算）；找不到為 null */
 export function markerOrdinal(markers: CctvMarker[], current: CctvMarker | null): number | null {
   if (!current) return null;
   const sorted = [...markers].sort((a, b) => a.km - b.km);
   const i = sorted.findIndex((m) => m.id === current.id);
   return i === -1 ? null : i + 1;
-}
-
-/** 吸附距離：全長的 5%，最多 1 km */
-export function snapRadiusKm(totalKm: number): number {
-  return Math.min(1, Math.max(0, totalKm) * 0.05);
-}
-
-/**
- * 放開拖曳時的落點：吸附距離內有鏡頭就停在最近的鏡頭，沒有就停在原地
- * （原地沒有鏡頭時，主畫面會顯示最近一台並說明距離）
- */
-export function snapToMarker(markers: CctvMarker[], km: number, totalKm: number): number {
-  const radius = snapRadiusKm(totalKm);
-  let best: CctvMarker | null = null;
-  for (const m of markers) {
-    if (!best || Math.abs(m.km - km) < Math.abs(best.km - km)) best = m;
-  }
-  return best && Math.abs(best.km - km) <= radius ? best.km : km;
 }
 
 export interface TrackFlag {
@@ -103,4 +71,57 @@ export function groupTrackFlags(hazards: Hazard[], totalKm: number): TrackFlag[]
     }
   }
   return flags;
+}
+
+/**
+ * 軌道停點：拖曳與 ‹ › 只停在鏡頭與示警旗標，中間的公里數不停。
+ * 位置仍照實際里程，不改成等距，刻度與遠近才不會失真。
+ */
+export type TrackStop =
+  | { kind: "marker"; km: number; marker: CctvMarker }
+  | { kind: "flag"; km: number; flag: TrackFlag };
+
+/** 停點的識別：鏡頭用 id，旗標用里程（同一里程只會有一支旗標） */
+export function stopKey(stop: TrackStop): string {
+  return stop.kind === "marker" ? `m:${stop.marker.id}` : `f:${stop.flag.km}`;
+}
+
+/** 依里程排序的停點；同一里程時示警排在鏡頭前，先看到示警 */
+export function trackStops(markers: CctvMarker[], flags: TrackFlag[]): TrackStop[] {
+  const stops: TrackStop[] = [
+    ...flags.map((flag) => ({ kind: "flag" as const, km: flag.km, flag })),
+    ...markers.map((marker) => ({ kind: "marker" as const, km: marker.km, marker })),
+  ];
+  // Array.prototype.sort is stable, so flags stay ahead of markers at the same km
+  return stops.sort((a, b) => a.km - b.km);
+}
+
+/** 離指定里程最近的停點；沒有停點時為 null（軌道改回連續拖曳） */
+export function nearestStop(stops: TrackStop[], km: number): TrackStop | null {
+  let best: TrackStop | null = null;
+  for (const s of stops) {
+    if (!best || Math.abs(s.km - km) < Math.abs(best.km - km)) best = s;
+  }
+  return best;
+}
+
+/**
+ * 上一個／下一個停點。目前停在某個停點時照順序走（同一里程的多個停點也能逐一切換）；
+ * 不在停點上時，找目前里程之後（或之前）的第一個。已在頭尾時為 null。
+ */
+export function stepStop(
+  stops: TrackStop[],
+  current: TrackStop | null,
+  positionKm: number,
+  dir: 1 | -1
+): TrackStop | null {
+  if (current) {
+    const i = stops.findIndex((s) => stopKey(s) === stopKey(current));
+    if (i !== -1) return stops[i + dir] ?? null;
+  }
+  if (dir === 1) return stops.find((s) => s.km > positionKm) ?? null;
+  for (let i = stops.length - 1; i >= 0; i--) {
+    if (stops[i]!.km < positionKm) return stops[i]!;
+  }
+  return null;
 }

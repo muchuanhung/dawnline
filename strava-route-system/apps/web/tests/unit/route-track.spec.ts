@@ -3,8 +3,10 @@ import type { CctvMarker, Hazard } from "@/lib/routes/recon-geo";
 import {
   groupTrackFlags,
   markerOrdinal,
-  snapToMarker,
-  stepMarker,
+  nearestStop,
+  stepStop,
+  stopKey,
+  trackStops,
   trackTicks,
 } from "@/lib/routes/route-track";
 
@@ -47,53 +49,66 @@ test.describe("trackTicks 依路線長度給整數刻度", () => {
   });
 });
 
-test.describe("stepMarker／markerOrdinal 逐台切換", () => {
+test.describe("markerOrdinal 鏡頭序號", () => {
   const markers = [marker("c", 6.5), marker("a", 0), marker("b", 0), marker("d", 9.9)];
-
-  test("依里程排序，同一點的多台鏡頭也能逐台切換", () => {
-    const first = stepMarker(markers, null, 1)!;
-    expect(first.km).toBe(0);
-    const second = stepMarker(markers, first, 1)!;
-    expect(second.km).toBe(0);
-    expect(second.id).not.toBe(first.id);
-    expect(stepMarker(markers, second, 1)!.id).toBe("c");
-  });
-
-  test("已在頭尾時回傳 null", () => {
-    expect(stepMarker(markers, markers[3]!, 1)).toBeNull();
-    expect(stepMarker(markers, stepMarker(markers, null, 1), -1)).toBeNull();
-  });
-
-  test("沒有鏡頭時回傳 null", () => {
-    expect(stepMarker([], null, 1)).toBeNull();
-    expect(markerOrdinal([], null)).toBeNull();
-  });
 
   test("序號依里程排序、1 起算", () => {
     expect(markerOrdinal(markers, markers[0]!)).toBe(3);
     expect(markerOrdinal(markers, markers[3]!)).toBe(4);
   });
+
+  test("沒有鏡頭時為 null", () => {
+    expect(markerOrdinal([], null)).toBeNull();
+  });
 });
 
-test.describe("snapToMarker 放開拖曳時的落點", () => {
-  const markers = [marker("a", 2), marker("b", 6.5)];
+test.describe("軌道停點：只停在鏡頭與示警", () => {
+  // 第 3 台 15.9 km、第 4 台 33.7 km，中間 24 km 有示警
+  const markers = [marker("m4", 33.7), marker("m1", 2), marker("m3", 15.9), marker("m2", 6)];
+  const flags = groupTrackFlags([hazard("h", 24, "risky")], 50);
+  const stops = trackStops(markers, flags);
+  const key = (s: ReturnType<typeof nearestStop>) => (s ? stopKey(s) : null);
 
-  test("吸附距離內停在最近的鏡頭", () => {
-    // 10 km 路線吸附距離 0.5 km
-    expect(snapToMarker(markers, 6.2, 10)).toBe(6.5);
+  test("停點依里程排序，示警也是停點", () => {
+    expect(stops.map((s) => s.km)).toEqual([2, 6, 15.9, 24, 33.7]);
+    expect(stops[3]!.kind).toBe("flag");
   });
 
-  test("附近沒有鏡頭就停在原地", () => {
-    expect(snapToMarker(markers, 4.2, 10)).toBe(4.2);
+  test("同一里程時示警排在鏡頭前", () => {
+    const same = trackStops([marker("m", 5)], groupTrackFlags([hazard("h", 5)], 10));
+    expect(same.map((s) => s.kind)).toEqual(["flag", "marker"]);
   });
 
-  test("長路線吸附距離最多 1 km", () => {
-    expect(snapToMarker(markers, 3.2, 100)).toBe(3.2);
-    expect(snapToMarker(markers, 2.9, 100)).toBe(2);
+  test("拖到兩個停點中間，跳到最近的停點，不停在中間的公里數", () => {
+    expect(key(nearestStop(stops, 19))).toBe("m:m3");
+    expect(key(nearestStop(stops, 21))).toBe("f:24");
+    expect(key(nearestStop(stops, 30))).toBe("m:m4");
+    expect(key(nearestStop(stops, 50))).toBe("m:m4");
   });
 
-  test("沒有鏡頭時停在原地", () => {
-    expect(snapToMarker([], 3, 10)).toBe(3);
+  test("沒有停點時為 null，軌道改回連續拖曳", () => {
+    expect(nearestStop([], 3)).toBeNull();
+  });
+
+  test("‹ › 從目前停點照順序走，中間的示警算一站", () => {
+    const m3 = stops[2]!;
+    const next = stepStop(stops, m3, m3.km, 1)!;
+    expect(stopKey(next)).toBe("f:24");
+    expect(stopKey(stepStop(stops, next, next.km, 1)!)).toBe("m:m4");
+    expect(stopKey(stepStop(stops, m3, m3.km, -1)!)).toBe("m:m2");
+  });
+
+  test("不在停點上時，找目前里程之後或之前的第一個", () => {
+    expect(stopKey(stepStop(stops, null, 10, 1)!)).toBe("m:m3");
+    expect(stopKey(stepStop(stops, null, 10, -1)!)).toBe("m:m2");
+    expect(stopKey(stepStop(stops, null, 0, 1)!)).toBe("m:m1");
+  });
+
+  test("已在頭尾時為 null", () => {
+    expect(stepStop(stops, stops[4]!, 33.7, 1)).toBeNull();
+    expect(stepStop(stops, stops[0]!, 2, -1)).toBeNull();
+    expect(stepStop(stops, null, 40, 1)).toBeNull();
+    expect(stepStop([], null, 3, 1)).toBeNull();
   });
 });
 
