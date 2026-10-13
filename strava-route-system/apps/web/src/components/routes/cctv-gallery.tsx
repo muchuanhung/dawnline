@@ -4,9 +4,6 @@ import { useState, useCallback, useEffect, useRef, createContext, useContext } f
 import { motion } from "framer-motion";
 import {
   Camera,
-  AlertCircle,
-  CheckCircle2,
-  AlertTriangle as TriangleIcon,
   ExternalLink,
   Maximize2,
   X,
@@ -101,18 +98,8 @@ export function CCTVGallery({ feeds, loading }: CCTVGalleryProps) {
             TDX CCTV 監視器
           </p>
         </div>
-        <Badge
-          variant="outline"
-          className="border-success/30 text-success text-[10px] px-2 py-0.5"
-        >
-          {loading ? (
-            <span className="text-muted-foreground">載入中…</span>
-          ) : (
-            <>
-              <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-success inline-block animate-pulse" />
-              {feeds.filter((f) => f.status === "online").length}/{feeds.length} 連線
-            </>
-          )}
+        <Badge variant="outline" className="text-muted-foreground text-[10px] px-2 py-0.5">
+          {loading ? "載入中…" : `${feeds.length} 台`}
         </Badge>
       </div>
 
@@ -171,10 +158,6 @@ export function CCTVGallery({ feeds, loading }: CCTVGalleryProps) {
 function CCTVCard({ feed, index }: { feed: CCTVFeed; index: number }) {
   const ctx = useContext(VisibilityContext);
   const cardRef = useRef<HTMLDivElement>(null);
-  const statusIcon =
-    feed.status === "online" ? CheckCircle2 : feed.status === "degraded" ? TriangleIcon : AlertCircle;
-  const statusColor =
-    feed.status === "online" ? "#22c55e" : feed.status === "degraded" ? "#f59e0b" : "#ef4444";
 
   const needsSlot = feed.videoUrl && isRateLimited(feed.videoUrl);
   const hasSlot = ctx ? ctx.canShowIframe(feed.id) : true;
@@ -275,17 +258,6 @@ function CCTVCard({ feed, index }: { feed: CCTVFeed; index: number }) {
             </a>
           )}
 
-          {/* Status indicator */}
-          <div className="absolute top-2 left-2 flex items-center gap-1.5">
-            {(() => {
-              const StatusIcon = statusIcon;
-              return <StatusIcon className="h-3 w-3" style={{ color: statusColor }} />;
-            })()}
-            <span className="text-[10px] font-medium capitalize" style={{ color: statusColor }}>
-              {feed.status === "online" ? "連線" : feed.status === "degraded" ? "離線" : "離線"}
-            </span>
-          </div>
-
           {/* Expand button */}
           <DialogTrigger asChild>
             <button
@@ -302,14 +274,6 @@ function CCTVCard({ feed, index }: { feed: CCTVFeed; index: number }) {
             <span className="text-[10px] font-medium text-foreground">{feed.location}</span>
           </div>
 
-          {feed.status === "offline" && (
-            <div className="absolute inset-0 bg-background/60 flex items-center justify-center">
-              <div className="text-center">
-                <AlertCircle className="h-6 w-6 text-destructive mx-auto mb-1" />
-                <span className="text-xs text-destructive font-medium">訊號中斷</span>
-              </div>
-            </div>
-          )}
         </div>
 
         <DialogContent className="max-w-2xl bg-card border-border">
@@ -362,12 +326,6 @@ function CCTVCard({ feed, index }: { feed: CCTVFeed; index: number }) {
                 </span>
               </a>
             )}
-            <div className="absolute bottom-3 left-3 flex items-center gap-2">
-              {(() => {
-                const StatusIcon = statusIcon;
-                return <StatusIcon className="h-3.5 w-3.5" style={{ color: statusColor }} />;
-              })()}
-            </div>
           </div>
           <DialogClose asChild>
             <Button variant="outline" size="sm" className="w-fit ml-auto">
