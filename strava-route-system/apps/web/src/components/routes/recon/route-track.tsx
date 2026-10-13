@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { CctvMarker } from "@/lib/routes/recon-geo";
+import type { CctvMarker, VerdictLevel } from "@/lib/routes/recon-geo";
 import {
   markerOrdinal,
   nearestStop,
@@ -11,18 +11,32 @@ import {
   stopKey,
   trackStops,
   trackTicks,
-  type TrackFlag,
+  zoneAt,
+  zonesForPaint,
   type TrackStop,
+  type TrackZone,
 } from "@/lib/routes/route-track";
 
-const FLAG_DOT = { risky: "bg-destructive", caution: "bg-warning" } as const;
-const FLAG_THUMB = { risky: "border-destructive", caution: "border-warning" } as const;
+/** 路況色段：紅＝危險、橘＝注意、綠＝安全；未判定用斜線，與「安全」明顯區隔 */
+const ZONE_FILL: Record<VerdictLevel, string> = {
+  risky: "bg-destructive",
+  caution: "bg-warning",
+  clear: "bg-success",
+  unknown: "bg-muted-foreground/25",
+};
+const UNKNOWN_HATCH = {
+  backgroundImage:
+    "repeating-linear-gradient(135deg, var(--muted-foreground) 0 2px, transparent 2px 6px)",
+  opacity: 0.45,
+};
+const ZONE_WORD = { risky: "危險", caution: "注意" } as const;
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
 /**
- * 里程軌道：粗條＋大拇指點。拖曳與 ‹ › 只停在鏡頭與示警（停點），中間的公里數不停；
- * 示警點嵌在軌道上，停到示警時展開說明。沒有任何停點的路線才連續拖曳。
+ * 里程軌道：軌道本身就是路況條（綠安全、橘注意、紅危險、斜線未判定），上面一顆拇指點。
+ * 拖曳與 ‹ › 只停在鏡頭與示警路段的起點（停點），中間的公里數不停；停到示警路段時展開說明。
+ * 示警再密也只是一段顏色，不會被拇指蓋住。沒有任何停點的路線才連續拖曳。
  * 只標整數刻度、不畫鏡頭刻度（見 lib/routes/route-track）。
  */
 export function RouteTrack({
@@ -30,35 +44,37 @@ export function RouteTrack({
   positionKm,
   markers,
   activeMarker,
-  flags,
-  activeFlag,
+  zones,
+  activeZone,
   onMove,
   onSelectMarker,
-  onSelectFlag,
+  onSelectZone,
 }: {
   totalKm: number;
   positionKm: number;
   markers: CctvMarker[];
   activeMarker: CctvMarker | null;
-  flags: TrackFlag[];
-  activeFlag: TrackFlag | null;
+  /** 路況色段（見 trackZones） */
+  zones: TrackZone[];
+  /** 展開說明中的示警路段 */
+  activeZone: TrackZone | null;
   /** 沒有停點時的連續拖曳、鍵盤移動 */
   onMove: (km: number) => void;
   /** 停到鏡頭（同一點有多台時要指定是哪一台） */
   onSelectMarker: (marker: CctvMarker) => void;
-  /** 停到示警 */
-  onSelectFlag: (flag: TrackFlag) => void;
+  /** 停到示警路段 */
+  onSelectZone: (zone: TrackZone) => void;
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
   const ticks = useMemo(() => trackTicks(totalKm), [totalKm]);
-  const stops = useMemo(() => trackStops(markers, flags), [markers, flags]);
+  const stops = useMemo(() => trackStops(markers, zones), [markers, zones]);
   const at = (km: number) => (totalKm > 0 ? clamp01(km / totalKm) : 0);
   const pct = `${at(positionKm) * 100}%`;
 
-  // 目前停在哪個停點：展開中的示警優先，其次是剛好停在該里程的鏡頭
-  const current: TrackStop | null = activeFlag
-    ? { kind: "flag", km: activeFlag.km, flag: activeFlag }
+  // 目前停在哪個停點：展開中的示警路段優先，其次是剛好停在該里程的鏡頭
+  const current: TrackStop | null = activeZone
+    ? { kind: "zone", km: activeZone.startKm, zone: activeZone }
     : activeMarker && activeMarker.km === positionKm
       ? { kind: "marker", km: activeMarker.km, marker: activeMarker }
       : null;
@@ -66,7 +82,7 @@ export function RouteTrack({
 
   const selectStop = (stop: TrackStop) => {
     if (stop.kind === "marker") onSelectMarker(stop.marker);
-    else onSelectFlag(stop.flag);
+    else onSelectZone(stop.zone);
   };
 
   const kmAt = useCallback(
@@ -123,21 +139,31 @@ export function RouteTrack({
   const next = stepStop(stops, current, positionKm, 1);
   const ordinal = markerOrdinal(markers, current?.kind === "marker" ? current.marker : null);
   const kmText = `${positionKm.toFixed(1)} km`;
-  const caption =
-    current?.kind === "flag" ? (
-      <span className="font-medium">
-        示警 {current.flag.hazards.length} 項・{kmText}
-      </span>
-    ) : markers.length >= 2 && ordinal != null ? (
-      <>
-        第 <b className="tabular-nums">{ordinal}</b>／{markers.length} 台・{kmText}
-      </>
-    ) : markers.length === 1 ? (
-      `沿途 1 台・${kmText}`
-    ) : (
-      kmText
-    );
-  const valueText = current?.kind === "flag" ? `${kmText}，示警 ${current.flag.hazards.length} 項` : kmText;
+  // 一般路段沒有資料時要講明「未判定」，不能讓沒上色被當成安全
+  const unknownHere = zoneAt(zones, positionKm)?.level === "unknown";
+  const zoneText =
+    current?.kind === "zone"
+      ? `${ZONE_WORD[current.zone.level as keyof typeof ZONE_WORD] ?? "示警"}路段 ${current.zone.startKm.toFixed(1)}–${current.zone.endKm.toFixed(1)} km・示警 ${current.zone.hazards.length} 項`
+      : null;
+  const caption = zoneText ? (
+    <span className={cn("font-medium", current?.kind === "zone" && current.zone.level === "risky" && "text-destructive")}>
+      {zoneText}
+    </span>
+  ) : (
+    <>
+      {markers.length >= 2 && ordinal != null ? (
+        <>
+          第 <b className="tabular-nums">{ordinal}</b>／{markers.length} 台・{kmText}
+        </>
+      ) : markers.length === 1 ? (
+        `沿途 1 台・${kmText}`
+      ) : (
+        kmText
+      )}
+      {unknownHere && <span className="text-muted-foreground">・此段未判定</span>}
+    </>
+  );
+  const valueText = zoneText ?? (unknownHere ? `${kmText}，此段未判定` : kmText);
 
   return (
     <div className="space-y-1 pt-3 pb-2">
@@ -164,27 +190,24 @@ export function RouteTrack({
           onPointerCancel={() => setDragging(false)}
           className="relative h-11 cursor-pointer touch-none select-none rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <div className="absolute inset-x-0 top-1/2 h-3 -translate-y-1/2 rounded-full bg-border" aria-hidden />
-          <div className="absolute left-0 top-1/2 h-3 -translate-y-1/2 rounded-full bg-primary" style={{ width: pct }} aria-hidden />
-          {/* 示警點嵌在軌道上：本身就是停點，拖到或點到就停下並展開說明 */}
-          {flags.map((f) => (
-            <span
-              key={`${f.km}-${f.hazards[0]?.id}`}
-              className={cn(
-                "absolute top-1/2 flex size-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-card text-[11px] font-bold leading-none text-white",
-                FLAG_DOT[f.level]
-              )}
-              style={{ left: `${at(f.km) * 100}%` }}
-              aria-hidden
-            >
-              {f.hazards.length > 1 ? f.hazards.length : "!"}
-            </span>
-          ))}
+          {/* 軌道本身就是路況條；沒有色段的地方（判讀未回來、途中已走過）只留底色 */}
+          <div className="absolute inset-x-0 top-1/2 h-3.5 -translate-y-1/2 overflow-hidden rounded-full bg-border" aria-hidden>
+            {zonesForPaint(zones).map((z) => (
+              <span
+                key={`${z.level}-${z.startKm}`}
+                className={cn("absolute inset-y-0", ZONE_FILL[z.level])}
+                style={{
+                  left: `${at(z.startKm) * 100}%`,
+                  width: `${(at(z.endKm) - at(z.startKm)) * 100}%`,
+                  ...(z.level === "unknown" ? UNKNOWN_HATCH : undefined),
+                }}
+              />
+            ))}
+          </div>
           <div
             className={cn(
-              "absolute top-1/2 size-[26px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] bg-card shadow-sm transition-transform",
-              current?.kind === "flag" ? FLAG_THUMB[current.flag.level] : "border-primary",
-              dragging && "scale-110 ring-8 ring-primary/15"
+              "absolute top-1/2 size-7 -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-foreground bg-card shadow-md transition-transform",
+              dragging && "scale-110 ring-8 ring-foreground/10"
             )}
             style={{ left: pct }}
             aria-hidden

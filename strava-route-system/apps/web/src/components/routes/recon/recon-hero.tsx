@@ -7,8 +7,8 @@ import Spinner from "@/components/ui/Spinner";
 import { UnknownReasons } from "@/components/verdict/unknown-reasons";
 import { HAZARD_ROW_GRID, HazardRowContent } from "@/components/verdict/hazard-row";
 import { cn } from "@/lib/utils";
-import type { CctvMarker, Hazard, ReconVerdict, VerdictLevel } from "@/lib/routes/recon-geo";
-import { groupTrackFlags, type TrackFlag } from "@/lib/routes/route-track";
+import type { CctvMarker, Hazard, ReconVerdict, RouteStage, VerdictLevel } from "@/lib/routes/recon-geo";
+import { trackZones, type TrackZone } from "@/lib/routes/route-track";
 import { CCTV_FAR_KM, CctvFrame, CctvFullscreen, cctvTitle } from "./cctv-viewer";
 import { RouteVerdictBar, VERDICT_LEVEL_STYLE } from "./route-verdict-bar";
 import { RouteTrack } from "./route-track";
@@ -132,20 +132,22 @@ function NoCctvStage({
   );
 }
 
-/** 點旗標後的示警說明 */
-function FlagCallout({
-  flag,
+/** 停到示警路段後的說明：這段的示警一次列出 */
+function ZoneCallout({
+  zone,
   etaOf,
   onClose,
 }: {
-  flag: TrackFlag;
+  zone: TrackZone;
   etaOf?: (km: number) => string;
   onClose: () => void;
 }) {
   return (
     <div className="mx-3 mb-3 rounded-lg border border-border bg-muted/40">
       <div className="flex items-center justify-between pl-3">
-        <p className="text-sm font-semibold text-foreground">{flag.km.toFixed(1)} km 示警</p>
+        <p className="text-sm font-semibold text-foreground">
+          {zone.startKm.toFixed(1)}–{zone.endKm.toFixed(1)} km 示警 {zone.hazards.length} 項
+        </p>
         <button
           type="button"
           onClick={onClose}
@@ -156,7 +158,7 @@ function FlagCallout({
         </button>
       </div>
       <ul className="divide-y divide-border/60 border-t border-border/60 px-1">
-        {flag.hazards.map((h) => (
+        {zone.hazards.map((h) => (
           <li key={h.id} className={HAZARD_ROW_GRID}>
             <HazardRowContent hazard={h} eta={etaOf?.(h.startKm)} />
           </li>
@@ -181,6 +183,9 @@ export function ReconHero({
   positionKm,
   totalKm,
   hazards,
+  stages,
+  eventsComplete,
+  fromKm,
   etaOf,
   onMove,
   onSelectMarker,
@@ -195,17 +200,26 @@ export function ReconHero({
   positionKm: number;
   totalKm: number;
   hazards: Hazard[];
+  /** 判讀回來的天氣路段；判讀未回來時給空陣列，軌道不上安全色 */
+  stages: RouteStage[];
+  /** 路況事件完整取得 */
+  eventsComplete: boolean;
+  /** 途中模式的目前里程 */
+  fromKm: number | null;
   etaOf?: (km: number) => string;
   onMove: (km: number) => void;
   onSelectMarker: (marker: CctvMarker) => void;
 }) {
-  const flags = useMemo(() => groupTrackFlags(hazards, totalKm), [hazards, totalKm]);
-  const [openFlagKm, setOpenFlagKm] = useState<number | null>(null);
-  // 判讀更新後旗標可能變了，找不到就收起
-  const openFlag = flags.find((f) => f.km === openFlagKm) ?? null;
+  const zones = useMemo(
+    () => trackZones(totalKm, hazards, stages, { eventsComplete, fromKm }),
+    [totalKm, hazards, stages, eventsComplete, fromKm]
+  );
+  const [openZoneKm, setOpenZoneKm] = useState<number | null>(null);
+  // 判讀更新後示警路段可能變了，找不到就收起
+  const openZone = zones.find((z) => z.hazards.length > 0 && z.startKm === openZoneKm) ?? null;
 
   const move = (km: number) => {
-    setOpenFlagKm(null);
+    setOpenZoneKm(null);
     onMove(km);
   };
 
@@ -221,19 +235,19 @@ export function ReconHero({
         positionKm={positionKm}
         markers={markers}
         activeMarker={activeMarker}
-        flags={flags}
-        activeFlag={openFlag}
+        zones={zones}
+        activeZone={openZone}
         onMove={move}
         onSelectMarker={(m) => {
-          setOpenFlagKm(null);
+          setOpenZoneKm(null);
           onSelectMarker(m);
         }}
-        onSelectFlag={(f) => {
-          setOpenFlagKm(f.km);
-          onMove(f.km);
+        onSelectZone={(z) => {
+          setOpenZoneKm(z.startKm);
+          onMove(z.startKm);
         }}
       />
-      {openFlag && <FlagCallout flag={openFlag} etaOf={etaOf} onClose={() => setOpenFlagKm(null)} />}
+      {openZone && <ZoneCallout zone={openZone} etaOf={etaOf} onClose={() => setOpenZoneKm(null)} />}
     </section>
   );
 }

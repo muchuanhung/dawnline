@@ -1,9 +1,9 @@
 /**
- * 里程軌道（影像主視覺下方的拖曳條）用的純函式：刻度、逐台切換、停點、示警旗標合併
+ * 里程軌道（影像主視覺下方的拖曳條）用的純函式：刻度、鏡頭序號、路況色段、停點
  * 不依賴 React，可單獨測試
  */
 
-import type { CctvMarker, Hazard, HazardLevel } from "./recon-geo";
+import type { CctvMarker, Hazard, HazardLevel, RouteStage, VerdictLevel } from "./recon-geo";
 
 export interface TrackTick {
   /** 在軌道上的位置，0–1 */
@@ -45,57 +45,136 @@ export function markerOrdinal(markers: CctvMarker[], current: CctvMarker | null)
   return i === -1 ? null : i + 1;
 }
 
-export interface TrackFlag {
-  /** 旗標所在里程：群組內第一個示警的起點 */
-  km: number;
-  /** 群組內最嚴重的等級 */
-  level: HazardLevel;
+/** 軌道上的一段路況：示警路段（risky／caution）或一般路段（clear／unknown） */
+export interface TrackZone {
+  startKm: number;
+  endKm: number;
+  level: VerdictLevel;
+  /** 這段的示警；一般路段為空 */
   hazards: Hazard[];
 }
 
-/** 旗標間距小於全長的這個比例就合併成一支 */
-const FLAG_MERGE_RATIO = 0.06;
+/** 單點示警（路況事件）在軌道上至少佔全長的這個比例，才看得到 */
+const POINT_SPAN_RATIO = 0.02;
+/** 同等級示警之間的空隙小於全長的這個比例就併成同一個示警路段 */
+const ZONE_MERGE_RATIO = 0.06;
 
-/** 示警旗標：依起點排序，彼此太近的合併成一支，等級取最嚴重 */
-export function groupTrackFlags(hazards: Hazard[], totalKm: number): TrackFlag[] {
-  const gap = Math.max(0, totalKm) * FLAG_MERGE_RATIO;
-  const sorted = [...hazards].sort((a, b) => a.startKm - b.startKm);
-  const flags: TrackFlag[] = [];
-  for (const h of sorted) {
-    const last = flags[flags.length - 1];
-    if (last && h.startKm - last.km < gap) {
+/**
+ * 示警路段：依起點排序，同等級且彼此太近的示警併成一段。
+ * 示警再密也只是一段顏色、一個停點，不會逐顆擠在軌道上。
+ * 不同等級不合併，避免一段危險把旁邊的注意蓋成危險；兩者重疊時畫面上危險畫在上層。
+ */
+export function hazardZones(hazards: Hazard[], totalKm: number): TrackZone[] {
+  const total = Math.max(0, totalKm);
+  const minSpan = total * POINT_SPAN_RATIO;
+  const gap = total * ZONE_MERGE_RATIO;
+  const zones: TrackZone[] = [];
+  const lastOf: Partial<Record<HazardLevel, TrackZone>> = {};
+  for (const h of [...hazards].sort((a, b) => a.startKm - b.startKm)) {
+    const startKm = Math.max(0, h.startKm);
+    const endKm = Math.min(total, Math.max(h.endKm, startKm + minSpan));
+    const last = lastOf[h.level];
+    if (last && startKm - last.endKm < gap) {
+      last.endKm = Math.max(last.endKm, endKm);
       last.hazards.push(h);
-      if (h.level === "risky") last.level = "risky";
     } else {
-      flags.push({ km: h.startKm, level: h.level, hazards: [h] });
+      const zone: TrackZone = { startKm, endKm, level: h.level, hazards: [h] };
+      zones.push(zone);
+      lastOf[h.level] = zone;
     }
   }
-  return flags;
+  return zones;
+}
+
+export interface TrackZoneOptions {
+  /** 路況事件完整取得；取不到時沒有示警的路段也只能算未判定 */
+  eventsComplete: boolean;
+  /** 途中模式的目前里程；之前的路段已走過，不上色 */
+  fromKm?: number | null;
 }
 
 /**
- * 軌道停點：拖曳與 ‹ › 只停在鏡頭與示警旗標，中間的公里數不停。
+ * 整條軌道的路況色段：示警路段蓋在最上層；其餘路段依天氣資料判定，
+ * 有天氣、未過期、在預報時段內且路況事件完整才算安全（clear），否則一律未判定（unknown）。
+ * 沒有 stage 涵蓋的里程（判讀未回來、途中模式已走過）不上色。
+ */
+export function trackZones(
+  totalKm: number,
+  hazards: Hazard[],
+  stages: RouteStage[],
+  { eventsComplete, fromKm }: TrackZoneOptions
+): TrackZone[] {
+  const start = Math.max(0, fromKm ?? 0);
+  const hz = hazardZones(hazards, totalKm).filter((z) => z.endKm > start);
+
+  const base: TrackZone[] = [];
+  for (const st of stages) {
+    const startKm = Math.max(st.startKm, start);
+    const endKm = Math.min(st.endKm, totalKm);
+    if (endKm <= startKm) continue;
+    const known = eventsComplete && st.hasWeather && !st.weatherStale && !st.outOfCoverage;
+    const level: VerdictLevel = known ? "clear" : "unknown";
+    // 扣掉被示警路段蓋住的部分
+    let cursor = startKm;
+    for (const z of hz) {
+      if (z.endKm <= cursor || z.startKm >= endKm) continue;
+      if (z.startKm > cursor) base.push({ startKm: cursor, endKm: z.startKm, level, hazards: [] });
+      cursor = Math.max(cursor, z.endKm);
+    }
+    if (cursor < endKm) base.push({ startKm: cursor, endKm, level, hazards: [] });
+  }
+
+  // 相鄰且同等級的一般路段合併
+  const merged: TrackZone[] = [];
+  for (const z of base.sort((a, b) => a.startKm - b.startKm)) {
+    const last = merged[merged.length - 1];
+    if (last && last.level === z.level && Math.abs(z.startKm - last.endKm) < 1e-9) last.endKm = z.endKm;
+    else merged.push(z);
+  }
+  return [...merged, ...hz].sort((a, b) => a.startKm - b.startKm);
+}
+
+const ZONE_RANK: Record<VerdictLevel, number> = { clear: 0, unknown: 1, caution: 2, risky: 3 };
+
+/** 指定里程所在的色段；重疊時取最嚴重的 */
+export function zoneAt(zones: TrackZone[], km: number): TrackZone | null {
+  let best: TrackZone | null = null;
+  for (const z of zones) {
+    if (km < z.startKm || km > z.endKm) continue;
+    if (!best || ZONE_RANK[z.level] > ZONE_RANK[best.level]) best = z;
+  }
+  return best;
+}
+
+/** 繪製順序：嚴重的畫在上層，重疊時危險蓋過注意 */
+export function zonesForPaint(zones: TrackZone[]): TrackZone[] {
+  return [...zones].sort((a, b) => ZONE_RANK[a.level] - ZONE_RANK[b.level]);
+}
+
+/**
+ * 軌道停點：拖曳與 ‹ › 只停在鏡頭與示警路段的起點，中間的公里數不停。
  * 位置仍照實際里程，不改成等距，刻度與遠近才不會失真。
  */
 export type TrackStop =
   | { kind: "marker"; km: number; marker: CctvMarker }
-  | { kind: "flag"; km: number; flag: TrackFlag };
+  | { kind: "zone"; km: number; zone: TrackZone };
 
-/** 停點的識別：鏡頭用 id，旗標用里程（同一里程只會有一支旗標） */
+/** 停點的識別：鏡頭用 id，示警路段用起點里程 */
 export function stopKey(stop: TrackStop): string {
-  return stop.kind === "marker" ? `m:${stop.marker.id}` : `f:${stop.flag.km}`;
+  return stop.kind === "marker" ? `m:${stop.marker.id}` : `z:${stop.zone.startKm}`;
 }
 
-/** 依里程排序的停點；同一里程時示警排在鏡頭前，先看到示警 */
-export function trackStops(markers: CctvMarker[], flags: TrackFlag[]): TrackStop[] {
+/** 依里程排序的停點（只取有示警的路段）；同一里程時示警排在鏡頭前，先看到示警 */
+export function trackStops(markers: CctvMarker[], zones: TrackZone[]): TrackStop[] {
   const stops: TrackStop[] = [
-    ...flags.map((flag) => ({ kind: "flag" as const, km: flag.km, flag })),
+    ...zones
+      .filter((zone) => zone.hazards.length > 0)
+      .map((zone) => ({ kind: "zone" as const, km: zone.startKm, zone })),
     ...markers.map((marker) => ({ kind: "marker" as const, km: marker.km, marker })),
   ];
-  // Array.prototype.sort is stable, so flags stay ahead of markers at the same km
+  // Array.prototype.sort is stable, so zones stay ahead of markers at the same km
   return stops.sort((a, b) => a.km - b.km);
 }
-
 /** 離指定里程最近的停點；沒有停點時為 null（軌道改回連續拖曳） */
 export function nearestStop(stops: TrackStop[], km: number): TrackStop | null {
   let best: TrackStop | null = null;

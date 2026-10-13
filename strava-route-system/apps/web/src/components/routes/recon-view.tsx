@@ -11,6 +11,7 @@ import {
   routeTotalKm,
   stageAtKm,
   type ChartDataPoint,
+  type RouteStage,
 } from "@/lib/routes/recon-geo";
 import { useReconPosition } from "@/hooks/useReconPosition";
 import { etaLabel, paceFor } from "@/lib/routes/trip";
@@ -20,6 +21,9 @@ import { ElevationScrubber } from "./recon/elevation-scrubber";
 import { ReconHero } from "./recon/recon-hero";
 
 export type { RouteStage, CctvMarker } from "@/lib/routes/recon-geo";
+
+/** 判讀未回來時軌道不上安全色（固定參照，避免每次 render 重算色段） */
+const NO_STAGES: RouteStage[] = [];
 
 interface ReconViewProps {
   route: Route;
@@ -107,6 +111,9 @@ export function ReconView({
         positionKm={positionKm}
         totalKm={routeTotalKm(route)}
         hazards={verdictHazards}
+        stages={trip ? stages : NO_STAGES}
+        eventsComplete={trip ? trip.eventsFailed !== null && trip.eventsFailed.length === 0 : false}
+        fromKm={trip?.fromKm ?? null}
         etaOf={etaOf}
         onMove={moveTo}
         onSelectMarker={selectMarker}
