@@ -11,6 +11,8 @@ import type { Route, RouteSegment } from "@/lib/routes/route-data";
 import { eventHazards, matchEventsToRoute, type RoadEvent, type RouteEvent } from "@/lib/routes/road-events";
 import {
   buildRoutePolylineKm,
+  clipRouteFrom,
+  clipStagesFrom,
   computeHazards,
   deriveStages,
   isWeatherHazard,
@@ -26,6 +28,7 @@ import { ACTIVITY, activityOfRouteType, formatClock, paceFor, type Activity } fr
 import { summarizeRainfall, type LatLon, type StationRain } from "@/lib/cwb/rainfall-stations";
 import {
   DEFAULT_CYCLING_SPEED_KMH,
+  departureForPosition,
   isBeyondForecast,
   pickRainfallBucketForSegment,
   pickWindForSegment,
@@ -253,6 +256,8 @@ export interface RouteBriefing {
   defaultActivity: Activity;
   /** 示意路線：沿途路況事件為假資料，畫面需標示 */
   demo: boolean;
+  /** 途中模式：判讀起點的里程（目前位置）；null 為從起點出發的整條路線判讀 */
+  fromKm: number | null;
 }
 
 export interface BriefRouteOptions {
@@ -267,21 +272,33 @@ export interface BriefRouteOptions {
   eventsFailed?: string[] | null;
   /** 是否試算建議出發時段；只有畫面會顯示的路線才開（今日判讀目前路線、路線頁） */
   suggest?: boolean;
+  /**
+   * 途中模式：目前在路線上的里程。提供時 now 視為抵達 fromKm 的時間，反推出發時間（忽略 departure），
+   * 判定、示警、路況事件與統計只看前方；已走過的路段不列入。不試算建議出發時段（已經出發）。
+   */
+  fromKm?: number;
 }
 
 export function briefRoute(
   route: Route,
   lookup: WeatherLookup,
-  { events = [], now = new Date(), departure = now, activity, eventsFailed, suggest = false }: BriefRouteOptions = {}
+  { events = [], now = new Date(), departure = now, activity, eventsFailed, suggest = false, fromKm }: BriefRouteOptions = {}
 ): RouteBriefing {
   const defaultActivity = activityOfRouteType(route.type);
   const tripActivity = activity ?? defaultActivity;
   const speedKmh = ACTIVITY[tripActivity].speedKmh;
+  // 爬升修正依完整路線的高程計算；途中模式也用同一個 pace，ETA 才會是 hoursTo(k) − hoursTo(fromKm)
   const pace = paceFor(tripActivity, route.elevationProfile);
-  const weatherOptions: ApplyWeatherOptions = { departureTime: departure, pace };
-  const enriched = applyWeather(route, lookup, weatherOptions);
-  const stages = deriveStages(enriched);
-  const roadEvents = matchEventsToRoute(events, buildRoutePolylineKm(route), { now });
+  const totalKm = routeTotalKm(route);
+  const aheadFrom = fromKm != null && Number.isFinite(fromKm) && fromKm > 0 ? Math.min(fromKm, totalKm) : null;
+  const tripDeparture = aheadFrom != null ? departureForPosition(now, aheadFrom, pace) : departure;
+  // 途中模式只對前方路段套天氣：目前所在路段的進入 ETA 為 now，不會挑到已過去的預報時段
+  const ahead = aheadFrom != null ? clipRouteFrom(route, aheadFrom) : route;
+  const weatherOptions: ApplyWeatherOptions = { departureTime: tripDeparture, pace };
+  const enriched = applyWeather(ahead, lookup, weatherOptions);
+  const stages = aheadFrom != null ? clipStagesFrom(deriveStages(enriched), aheadFrom) : deriveStages(enriched);
+  const matched = matchEventsToRoute(events, buildRoutePolylineKm(route), { now });
+  const roadEvents = aheadFrom != null ? matched.filter((e) => e.km >= aheadFrom) : matched;
   const hazards = [...computeHazards(enriched, stages).filter(isWeatherHazard), ...eventHazards(roadEvents)].sort(
     (a, b) => a.startKm - b.startKm
   );
@@ -294,7 +311,7 @@ export function briefRoute(
   return {
     id: route.id,
     name: route.nameZh || route.name,
-    distanceKm: routeTotalKm(route),
+    distanceKm: totalKm,
     elevationGainM: route.elevationGain,
     verdict: summarizeVerdict(hazards, stages, { eventsFailed: routeEventsFailed }),
     hazards,
@@ -302,16 +319,18 @@ export function briefRoute(
     maxRain: withWeather.length ? Math.max(...withWeather.map((s) => s.rainProbability)) : null,
     maxWindKmh: withWeather.length ? Math.max(...withWeather.map((s) => s.windSpeed)) : null,
     temperature: temps.length ? { min: Math.min(...temps), max: Math.max(...temps) } : null,
-    periodLabel: usedPeriodLabel(route, lookup, weatherOptions, now),
+    periodLabel: usedPeriodLabel(ahead, lookup, weatherOptions, now),
     elevationProfile: route.elevationProfile,
     segments: enriched.segments,
     eventsFailed: routeEventsFailed === undefined ? [] : routeEventsFailed,
-    departureSuggestion: suggest ? suggestDeparture(route, lookup, { now, pace }) : null,
-    departure: departure.toISOString(),
+    departureSuggestion: suggest && aheadFrom == null ? suggestDeparture(route, lookup, { now, pace }) : null,
+    // 途中模式為反推的出發時間：畫面用同一組出發時間與 pace 顯示前方各里程的 ETA
+    departure: tripDeparture.toISOString(),
     activity: tripActivity,
     speedKmh,
     defaultActivity,
     demo: route.demo === true,
+    fromKm: aheadFrom,
   };
 }
 

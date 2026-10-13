@@ -1,0 +1,188 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { LocateFixed, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { usePositionOnRoute } from "@/hooks/usePositionOnRoute";
+import { kmRangeOf, type RoutePolylineKm } from "@/lib/routes/recon-geo";
+
+interface RideAheadProps {
+  routeId: string;
+  polyline: RoutePolylineKm | null;
+  totalKm: number;
+  /** 目前生效的里程；null 為整條路線判讀 */
+  fromKm: number | null;
+  onChange: (km: number | null) => void;
+}
+
+/**
+ * 途中模式「從我現在位置往前看」：定位換算里程後只判讀前方。
+ * 定位不準、不在路線上、往返路線無法判斷、拒絕定位時都不猜，改讓使用者手動選里程。
+ */
+export function RideAhead({ routeId, polyline, totalKm, fromKm, onChange }: RideAheadProps) {
+  const { state, locate, choose: chooseKm, dismiss } = usePositionOnRoute({
+    routeId,
+    polyline,
+    riding: fromKm != null,
+    onKm: onChange,
+  });
+  const [manualOpen, setManualOpen] = useState(false);
+
+  // 定位成功：收起手動輸入
+  useEffect(() => {
+    if (state.status === "on_route") setManualOpen(false);
+  }, [state]);
+
+  const choose = (km: number) => {
+    chooseKm(km);
+    setManualOpen(false);
+  };
+
+  const exit = () => {
+    dismiss();
+    onChange(null);
+    setManualOpen(false);
+  };
+
+  const locating = state.status === "locating";
+  // 畫面顯示最新定位的里程；判讀里程移動滿 0.5 km 才更新，兩者最多差 0.5 km
+  const shownKm = state.status === "on_route" && fromKm != null ? roundKm(state.km) : fromKm;
+  // 由定位換算的里程才有誤差範圍；手動輸入或選擇後 state 會被 reset，不顯示範圍
+  const range = state.status === "on_route" && shownKm != null ? kmRangeOf(shownKm, state.accuracyM, totalKm) : null;
+  const showRange = range != null && range[1] - range[0] >= 0.1;
+  const offRoute = state.status === "off_route" && fromKm != null;
+  const needsManual =
+    state.status === "inaccurate" ||
+    state.status === "off_route" ||
+    state.status === "denied" ||
+    state.status === "unavailable" ||
+    state.status === "no_route";
+
+  return (
+    <section aria-label="從我現在位置往前看" className="space-y-2 rounded-lg border border-border bg-card px-4 py-3">
+      {fromKm == null ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="outline" onClick={locate} disabled={locating}>
+            <LocateFixed aria-hidden />
+            {locating ? "定位中…" : "從我現在位置往前看"}
+          </Button>
+          <button
+            type="button"
+            className="text-xs text-muted-foreground underline underline-offset-2"
+            onClick={() => setManualOpen((v) => !v)}
+          >
+            手動選里程
+          </button>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-foreground">
+            {offRoute ? "離開路線前在" : "目前在"}{" "}
+            <span className="font-mono font-semibold">{(shownKm ?? fromKm).toFixed(1)} km</span>
+            {showRange && (
+              <span className="text-muted-foreground">
+                （約 {range[0].toFixed(1)}–{range[1].toFixed(1)} km）
+              </span>
+            )}
+            ，只看前方
+          </p>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={locate} disabled={locating}>
+              <LocateFixed aria-hidden />
+              {locating ? "定位中…" : "重新定位"}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={exit} aria-label="回到整條路線判讀">
+              <X aria-hidden />
+              整條路線
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {state.status === "ambiguous" && (
+        <div className="space-y-1.5" role="status">
+          <p className="text-sm text-foreground">這裡會經過不只一次，你在哪一段？</p>
+          <div className="flex flex-wrap gap-2">
+            {state.candidates.map((km, i) => (
+              <Button key={km} size="sm" variant="outline" onClick={() => choose(km)}>
+                第 {i + 1} 次經過・{km.toFixed(1)} km
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {needsManual && !offRoute && (
+        <p className="text-sm text-muted-foreground" role="status">
+          {positionMessage(state)}
+        </p>
+      )}
+
+      {(manualOpen || (needsManual && !offRoute)) && (
+        <ManualKm totalKm={totalKm} initialKm={fromKm} onSubmit={choose} />
+      )}
+    </section>
+  );
+}
+
+function positionMessage(state: ReturnType<typeof usePositionOnRoute>["state"]): string {
+  switch (state.status) {
+    case "inaccurate":
+      return `定位不準（誤差約 ${Math.round(state.accuracyM)} m），請手動選里程。`;
+    case "off_route":
+      return `你不在這條路線上（離路約 ${distanceLabel(state.distKm)}）。`;
+    case "denied":
+      return "沒有定位權限，請手動選里程。";
+    case "no_route":
+      return "這條路線沒有軌跡資料，請手動選里程。";
+    default:
+      return "取不到定位，請手動選里程。";
+  }
+}
+
+const roundKm = (km: number) => Math.round(km * 10) / 10;
+
+const distanceLabel = (km: number) => (km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`);
+
+function ManualKm({
+  totalKm,
+  initialKm,
+  onSubmit,
+}: {
+  totalKm: number;
+  initialKm: number | null;
+  onSubmit: (km: number) => void;
+}) {
+  const [value, setValue] = useState(initialKm != null ? String(initialKm) : "");
+  const km = Number(value);
+  const valid = value !== "" && Number.isFinite(km) && km >= 0 && km <= totalKm;
+
+  return (
+    <form
+      className="flex items-center gap-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (valid) onSubmit(roundKm(km));
+      }}
+    >
+      <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
+        目前里程
+        <Input
+          type="number"
+          inputMode="decimal"
+          min={0}
+          max={totalKm}
+          step={0.1}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          className="h-8 w-24"
+        />
+        <span>/ {totalKm.toFixed(1)} km</span>
+      </label>
+      <Button type="submit" size="sm" disabled={!valid}>
+        確定
+      </Button>
+    </form>
+  );
+}

@@ -29,6 +29,15 @@ export function estimateArrivalTime(km: number, departure: Date, pace: Pace = DE
 }
 
 /**
+ * 途中模式：已在路線上第 fromKm 公里時，反推「虛擬出發時間」＝ now − 起點到 fromKm 所需時間。
+ * 之後前方第 k 公里的 ETA ＝ now ＋（hoursTo(k) − hoursTo(fromKm)），可直接沿用依出發時間挑預報時段的所有函式。
+ * 不能用「剩餘距離 ÷ 均速」：健行的爬升修正依里程累計，從中途起算會算錯。
+ */
+export function departureForPosition(now: Date, fromKm: number, pace: Pace = DEFAULT_CYCLING_SPEED_KMH): Date {
+  return new Date(now.getTime() - hoursTo(Math.max(0, fromKm), pace) * 3_600_000);
+}
+
+/**
  * 涵蓋 ETA 的時段；ETA 早於所有時段取第一個未來時段。
  * 晚於所有時段回傳 null：超出預報時段不可拿其他時段頂替（判讀端改判 unknown）。
  * 時間無法解析的時段略過；沒有可用時段回傳 null。
