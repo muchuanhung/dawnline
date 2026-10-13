@@ -9,7 +9,7 @@
 import { haversineKm } from "@/lib/routes/parse-gpx";
 import { buildRoutePolylineKm } from "@/lib/routes/recon-geo";
 import type { RoadEvent } from "@/lib/routes/road-events";
-import type { CCTVFeed, Route } from "@/lib/routes/route-data";
+import type { Route } from "@/lib/routes/route-data";
 
 export const DEMO_ROUTE_ID = "demo-zhongxiao-e-rd";
 export const DEMO_ROUTE_NAME = "示意路線・忠孝東路";
@@ -128,19 +128,4 @@ export function demoRoadEvents(route: Route, now: Date = new Date()): RoadEvent[
       updatedTime: updated,
     };
   });
-}
-
-/** 示意路線的鏡頭狀態依序輪流，讓 demo 時四種狀態燈都看得到 */
-const DEMO_CCTV_STATUSES: CCTVFeed["status"][] = ["online", "degraded", "offline", "unknown"];
-
-/**
- * 示意路線的鏡頭不探測，改套示意狀態；影像本身仍是真實鏡頭
- * lastUpdated 註明「示意狀態」，避免被當成實際探測結果
- */
-export function applyDemoCctvStatuses(feeds: CCTVFeed[]): CCTVFeed[] {
-  return feeds.map((feed, i) => ({
-    ...feed,
-    status: DEMO_CCTV_STATUSES[i % DEMO_CCTV_STATUSES.length]!,
-    lastUpdated: "示意狀態，非實際探測結果",
-  }));
 }

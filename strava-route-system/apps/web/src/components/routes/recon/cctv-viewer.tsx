@@ -16,15 +16,6 @@ import { cn } from "@/lib/utils";
 import type { CctvMarker } from "@/lib/routes/recon-geo";
 import { isBlockedByCSP, hasWhiteBorderInEmbed } from "@/lib/cctv/embed-policy";
 
-export const CCTV_STATUS: Record<CctvMarker["status"], { text: string; dot: string }> = {
-  online: { text: "直播", dot: "bg-success" },
-  degraded: { text: "不穩", dot: "bg-warning" },
-  // 探測確認連不上：與 unknown 的灰點區分開來
-  offline: { text: "離線", dot: "bg-destructive" },
-  // 沒探測過連線狀態：中性灰「影像」，不可看起來像直播
-  unknown: { text: "影像", dot: "bg-muted-foreground" },
-};
-
 /** 游標離最近鏡頭超過這個距離，就明講「此處附近沒有監視器」 */
 const CCTV_FAR_KM = 3;
 
@@ -37,7 +28,7 @@ function cctvTitle(marker: CctvMarker): string {
 
 /**
  * 影像本體：可內嵌就用 iframe，被擋就給外連，沒有網址就直說
- * 探測判離線時照樣載入：探測從海外伺服器發出，可能被擋，使用者的瀏覽器未必看不到
+ * 不顯示連線狀態：多數來源從伺服器探測不到（播放頁或擋海外 IP），見 PR #49
  */
 function CctvFrame({ marker, large = false }: { marker: CctvMarker; large?: boolean }) {
   // iframe 無法偵測載入失敗（失敗也會觸發 onLoad），這裡只用來收掉載入指示；
@@ -108,7 +99,6 @@ export function CctvViewer({
     );
   }
 
-  const status = CCTV_STATUS[marker.status];
   const title = cctvTitle(marker);
   const offsetKm = marker.km - positionKm;
   const offset = offsetLabel(offsetKm);
@@ -132,11 +122,7 @@ export function CctvViewer({
 
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 space-y-0.5">
-            <p className="flex min-w-0 items-center gap-2 text-sm">
-              <span className={cn("h-2 w-2 shrink-0 rounded-full", status.dot)} aria-hidden />
-              <span className="shrink-0 whitespace-nowrap text-muted-foreground">{status.text}</span>
-              <span className="truncate font-medium text-foreground">{title}</span>
-            </p>
+            <p className="truncate text-sm font-medium text-foreground">{title}</p>
             <p className="font-mono text-xs tabular-nums text-muted-foreground">
               {marker.km.toFixed(1)} km
               {offset && <span className="font-sans">・{offset}</span>}
