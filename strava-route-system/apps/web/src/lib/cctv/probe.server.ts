@@ -9,6 +9,9 @@
 import { createHash } from "node:crypto";
 import { PROBE_TIMEOUT_MS, isProbeableUrl, type ProbeAttempt } from "@/lib/cctv/probe-status";
 
+/** 401 未授權、403 禁止（含擋海外 IP）、451 法律因素拒絕 */
+const ACCESS_DENIED_STATUSES = new Set([401, 403, 451]);
+
 /** 單張影格最多讀這麼多，避免被超大回應拖住 */
 const MAX_FRAME_BYTES = 2 * 1024 * 1024;
 
@@ -21,6 +24,11 @@ export async function probeCctvUrl(url: string | undefined): Promise<ProbeAttemp
   try {
     const res = await fetchFollowingSafeRedirects(url!, controller.signal);
     if (!res) return { at: startedAt, outcome: "unprobeable" };
+    // 主機有回應但拒絕存取或擋地區：鏡頭可能正常，只是不讓伺服器看 → 無法判斷
+    if (ACCESS_DENIED_STATUSES.has(res.status)) {
+      res.body?.cancel().catch(() => {});
+      return { at: startedAt, outcome: "unprobeable" };
+    }
     if (!res.ok || !res.body) return fail(startedAt, res.body);
 
     const contentType = (res.headers.get("content-type") ?? "").toLowerCase();

@@ -35,16 +35,16 @@ function cctvTitle(marker: CctvMarker): string {
     : marker.name;
 }
 
-/** 影像本體：可內嵌就用 iframe，被擋就給外連，離線或沒有網址就直說 */
+/**
+ * 影像本體：可內嵌就用 iframe，被擋就給外連，沒有網址就直說
+ * 探測判離線時照樣載入：探測從海外伺服器發出，可能被擋，使用者的瀏覽器未必看不到
+ */
 function CctvFrame({ marker, large = false }: { marker: CctvMarker; large?: boolean }) {
   // iframe 無法偵測載入失敗（失敗也會觸發 onLoad），這裡只用來收掉載入指示；
   // 看不到畫面時靠標題列的外連按鈕。父層以 key={marker.id} 換鏡頭時重置
   const [loaded, setLoaded] = useState(false);
   const url = marker.videoUrl;
 
-  if (marker.status === "offline") {
-    return <p className="text-sm text-muted-foreground">訊號中斷</p>;
-  }
   if (!url) {
     return <p className="text-sm text-muted-foreground">此鏡頭沒有影像網址</p>;
   }
@@ -143,7 +143,7 @@ export function CctvViewer({
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            {marker.videoUrl && marker.status !== "offline" && (
+            {marker.videoUrl && (
               <Button asChild size="icon" variant="ghost" className="h-8 w-8">
                 <a href={marker.videoUrl} target="_blank" rel="noopener noreferrer" aria-label="在新分頁開啟直播">
                   <ExternalLink className="h-4 w-4" />

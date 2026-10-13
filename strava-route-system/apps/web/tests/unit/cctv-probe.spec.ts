@@ -83,6 +83,18 @@ test.describe("probeCctvUrl", () => {
     expect((await probeCctvUrl(CAM)).outcome).toBe("fail");
   });
 
+  test("401／403／451（拒絕存取、擋地區）→ unprobeable，不算失敗", async () => {
+    for (const status of [401, 403, 451]) {
+      mockFetch({ [CAM]: () => new Response("denied", { status }) });
+      expect((await probeCctvUrl(CAM)).outcome).toBe("unprobeable");
+    }
+  });
+
+  test("5xx 仍算 fail", async () => {
+    mockFetch({ [CAM]: () => new Response("err", { status: 503 }) });
+    expect((await probeCctvUrl(CAM)).outcome).toBe("fail");
+  });
+
   test("轉址到內網不跟，回 unprobeable", async () => {
     const calls = mockFetch({
       [CAM]: () => new Response(null, { status: 302, headers: { location: "http://169.254.169.254/latest" } }),
