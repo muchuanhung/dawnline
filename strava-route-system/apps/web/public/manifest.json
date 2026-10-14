@@ -2,7 +2,7 @@
   "name": "曉行 Dawnline",
   "short_name": "曉行",
   "description": "上傳 GPX，逐公里判定台灣路線的天氣與路況：走、慢、停、未判定。",
-  "start_url": "/login",
+  "start_url": "/routes",
   "scope": "/",
   "icons": [
     {
