@@ -1,4 +1,4 @@
-<img src="strava-route-system/apps/web/src/app/icon.svg" alt="曉行 Dawnline app icon" width="100" />
+<img src="docs/images/dawnline-banner.png" alt="曉行 Dawnline：出發前，先看清每一段路" width="100%" />
 
 # 曉行 Dawnline
 
