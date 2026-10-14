@@ -20,6 +20,7 @@ import { roadEventsOf, verdictOf, type RouteBriefingState } from "@/hooks/useRou
 import { HazardList } from "./recon/hazard-list";
 import { ElevationScrubber } from "./recon/elevation-scrubber";
 import { ReconHero } from "./recon/recon-hero";
+import { OfflineNotice } from "./recon/offline-notice";
 
 export type { RouteStage, CctvMarker } from "@/lib/routes/recon-geo";
 
@@ -33,6 +34,8 @@ interface ReconViewProps {
   cctvLoading?: boolean;
   /** CCTV 抓取失敗，用來區分「載入失敗」與「沿途無監視器」 */
   cctvError?: boolean;
+  /** CCTV 清單來自離線快照或網路失敗 */
+  cctvOffline?: boolean;
   /** 伺服器端判讀（判定、示警、合併天氣的路段）；前端不自行判定 */
   briefing: RouteBriefingState;
   /** 緊接在主視覺下方的行程控制（途中定位、出發時間與運動類型），讓判定與影像留在第一眼 */
@@ -49,6 +52,7 @@ export function ReconView({
   cctvFeeds: cctvFeedsProp,
   cctvLoading = false,
   cctvError = false,
+  cctvOffline = false,
   briefing,
   afterHero,
 }: ReconViewProps) {
@@ -72,6 +76,9 @@ export function ReconView({
   const verdict = verdictOf(briefing);
   const roadEvents = roadEventsOf(briefing);
   const trip = briefing.briefing;
+  const snapshot = briefing.snapshot;
+  // 判讀是快照代表目前收不到訊號，即時影像也播不了
+  const offline = cctvOffline || snapshot != null;
   const etaOf = useMemo(() => {
     if (!trip) return undefined;
     const now = new Date();
@@ -104,6 +111,7 @@ export function ReconView({
 
   return (
     <div className="w-full min-w-0 max-w-full space-y-6">
+      {snapshot && <OfflineNotice snapshot={snapshot} />}
       <ReconHero
         verdict={verdict}
         verdictLoading={briefing.loading && !briefing.briefing}
@@ -111,11 +119,15 @@ export function ReconView({
         activeMarker={activeMarker}
         cctvLoading={cctvLoading}
         cctvError={cctvError}
+        cctvOffline={offline}
         positionKm={positionKm}
         totalKm={routeTotalKm(route)}
         hazards={verdictHazards}
         stages={trip ? stages : NO_STAGES}
-        eventsComplete={trip ? trip.eventsFailed !== null && trip.eventsFailed.length === 0 : false}
+        // 過期快照的路段一律不上安全色（未判定 ≠ 安全）；示警路段照舊標出
+        eventsComplete={
+          trip ? trip.eventsFailed !== null && trip.eventsFailed.length === 0 && !snapshot?.expired : false
+        }
         fromKm={trip?.fromKm ?? null}
         etaOf={etaOf}
         onMove={moveTo}

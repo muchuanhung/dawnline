@@ -102,15 +102,17 @@ function CctvStage({
   );
 }
 
-/** 沒有鏡頭（載入中、載入失敗、沿途沒有）：主視覺改成判定本身，不留空黑框 */
+/** 沒有鏡頭（載入中、載入失敗、沿途沒有、離線）：主視覺改成判定本身，不留空黑框 */
 function NoCctvStage({
   verdict,
   cctvLoading,
   cctvError,
+  cctvOffline,
 }: {
   verdict: ReconVerdict;
   cctvLoading: boolean;
   cctvError: boolean;
+  cctvOffline: boolean;
 }) {
   return (
     <div>
@@ -124,7 +126,7 @@ function NoCctvStage({
         ) : (
           <>
             <VideoOff className="size-4" aria-hidden />
-            {cctvError ? "監視器載入失敗" : "沿途沒有監視器"}
+            {cctvOffline ? "離線中，無法看即時影像" : cctvError ? "監視器載入失敗" : "沿途沒有監視器"}
           </>
         )}
       </p>
@@ -180,6 +182,7 @@ export function ReconHero({
   activeMarker,
   cctvLoading,
   cctvError,
+  cctvOffline,
   positionKm,
   totalKm,
   hazards,
@@ -197,6 +200,8 @@ export function ReconHero({
   activeMarker: CctvMarker | null;
   cctvLoading: boolean;
   cctvError: boolean;
+  /** 離線：即時影像播不了，主視覺改顯示判定，軌道仍標出鏡頭位置 */
+  cctvOffline: boolean;
   positionKm: number;
   totalKm: number;
   hazards: Hazard[];
@@ -225,10 +230,10 @@ export function ReconHero({
 
   return (
     <section aria-label="沿線影像與判定" className="overflow-hidden rounded-2xl border border-border bg-card">
-      {activeMarker ? (
+      {activeMarker && !cctvOffline ? (
         <CctvStage marker={activeMarker} positionKm={positionKm} verdict={verdict} verdictLoading={verdictLoading} />
       ) : (
-        <NoCctvStage verdict={verdict} cctvLoading={cctvLoading} cctvError={cctvError} />
+        <NoCctvStage verdict={verdict} cctvLoading={cctvLoading} cctvError={cctvError} cctvOffline={cctvOffline} />
       )}
       <RouteTrack
         totalKm={totalKm}

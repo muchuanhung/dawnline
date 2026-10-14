@@ -67,6 +67,12 @@ export function RoutesClient({
     }
   }, [mobileListOpen]);
 
+  // 離線時頁面外殼來自 SW 快取（不分 ?route=），伺服器帶入的路線可能是上次看的那條；以實際網址為準
+  useEffect(() => {
+    const fromUrl = new URLSearchParams(window.location.search).get("route");
+    if (fromUrl && fromUrl !== initialRouteId) setSelectedId(fromUrl);
+  }, [initialRouteId]);
+
   // 沒指定或指定的路線不存在時，退回第一條
   useEffect(() => {
     if (routes.length > 0 && !routes.some((r) => r.id === selectedId)) {
@@ -75,7 +81,12 @@ export function RoutesClient({
   }, [routes, selectedId]);
 
   const selectedRoute = routes.find((r) => r.id === selectedId) || routes[0];
-  const { feeds: cctvFeeds, loading: cctvLoading, error: cctvError } = useRouteCCTV(selectedRoute ?? null);
+  const {
+    feeds: cctvFeeds,
+    loading: cctvLoading,
+    error: cctvError,
+    offline: cctvOffline,
+  } = useRouteCCTV(selectedRoute ?? null);
   const aheadOfRoute = ahead && ahead.routeId === selectedRoute?.id ? ahead : null;
   const aheadKm = aheadOfRoute?.km ?? null;
   const selectedPolyline = useMemo(() => (selectedRoute ? buildRoutePolylineKm(selectedRoute) : null), [selectedRoute]);
@@ -229,6 +240,7 @@ export function RoutesClient({
                 cctvFeeds={cctvFeeds}
                 cctvLoading={cctvLoading}
                 cctvError={cctvError}
+                cctvOffline={cctvOffline}
                 briefing={briefing}
                 afterHero={
                   <div className="space-y-3">
