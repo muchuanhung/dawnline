@@ -14,6 +14,8 @@ const SNAPSHOT_CACHE = "dawnline-snapshot-v1";
 const KEEP_CACHES = [CACHE_NAME, STATIC_CACHE, SNAPSHOT_CACHE];
 
 const SNAPSHOT_HEADER = "x-dawnline-snapshot-at";
+/** 安裝時預快取；離線時以路徑比對回傳（忽略 ?v= 等版本參數） */
+const PRECACHE_PATHS = ["/", "/login", "/manifest.json", "/icon.svg", "/dawnline.svg", "/icons/icon-192.png", "/icons/icon-512.png"];
 /** 快照與靜態檔各自最多保留幾筆，超過刪最舊的（Cache API 的 keys() 依寫入順序） */
 const MAX_SNAPSHOTS = 40;
 const MAX_STATIC = 300;
@@ -21,7 +23,7 @@ const MAX_STATIC = 300;
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(["/", "/login", "/manifest.json", "/icon.svg", "/icons/icon-192.png", "/icons/icon-512.png"]).catch(() => {}))
+      .then((cache) => cache.addAll(PRECACHE_PATHS).catch(() => {}))
       .then(() => self.skipWaiting())
   );
 });
@@ -45,8 +47,23 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   const key = snapshotKey(request, url);
-  if (key) event.respondWith(networkFirst(request, key));
+  if (key) {
+    event.respondWith(networkFirst(request, key));
+    return;
+  }
+  // 預快取的頁面與圖示（例如導覽列 logo）：照常走網路，離線才用預快取
+  if (PRECACHE_PATHS.includes(url.pathname)) event.respondWith(precacheFallback(request, url));
 });
+
+async function precacheFallback(request, url) {
+  try {
+    return await fetch(request);
+  } catch (err) {
+    const cached = await caches.match(url.pathname, { cacheName: CACHE_NAME });
+    if (cached) return cached;
+    throw err;
+  }
+}
 
 /**
  * 需要離線快照的請求 → 快取鍵；其他請求回傳 null（不攔截）
