@@ -538,14 +538,18 @@ export function computeHazards(_route: Route, stages: RouteStage[]): Hazard[] {
 
 export type VerdictLevel = HazardLevel | "clear" | "unknown";
 
-/** 未判定的原因：資料缺漏／預報過期／超出預報時段 */
-export type UnknownReason = "no_data" | "stale" | "out_of_coverage";
+/**
+ * 未判定的原因：資料缺漏／預報過期／超出預報時段／離線快照過期
+ * snapshot_expired 只由前端離線快照（snapshot.ts）加上，summarizeVerdict 不會產生
+ */
+export type UnknownReason = "no_data" | "stale" | "out_of_coverage" | "snapshot_expired";
 
 /** 未判定原因的說明文案（badge 相同，點開看原因） */
 export const UNKNOWN_REASON_TEXT: Record<UnknownReason, { title: string; detail: string }> = {
   no_data: { title: "資料缺漏", detail: "部分路段的天氣或路況資料取不到。" },
   stale: { title: "預報過期", detail: "氣象署預報尚未更新，目前只有過期的預報。" },
   out_of_coverage: { title: "超出預報時段", detail: "預計抵達時間超出目前預報涵蓋的時段。" },
+  snapshot_expired: { title: "離線資料過期", detail: "收不到訊號，判讀超過 30 分鐘沒有更新。" },
 };
 
 export interface ReconVerdict {
