@@ -57,32 +57,35 @@ export function RouteStickyBar({
   return (
     <AnimatePresence>
       {scrolledPast && route && (
-        // 卡片底色＋下緣陰影：頁面底色與頂部導覽同色，懸浮後要和下方內容分得出前後
+        // 外層用頁面底色蓋住頂部導覽（含下緣分隔線），圓角露出的地方才不會看到導覽的線；
+        // 內層用卡片底色＋下緣陰影＋下方 24px 圓角，懸浮後和下方內容分得出前後
         <motion.div
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -8 }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
           transition={{ duration: 0.18 }}
-          className="fixed inset-x-0 top-0 z-40 border-b border-border bg-card/95 pt-[env(safe-area-inset-top)] shadow-[0_8px_20px_-12px_rgb(0_0_0/0.45)] backdrop-blur-sm dark:shadow-[0_8px_24px_-10px_rgb(0_0_0/0.8)] lg:hidden"
+          className="fixed inset-x-0 top-0 z-40 bg-background lg:hidden"
         >
-          <div className="mx-auto flex h-16 max-w-6xl items-center gap-2.5 px-4 sm:px-6">
-            <button
-              type="button"
-              onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-              aria-label={`${route.name}，${status ? getStatusLabel(status) : "未判定"}，回到頂端`}
-              className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
-            >
-              <span
-                className="size-2.5 shrink-0 rounded-full bg-muted-foreground/40"
-                style={status ? { backgroundColor: getStatusColor(status) } : undefined}
-                aria-hidden
-              />
-              <span className="truncate text-base font-bold text-foreground">{route.name}</span>
-            </button>
-            <Button variant="outline" size="sm" className="shrink-0 gap-1.5" onClick={onOpenList}>
-              <SlidersHorizontal className="size-3.5" aria-hidden />
-              路線列表
-            </Button>
+          <div className="rounded-b-3xl border-b border-border bg-card pt-[env(safe-area-inset-top)] shadow-[0_8px_20px_-12px_rgb(0_0_0/0.45)] dark:shadow-[0_8px_24px_-10px_rgb(0_0_0/0.8)]">
+            <div className="mx-auto flex h-16 max-w-6xl items-center gap-2.5 px-4 sm:px-6">
+              <button
+                type="button"
+                onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+                aria-label={`${route.name}，${status ? getStatusLabel(status) : "未判定"}，回到頂端`}
+                className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
+              >
+                <span
+                  className="size-2.5 shrink-0 rounded-full bg-muted-foreground/40"
+                  style={status ? { backgroundColor: getStatusColor(status) } : undefined}
+                  aria-hidden
+                />
+                <span className="truncate text-base font-bold text-foreground">{route.name}</span>
+              </button>
+              <Button variant="outline" size="sm" className="shrink-0 gap-1.5" onClick={onOpenList}>
+                <SlidersHorizontal className="size-3.5" aria-hidden />
+                路線列表
+              </Button>
+            </div>
           </div>
         </motion.div>
       )}
