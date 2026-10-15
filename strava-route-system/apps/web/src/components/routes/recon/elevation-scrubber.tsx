@@ -263,8 +263,21 @@ export function ElevationScrubber({
               fill={LINE_COLOR}
               fillOpacity={0.12}
               isAnimationActive={false}
+              // recharts' default active dot stays at the last hovered/tapped point (on touch it never clears),
+              // so it drifts away from the real position; the cursor dot below marks the position instead
+              activeDot={false}
             />
             <ReferenceLine x={positionKm} stroke={CURSOR_COLOR} strokeWidth={1.5} />
+            {/* 游標與高程線的交點：位置不在鏡頭上（例如途中定位落在兩台之間）時也看得出目前在哪；在鏡頭上時被圖釘蓋過 */}
+            <ReferenceDot
+              x={positionKm}
+              y={elevation}
+              r={3.5}
+              fill={CURSOR_COLOR}
+              stroke="var(--card)"
+              strokeWidth={1.5}
+              ifOverflow="visible"
+            />
             {/* 選到的那台最後畫，鏡頭靠近時壓在最上層 */}
             {[...cameraPins].sort((a, b) => Number(a.key === currentKey) - Number(b.key === currentKey)).map((p) => (
               <ReferenceDot
