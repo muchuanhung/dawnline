@@ -31,7 +31,7 @@ function levelClass(level: "caution" | "risky" | null): string {
 /**
  * 第 3 層：可拖曳的高程圖；游標處的海拔與天氣直接顯示在圖上方。
  * 有停點（路線頁傳入 stops／onSelectStop）時與里程軌道同一套規則：拖曳與方向鍵只停在鏡頭與示警路段起點，
- * 換站時才更新；鏡頭位置畫成線上的小點。沒有停點時（沙盤頁、沿途沒有鏡頭與示警）照舊連續拖曳。
+ * 換站時才更新；鏡頭位置畫在圖底，與軌道下方的鏡頭點同一套樣式。沒有停點時（沙盤頁、沿途沒有鏡頭與示警）照舊連續拖曳。
  */
 export function ElevationScrubber({
   data,
@@ -100,7 +100,7 @@ export function ElevationScrubber({
     if (stop) onSelectStop(stop);
   };
 
-  // 鏡頭停點畫在高程線上，看得出拖到哪裡會停
+  // 鏡頭停點的位置與該處海拔（底部畫點、虛線對到高程線），看得出拖到哪裡會停
   const cameraDots = useMemo(
     () =>
       stops.flatMap((s) =>
@@ -206,20 +206,32 @@ export function ElevationScrubber({
               fillOpacity={0.12}
               isAnimationActive={false}
             />
+            {/* 鏡頭位置：與里程軌道下方同一排點（底線上，目前這台放大），淡虛線對到高程線上 */}
             {cameraDots.map((d) => {
               const active = d.key === currentKey;
-              return (
+              return [
+                <ReferenceLine
+                  key={`${d.key}-guide`}
+                  segment={[
+                    { x: d.km, y: 0 },
+                    { x: d.km, y: d.elevation },
+                  ]}
+                  stroke={CURSOR_COLOR}
+                  strokeOpacity={0.3}
+                  strokeDasharray="2 3"
+                  ifOverflow="hidden"
+                />,
                 <ReferenceDot
-                  key={d.key}
+                  key={`${d.key}-dot`}
                   x={d.km}
-                  y={d.elevation}
-                  r={active ? 4.5 : 3}
+                  y={0}
+                  r={active ? 5 : 3}
                   fill={CURSOR_COLOR}
                   fillOpacity={active ? 1 : 0.45}
                   stroke="none"
-                  ifOverflow="hidden"
-                />
-              );
+                  ifOverflow="visible"
+                />,
+              ];
             })}
             <ReferenceLine x={positionKm} stroke={CURSOR_COLOR} strokeWidth={1.5} />
           </AreaChart>
