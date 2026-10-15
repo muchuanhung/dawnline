@@ -201,7 +201,7 @@ export function RouteTrack({
               />
             ))}
           </div>
-          {/* 鏡頭位置：軌道正下方的小點，目前這台放大；看得出鏡頭之間相距多遠 */}
+          {/* 鏡頭位置：軌道正下方的小點，目前這台放大並換成主色（與高程圖一致）；看得出鏡頭之間相距多遠 */}
           {markers.map((m) => {
             const active = m.id === activeMarker?.id;
             return (
@@ -209,7 +209,7 @@ export function RouteTrack({
                 key={m.id}
                 className={cn(
                   "absolute top-[calc(50%+20px)] -translate-x-1/2 -translate-y-1/2 rounded-full",
-                  active ? "size-2.5 bg-foreground" : "size-1.5 bg-foreground/45"
+                  active ? "size-3 bg-primary ring-2 ring-card" : "size-1.5 bg-foreground/45"
                 )}
                 style={{ left: `${at(m.km) * 100}%` }}
                 aria-hidden

@@ -20,6 +20,8 @@ import { nearestStop, stepStop, stopKey, type TrackStop } from "@/lib/routes/rou
 // 非警示資訊一律低飽和；只有危險色帶用警示色
 const LINE_COLOR = "var(--muted-foreground)";
 const CURSOR_COLOR = "var(--foreground)";
+/** 選到的鏡頭：品牌主色，和其他灰點一眼分得出來 */
+const ACTIVE_CAMERA_COLOR = "var(--primary)";
 const HAZARD_FILL = { risky: "var(--destructive)", caution: "var(--warning)" } as const;
 
 function levelClass(level: "caution" | "risky" | null): string {
@@ -31,7 +33,7 @@ function levelClass(level: "caution" | "risky" | null): string {
 /**
  * 第 3 層：可拖曳的高程圖；游標處的海拔與天氣直接顯示在圖上方。
  * 有停點（路線頁傳入 stops／onSelectStop）時與里程軌道同一套規則：拖曳與方向鍵只停在鏡頭與示警路段起點，
- * 換站時才更新；鏡頭位置畫在圖底，與軌道下方的鏡頭點同一套樣式。沒有停點時（沙盤頁、沿途沒有鏡頭與示警）照舊連續拖曳。
+ * 換站時才更新；鏡頭位置畫成線上的小點，選到的那台換成主色。沒有停點時（沙盤頁、沿途沒有鏡頭與示警）照舊連續拖曳。
  */
 export function ElevationScrubber({
   data,
@@ -100,7 +102,7 @@ export function ElevationScrubber({
     if (stop) onSelectStop(stop);
   };
 
-  // 鏡頭停點的位置與該處海拔（底部畫點、虛線對到高程線），看得出拖到哪裡會停
+  // 鏡頭停點畫在高程線上，看得出拖到哪裡會停
   const cameraDots = useMemo(
     () =>
       stops.flatMap((s) =>
@@ -206,32 +208,22 @@ export function ElevationScrubber({
               fillOpacity={0.12}
               isAnimationActive={false}
             />
-            {/* 鏡頭位置：與里程軌道下方同一排點（底線上，目前這台放大），淡虛線對到高程線上 */}
+            {/* 鏡頭位置：高程線上的小點；選到的那台換成主色並加白邊，與軌道下方的鏡頭點一致 */}
             {cameraDots.map((d) => {
               const active = d.key === currentKey;
-              return [
-                <ReferenceLine
-                  key={`${d.key}-guide`}
-                  segment={[
-                    { x: d.km, y: 0 },
-                    { x: d.km, y: d.elevation },
-                  ]}
-                  stroke={CURSOR_COLOR}
-                  strokeOpacity={0.3}
-                  strokeDasharray="2 3"
-                  ifOverflow="hidden"
-                />,
+              return (
                 <ReferenceDot
-                  key={`${d.key}-dot`}
+                  key={d.key}
                   x={d.km}
-                  y={0}
-                  r={active ? 5 : 3}
-                  fill={CURSOR_COLOR}
-                  fillOpacity={active ? 1 : 0.45}
-                  stroke="none"
+                  y={d.elevation}
+                  r={active ? 5.5 : 3.5}
+                  fill={active ? ACTIVE_CAMERA_COLOR : LINE_COLOR}
+                  fillOpacity={active ? 1 : 0.7}
+                  stroke={active ? "var(--card)" : "none"}
+                  strokeWidth={2}
                   ifOverflow="visible"
-                />,
-              ];
+                />
+              );
             })}
             <ReferenceLine x={positionKm} stroke={CURSOR_COLOR} strokeWidth={1.5} />
           </AreaChart>
