@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AreaChart,
   Area,
@@ -110,6 +110,18 @@ export function ElevationScrubber({
   onScrub: (km: number) => void;
 }) {
   const snaps = onSelectStop != null && stops.length > 0;
+
+  // 觸控裝置：上下滑捲動頁面經過圖表時，recharts 的 touchmove 會一路換鏡頭（誤觸），停點又只差十幾 px 難以拖準。
+  // 有停點時改成點一下跳到最近的停點，拖曳交給上方里程軌道（同一組停點）；桌機維持滑過即移動
+  const [coarsePointer, setCoarsePointer] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(pointer: coarse)");
+    const sync = () => setCoarsePointer(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  const tapOnly = snaps && coarsePointer;
   const currentKey = currentStop ? stopKey(currentStop) : null;
 
   /** 移到指定里程：有停點就跳到最近的停點（換站時才更新），沒有就連續移動 */
@@ -198,9 +210,9 @@ export function ElevationScrubber({
           <AreaChart
             data={data}
             margin={{ top: cameraPins.length > 0 ? PIN_SPACE : 8, right: 12, left: 0, bottom: 0 }}
-            onMouseMove={handleScrub}
+            onMouseMove={tapOnly ? undefined : handleScrub}
             onClick={handleScrub}
-            {...({ onTouchMove: handleScrub } as Record<string, unknown>)}
+            {...(tapOnly ? {} : ({ onTouchMove: handleScrub } as Record<string, unknown>))}
           >
             <XAxis
               dataKey="km"
