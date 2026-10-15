@@ -20,9 +20,55 @@ import { nearestStop, stepStop, stopKey, type TrackStop } from "@/lib/routes/rou
 // 非警示資訊一律低飽和；只有危險色帶用警示色
 const LINE_COLOR = "var(--muted-foreground)";
 const CURSOR_COLOR = "var(--foreground)";
-/** 選到的鏡頭：品牌主色，和其他灰點一眼分得出來 */
-const ACTIVE_CAMERA_COLOR = "var(--primary)";
+/** 鏡頭圖釘：編號圓排在圖頂（圖表上方留白處），細線連到高程線上的位置 */
+const PIN_Y = 11;
+const PIN_R = 9;
+/** 圖表上方留給圖釘的高度 */
+const PIN_SPACE = PIN_Y + PIN_R + 6;
 const HAZARD_FILL = { risky: "var(--destructive)", caution: "var(--warning)" } as const;
+
+/**
+ * 鏡頭圖釘（給 ReferenceDot 的 shape）：cx／cy 是該鏡頭在高程線上的座標。
+ * 選到的那台用品牌主色實心＋實線，其餘用卡片底色、灰框、虛線，與軌道下方的鏡頭點同一套配色
+ */
+function CameraPin({ cx, cy, ordinal, active }: { cx?: number; cy?: number; ordinal: number; active: boolean }) {
+  if (cx == null || cy == null) return <g />;
+  const tone = active ? "var(--primary)" : "var(--muted-foreground)";
+  return (
+    <g aria-hidden>
+      <line
+        x1={cx}
+        y1={PIN_Y + PIN_R}
+        x2={cx}
+        y2={cy}
+        stroke={tone}
+        strokeWidth={active ? 1.5 : 1}
+        strokeOpacity={active ? 1 : 0.5}
+        strokeDasharray={active ? undefined : "2 3"}
+      />
+      <circle cx={cx} cy={cy} r={active ? 3.5 : 2.5} fill={tone} />
+      <circle
+        cx={cx}
+        cy={PIN_Y}
+        r={PIN_R}
+        fill={active ? "var(--primary)" : "var(--card)"}
+        stroke={tone}
+        strokeWidth={active ? 0 : 1}
+      />
+      <text
+        x={cx}
+        y={PIN_Y}
+        dy="0.35em"
+        textAnchor="middle"
+        fontSize={11}
+        fontWeight={active ? 700 : 500}
+        fill={active ? "var(--primary-foreground)" : "var(--muted-foreground)"}
+      >
+        {ordinal}
+      </text>
+    </g>
+  );
+}
 
 function levelClass(level: "caution" | "risky" | null): string {
   if (level === "risky") return "text-destructive font-semibold";
@@ -33,7 +79,7 @@ function levelClass(level: "caution" | "risky" | null): string {
 /**
  * 第 3 層：可拖曳的高程圖；游標處的海拔與天氣直接顯示在圖上方。
  * 有停點（路線頁傳入 stops／onSelectStop）時與里程軌道同一套規則：拖曳與方向鍵只停在鏡頭與示警路段起點，
- * 換站時才更新；鏡頭位置畫成線上的小點，選到的那台換成主色。沒有停點時（沙盤頁、沿途沒有鏡頭與示警）照舊連續拖曳。
+ * 換站時才更新；鏡頭位置畫成編號圖釘，選到的那台用主色。沒有停點時（沙盤頁、沿途沒有鏡頭與示警）照舊連續拖曳。
  */
 export function ElevationScrubber({
   data,
@@ -102,14 +148,12 @@ export function ElevationScrubber({
     if (stop) onSelectStop(stop);
   };
 
-  // 鏡頭停點畫在高程線上，看得出拖到哪裡會停
-  const cameraDots = useMemo(
+  // 鏡頭停點畫成圖釘，看得出拖到哪裡會停；編號與軌道「第 n／N 台」相同（停點已依里程排序）
+  const cameraPins = useMemo(
     () =>
-      stops.flatMap((s) =>
-        s.kind === "marker"
-          ? [{ key: stopKey(s), km: s.km, elevation: nearestByKm(data, s.km)?.elevation ?? 0 }]
-          : []
-      ),
+      stops
+        .filter((s) => s.kind === "marker")
+        .map((s, i) => ({ key: stopKey(s), km: s.km, ordinal: i + 1, elevation: nearestByKm(data, s.km)?.elevation ?? 0 })),
     [stops, data]
   );
 
@@ -153,7 +197,7 @@ export function ElevationScrubber({
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart
             data={data}
-            margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+            margin={{ top: cameraPins.length > 0 ? PIN_SPACE : 8, right: 12, left: 0, bottom: 0 }}
             onMouseMove={handleScrub}
             onClick={handleScrub}
             {...({ onTouchMove: handleScrub } as Record<string, unknown>)}
@@ -208,24 +252,19 @@ export function ElevationScrubber({
               fillOpacity={0.12}
               isAnimationActive={false}
             />
-            {/* 鏡頭位置：高程線上的小點；選到的那台換成主色並加白邊，與軌道下方的鏡頭點一致 */}
-            {cameraDots.map((d) => {
-              const active = d.key === currentKey;
-              return (
-                <ReferenceDot
-                  key={d.key}
-                  x={d.km}
-                  y={d.elevation}
-                  r={active ? 5.5 : 3.5}
-                  fill={active ? ACTIVE_CAMERA_COLOR : LINE_COLOR}
-                  fillOpacity={active ? 1 : 0.7}
-                  stroke={active ? "var(--card)" : "none"}
-                  strokeWidth={2}
-                  ifOverflow="visible"
-                />
-              );
-            })}
             <ReferenceLine x={positionKm} stroke={CURSOR_COLOR} strokeWidth={1.5} />
+            {/* 選到的那台最後畫，鏡頭靠近時壓在最上層 */}
+            {[...cameraPins].sort((a, b) => Number(a.key === currentKey) - Number(b.key === currentKey)).map((p) => (
+              <ReferenceDot
+                key={p.key}
+                x={p.km}
+                y={p.elevation}
+                ifOverflow="visible"
+                shape={(props: { cx?: number; cy?: number }) => (
+                  <CameraPin cx={props.cx} cy={props.cy} ordinal={p.ordinal} active={p.key === currentKey} />
+                )}
+              />
+            ))}
           </AreaChart>
         </ResponsiveContainer>
       </div>
