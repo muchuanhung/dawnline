@@ -14,6 +14,7 @@ import { useRouteCCTV } from "@/hooks/useRouteCCTV";
 import { useRouteBriefing, verdictOf } from "@/hooks/useRouteBriefing";
 import { RouteCard } from "@/components/routes/route-card";
 import { RouteHeader, statusOfVerdict } from "@/components/routes/route-header";
+import { RouteStickyBar } from "@/components/routes/route-sticky-bar";
 import { ReconView } from "@/components/routes/recon-view";
 import { TripSettings } from "@/components/trip/trip-settings";
 import { RideAhead } from "@/components/routes/ride-ahead";
@@ -52,6 +53,8 @@ export function RoutesClient({
   // 途中模式的目前里程，綁定路線：換路線後自動失效，不會把 A 路線的里程套到 B 路線
   // at：套用時間，同一里程定時重新判讀時用來觸發重抓
   const [ahead, setAhead] = useState<{ routeId: string; km: number; at: number } | null>(null);
+  // 路線卡：手機往下捲過它後，頂部改顯示懸浮列（路線名＋路線列表）
+  const [routeHeaderEl, setRouteHeaderEl] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!switchingRoute) return;
@@ -177,6 +180,13 @@ export function RoutesClient({
         </p>
       </aside>
 
+      <RouteStickyBar
+        anchor={routeHeaderEl}
+        route={selectedRoute}
+        status={routeStatus}
+        onOpenList={() => setMobileListOpen(true)}
+      />
+
       <div className="relative min-w-0 space-y-5">
         {/* 窄螢幕整列換行，不讓標題或連結被拆字 */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -227,6 +237,7 @@ export function RoutesClient({
               transition={{ duration: 0.25 }}
               className="w-full min-w-0 space-y-5"
             >
+              <div ref={setRouteHeaderEl}>
               <RouteHeader
                 route={selectedRoute}
                 departureLabel={(() => {
@@ -235,6 +246,7 @@ export function RoutesClient({
                   return s.nowIsBest ? "現在" : formatClock(new Date(s.from), new Date());
                 })()}
               />
+              </div>
               <ReconView
                 route={selectedRoute}
                 cctvFeeds={cctvFeeds}
