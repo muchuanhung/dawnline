@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CctvMarker, VerdictLevel } from "@/lib/routes/recon-geo";
 import {
+  currentStop,
   markerOrdinal,
   nearestStop,
   stepStop,
@@ -73,11 +74,7 @@ export function RouteTrack({
   const pct = `${at(positionKm) * 100}%`;
 
   // 目前停在哪個停點：展開中的示警路段優先，其次是剛好停在該里程的鏡頭
-  const current: TrackStop | null = activeZone
-    ? { kind: "zone", km: activeZone.startKm, zone: activeZone }
-    : activeMarker && activeMarker.km === positionKm
-      ? { kind: "marker", km: activeMarker.km, marker: activeMarker }
-      : null;
+  const current = currentStop(activeZone, activeMarker, positionKm);
   const currentKey = current ? stopKey(current) : null;
 
   const selectStop = (stop: TrackStop) => {

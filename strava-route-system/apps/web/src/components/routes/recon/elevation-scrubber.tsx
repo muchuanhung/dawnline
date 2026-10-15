@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import {
   AreaChart,
   Area,
@@ -9,11 +9,13 @@ import {
   ResponsiveContainer,
   ReferenceLine,
   ReferenceArea,
+  ReferenceDot,
   Tooltip,
 } from "recharts";
 import { cn } from "@/lib/utils";
 import type { ChartDataPoint, Hazard, RouteStage } from "@/lib/routes/recon-geo";
-import { rainLevel, windLevel } from "@/lib/routes/recon-geo";
+import { nearestByKm, rainLevel, windLevel } from "@/lib/routes/recon-geo";
+import { nearestStop, stepStop, stopKey, type TrackStop } from "@/lib/routes/route-track";
 
 // 非警示資訊一律低飽和；只有危險色帶用警示色
 const LINE_COLOR = "var(--muted-foreground)";
@@ -26,12 +28,19 @@ function levelClass(level: "caution" | "risky" | null): string {
   return "text-foreground";
 }
 
-/** 第 3 層：可拖曳的高程圖；游標處的海拔與天氣直接顯示在圖上方 */
+/**
+ * 第 3 層：可拖曳的高程圖；游標處的海拔與天氣直接顯示在圖上方。
+ * 有停點（路線頁傳入 stops／onSelectStop）時與里程軌道同一套規則：拖曳與方向鍵只停在鏡頭與示警路段起點，
+ * 換站時才更新；鏡頭位置畫成線上的小點。沒有停點時（沙盤頁、沿途沒有鏡頭與示警）照舊連續拖曳。
+ */
 export function ElevationScrubber({
   data,
   hazards,
   positionKm,
   totalKm,
+  stops = [],
+  currentStop = null,
+  onSelectStop,
   elevation,
   peakElevation,
   stage,
@@ -41,17 +50,65 @@ export function ElevationScrubber({
   hazards: Hazard[];
   positionKm: number;
   totalKm: number;
+  /** 與里程軌道共用的停點（見 trackStops） */
+  stops?: TrackStop[];
+  /** 目前停在哪個停點（見 currentStop） */
+  currentStop?: TrackStop | null;
+  onSelectStop?: (stop: TrackStop) => void;
   elevation: number;
   peakElevation: number;
   stage: RouteStage | null;
+  /** 沒有停點時的連續移動 */
   onScrub: (km: number) => void;
 }) {
+  const snaps = onSelectStop != null && stops.length > 0;
+  const currentKey = currentStop ? stopKey(currentStop) : null;
+
+  /** 移到指定里程：有停點就跳到最近的停點（換站時才更新），沒有就連續移動 */
+  const moveNear = useCallback(
+    (km: number) => {
+      if (!snaps) return onScrub(km);
+      const stop = nearestStop(stops, km);
+      if (stop && stopKey(stop) !== currentKey) onSelectStop(stop);
+    },
+    [snaps, stops, currentKey, onSelectStop, onScrub]
+  );
+
   const handleScrub = useCallback(
     (state: { activePayload?: Array<{ payload: ChartDataPoint }> }) => {
       const p = state?.activePayload?.[0]?.payload;
-      if (p) onScrub(p.km);
+      if (p) moveNear(p.km);
     },
-    [onScrub]
+    [moveNear]
+  );
+
+  /** 鍵盤：有停點時與軌道一樣逐站切換，不逐 0.1 km 移動 */
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!snaps) return;
+    const stop =
+      e.key === "ArrowRight" || e.key === "ArrowUp"
+        ? stepStop(stops, currentStop, positionKm, 1)
+        : e.key === "ArrowLeft" || e.key === "ArrowDown"
+          ? stepStop(stops, currentStop, positionKm, -1)
+          : e.key === "Home"
+            ? stops[0]!
+            : e.key === "End"
+              ? stops[stops.length - 1]!
+              : undefined;
+    if (stop === undefined) return;
+    e.preventDefault();
+    if (stop) onSelectStop(stop);
+  };
+
+  // 鏡頭停點畫在高程線上，看得出拖到哪裡會停
+  const cameraDots = useMemo(
+    () =>
+      stops.flatMap((s) =>
+        s.kind === "marker"
+          ? [{ key: stopKey(s), km: s.km, elevation: nearestByKm(data, s.km)?.elevation ?? 0 }]
+          : []
+      ),
+    [stops, data]
   );
 
   // 超出預報時段的數值不可當真，比照無資料不顯示
@@ -149,6 +206,21 @@ export function ElevationScrubber({
               fillOpacity={0.12}
               isAnimationActive={false}
             />
+            {cameraDots.map((d) => {
+              const active = d.key === currentKey;
+              return (
+                <ReferenceDot
+                  key={d.key}
+                  x={d.km}
+                  y={d.elevation}
+                  r={active ? 4.5 : 3}
+                  fill={CURSOR_COLOR}
+                  fillOpacity={active ? 1 : 0.45}
+                  stroke="none"
+                  ifOverflow="hidden"
+                />
+              );
+            })}
             <ReferenceLine x={positionKm} stroke={CURSOR_COLOR} strokeWidth={1.5} />
           </AreaChart>
         </ResponsiveContainer>
@@ -165,7 +237,8 @@ export function ElevationScrubber({
         max={totalKm}
         step={step}
         value={positionKm}
-        onChange={(e) => onScrub(Number(e.target.value))}
+        onChange={(e) => moveNear(Number(e.target.value))}
+        onKeyDown={onKeyDown}
         className="sr-only focus:not-sr-only focus:w-full"
       />
     </section>
