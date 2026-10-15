@@ -1,11 +1,14 @@
 import { test, expect } from "@playwright/test";
 import type { CctvMarker, Hazard, RouteStage } from "@/lib/routes/recon-geo";
 import {
+  currentStop,
   dedupeMarkers,
   hazardZones,
   markerOrdinal,
+  nearestMarkerStop,
   nearestStop,
   stepStop,
+  stopForHazard,
   stopKey,
   trackStops,
   trackTicks,
@@ -290,5 +293,34 @@ test.describe("trackZones 軌道路況色段", () => {
     expect(zoneAt(zones, 4)?.level).toBe("risky");
     expect(zoneAt(zones, 8)?.level).toBe("clear");
     expect(zoneAt([], 8)).toBeNull();
+  });
+});
+
+test.describe("高程圖、示警列表與軌道共用停點", () => {
+  const zones = trackZones(20, [hazard("h1", 5, "caution", 6), hazard("h2", 6.5, "caution", 7)], [], {
+    eventsComplete: true,
+  });
+  const cams = [marker("a", 2), marker("b", 12)];
+  const stops = trackStops(cams, zones);
+
+  test("currentStop：展開中的示警路段優先，其次是剛好停在該里程的鏡頭", () => {
+    const zone = zones.find((z) => z.hazards.length > 0)!;
+    expect(currentStop(zone, cams[0]!, 2)?.kind).toBe("zone");
+    expect(currentStop(null, cams[0]!, 2)?.kind).toBe("marker");
+    expect(currentStop(null, cams[0]!, 2.4)).toBeNull();
+    expect(currentStop(null, null, 2)).toBeNull();
+  });
+
+  test("stopForHazard：被併進路段的示警跳到該路段起點", () => {
+    const stop = stopForHazard(stops, "h2");
+    expect(stop?.kind).toBe("zone");
+    expect(stop?.km).toBe(5);
+    expect(stopForHazard(stops, "nope")).toBeNull();
+  });
+
+  test("nearestMarkerStop：只找鏡頭，沒有鏡頭時為 null", () => {
+    expect(nearestMarkerStop(stops, 5.5)?.km).toBe(2);
+    expect(nearestMarkerStop(stops, 9)?.km).toBe(12);
+    expect(nearestMarkerStop(trackStops([], zones), 5)).toBeNull();
   });
 });

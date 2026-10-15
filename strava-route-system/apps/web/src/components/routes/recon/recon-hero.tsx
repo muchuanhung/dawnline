@@ -1,14 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
 import { ExternalLink, Maximize2, VideoOff, X } from "lucide-react";
 import { Dialog, DialogTrigger } from "@/components/ui/dialog";
 import Spinner from "@/components/ui/Spinner";
 import { UnknownReasons } from "@/components/verdict/unknown-reasons";
 import { HAZARD_ROW_GRID, HazardRowContent } from "@/components/verdict/hazard-row";
 import { cn } from "@/lib/utils";
-import type { CctvMarker, Hazard, ReconVerdict, RouteStage, VerdictLevel } from "@/lib/routes/recon-geo";
-import { trackZones, type TrackZone } from "@/lib/routes/route-track";
+import type { CctvMarker, ReconVerdict, VerdictLevel } from "@/lib/routes/recon-geo";
+import type { TrackZone } from "@/lib/routes/route-track";
 import { CCTV_FAR_KM, CctvFrame, CctvFullscreen, cctvTitle } from "./cctv-viewer";
 import { RouteVerdictBar, VERDICT_LEVEL_STYLE } from "./route-verdict-bar";
 import { RouteTrack } from "./route-track";
@@ -185,13 +184,13 @@ export function ReconHero({
   cctvOffline,
   positionKm,
   totalKm,
-  hazards,
-  stages,
-  eventsComplete,
-  fromKm,
+  zones,
+  activeZone,
   etaOf,
   onMove,
   onSelectMarker,
+  onSelectZone,
+  onCloseZone,
 }: {
   verdict: ReconVerdict;
   /** 判讀尚未回來 */
@@ -204,30 +203,16 @@ export function ReconHero({
   cctvOffline: boolean;
   positionKm: number;
   totalKm: number;
-  hazards: Hazard[];
-  /** 判讀回來的天氣路段；判讀未回來時給空陣列，軌道不上安全色 */
-  stages: RouteStage[];
-  /** 路況事件完整取得 */
-  eventsComplete: boolean;
-  /** 途中模式的目前里程 */
-  fromKm: number | null;
+  /** 路況色段（上層以 trackZones 算好，與高程圖、示警列表共用停點） */
+  zones: TrackZone[];
+  /** 展開說明中的示警路段 */
+  activeZone: TrackZone | null;
   etaOf?: (km: number) => string;
   onMove: (km: number) => void;
   onSelectMarker: (marker: CctvMarker) => void;
+  onSelectZone: (zone: TrackZone) => void;
+  onCloseZone: () => void;
 }) {
-  const zones = useMemo(
-    () => trackZones(totalKm, hazards, stages, { eventsComplete, fromKm }),
-    [totalKm, hazards, stages, eventsComplete, fromKm]
-  );
-  const [openZoneKm, setOpenZoneKm] = useState<number | null>(null);
-  // 判讀更新後示警路段可能變了，找不到就收起
-  const openZone = zones.find((z) => z.hazards.length > 0 && z.startKm === openZoneKm) ?? null;
-
-  const move = (km: number) => {
-    setOpenZoneKm(null);
-    onMove(km);
-  };
-
   return (
     <section aria-label="沿線影像與判定" className="overflow-hidden rounded-2xl border border-border bg-card">
       {activeMarker && !cctvOffline ? (
@@ -241,18 +226,12 @@ export function ReconHero({
         markers={markers}
         activeMarker={activeMarker}
         zones={zones}
-        activeZone={openZone}
-        onMove={move}
-        onSelectMarker={(m) => {
-          setOpenZoneKm(null);
-          onSelectMarker(m);
-        }}
-        onSelectZone={(z) => {
-          setOpenZoneKm(z.startKm);
-          onMove(z.startKm);
-        }}
+        activeZone={activeZone}
+        onMove={onMove}
+        onSelectMarker={onSelectMarker}
+        onSelectZone={onSelectZone}
       />
-      {openZone && <ZoneCallout zone={openZone} etaOf={etaOf} onClose={() => setOpenZoneKm(null)} />}
+      {activeZone && <ZoneCallout zone={activeZone} etaOf={etaOf} onClose={onCloseZone} />}
     </section>
   );
 }

@@ -261,3 +261,30 @@ export function stepStop(
   }
   return null;
 }
+
+/**
+ * 目前停在哪個停點：展開中的示警路段優先，其次是剛好停在該里程的鏡頭；都不是時為 null。
+ * 軌道與高程圖共用，兩邊判斷「換站了沒」的依據一致
+ */
+export function currentStop(
+  activeZone: TrackZone | null,
+  activeMarker: CctvMarker | null,
+  positionKm: number
+): TrackStop | null {
+  if (activeZone) return { kind: "zone", km: activeZone.startKm, zone: activeZone };
+  if (activeMarker && activeMarker.km === positionKm) return { kind: "marker", km: activeMarker.km, marker: activeMarker };
+  return null;
+}
+
+/** 某個示警所屬的示警路段停點（示警會被併進路段，起點不一定是它自己的起點）；途中已走過等找不到時為 null */
+export function stopForHazard(stops: TrackStop[], hazardId: string): TrackStop | null {
+  return stops.find((s) => s.kind === "zone" && s.zone.hazards.some((h) => h.id === hazardId)) ?? null;
+}
+
+/** 離指定里程最近的鏡頭停點（不影響判定的沿線路況點擊後用，看該處附近的實況）；沒有鏡頭時為 null */
+export function nearestMarkerStop(stops: TrackStop[], km: number): TrackStop | null {
+  return nearestStop(
+    stops.filter((s) => s.kind === "marker"),
+    km
+  );
+}

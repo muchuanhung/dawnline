@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CctvMarker, VerdictLevel } from "@/lib/routes/recon-geo";
 import {
+  currentStop,
   markerOrdinal,
   nearestStop,
   stepStop,
@@ -73,11 +74,7 @@ export function RouteTrack({
   const pct = `${at(positionKm) * 100}%`;
 
   // 目前停在哪個停點：展開中的示警路段優先，其次是剛好停在該里程的鏡頭
-  const current: TrackStop | null = activeZone
-    ? { kind: "zone", km: activeZone.startKm, zone: activeZone }
-    : activeMarker && activeMarker.km === positionKm
-      ? { kind: "marker", km: activeMarker.km, marker: activeMarker }
-      : null;
+  const current = currentStop(activeZone, activeMarker, positionKm);
   const currentKey = current ? stopKey(current) : null;
 
   const selectStop = (stop: TrackStop) => {
@@ -204,7 +201,7 @@ export function RouteTrack({
               />
             ))}
           </div>
-          {/* 鏡頭位置：軌道正下方的小點，目前這台放大；看得出鏡頭之間相距多遠 */}
+          {/* 鏡頭位置：軌道正下方的小點，目前這台放大並換成主色（與高程圖一致）；看得出鏡頭之間相距多遠 */}
           {markers.map((m) => {
             const active = m.id === activeMarker?.id;
             return (
@@ -212,7 +209,7 @@ export function RouteTrack({
                 key={m.id}
                 className={cn(
                   "absolute top-[calc(50%+20px)] -translate-x-1/2 -translate-y-1/2 rounded-full",
-                  active ? "size-2.5 bg-foreground" : "size-1.5 bg-foreground/45"
+                  active ? "size-3 bg-primary ring-2 ring-card" : "size-1.5 bg-foreground/45"
                 )}
                 style={{ left: `${at(m.km) * 100}%` }}
                 aria-hidden

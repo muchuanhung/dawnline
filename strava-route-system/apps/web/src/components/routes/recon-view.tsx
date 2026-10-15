@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, type ReactNode } from "react";
 import type { CCTVFeed, Route } from "@/lib/routes/route-data";
 import {
   buildRoutePolylineKm,
@@ -11,10 +11,18 @@ import {
   routeTotalKm,
   stageAtKm,
   type ChartDataPoint,
+  type Hazard,
   type RouteStage,
 } from "@/lib/routes/recon-geo";
 import { useReconPosition } from "@/hooks/useReconPosition";
-import { dedupeMarkers } from "@/lib/routes/route-track";
+import {
+  currentStop,
+  dedupeMarkers,
+  nearestMarkerStop,
+  stopForHazard,
+  trackStops,
+  trackZones,
+} from "@/lib/routes/route-track";
 import { etaLabel, paceFor } from "@/lib/routes/trip";
 import { roadEventsOf, verdictOf, type RouteBriefingState } from "@/hooks/useRouteBriefing";
 import { HazardList } from "./recon/hazard-list";
@@ -45,7 +53,8 @@ interface ReconViewProps {
 /**
  * 路線偵察畫面：
  * 1 主視覺（判定疊在即時影像上＋里程軌道）→ 行程控制 → 2 沿途示警 → 3 高程圖（游標處天氣）
- * 軌道與高程圖共用同一個游標位置
+ * 軌道、示警列表與高程圖共用同一個游標位置與同一組停點（鏡頭＋示警路段）：
+ * 拖高程圖、點示警和拖軌道一樣只停在停點上，三處永遠指向同一台鏡頭或同一段示警
  */
 export function ReconView({
   route,
@@ -95,10 +104,42 @@ export function ReconView({
     [chartData]
   );
 
-  const { positionKm, moveTo, selectMarker, activeMarker } = useReconPosition(route.id, cctvMarkers, initialMarker);
+  const totalKm = routeTotalKm(route);
+  // 判讀未回來時軌道不上安全色；過期快照的路段一律不上安全色（未判定 ≠ 安全），示警路段照舊標出
+  const zoneStages = trip ? stages : NO_STAGES;
+  const eventsComplete = trip ? trip.eventsFailed !== null && trip.eventsFailed.length === 0 && !snapshot?.expired : false;
+  // 途中模式的目前里程：之前的路段不上色，游標也移到這裡
+  const fromKm = trip?.fromKm ?? null;
+  const zones = useMemo(
+    () => trackZones(totalKm, verdictHazards, zoneStages, { eventsComplete, fromKm }),
+    [totalKm, verdictHazards, zoneStages, eventsComplete, fromKm]
+  );
+  const stops = useMemo(() => trackStops(cctvMarkers, zones), [cctvMarkers, zones]);
 
-  // 途中模式：高程圖游標移到目前里程
-  const fromKm = briefing.briefing?.fromKm ?? null;
+  const { positionKm, moveTo, selectMarker, selectZone, selectStop, closeZone, activeMarker, activeZone } =
+    useReconPosition(route.id, cctvMarkers, initialMarker, zones);
+  const stopHere = currentStop(activeZone, activeMarker, positionKm);
+
+  /** 點示警：跳到它所屬的示警路段（與軌道停點一致）；途中已走過的找不到路段時才直接移到該處 */
+  const jumpToHazard = useCallback(
+    (hazard: Hazard) => {
+      const stop = stopForHazard(stops, hazard.id);
+      if (stop) selectStop(stop);
+      else moveTo(hazard.startKm);
+    },
+    [stops, selectStop, moveTo]
+  );
+
+  /** 點不影響判定的沿線路況：不是停點，跳到最近的鏡頭看附近實況；沿途沒有鏡頭時才直接移到該處 */
+  const jumpNearKm = useCallback(
+    (km: number) => {
+      const stop = nearestMarkerStop(stops, km);
+      if (stop) selectStop(stop);
+      else moveTo(km);
+    },
+    [stops, selectStop, moveTo]
+  );
+
   useEffect(() => {
     if (fromKm != null) moveTo(fromKm);
   }, [fromKm, moveTo]);
@@ -121,17 +162,14 @@ export function ReconView({
         cctvError={cctvError}
         cctvOffline={offline}
         positionKm={positionKm}
-        totalKm={routeTotalKm(route)}
-        hazards={verdictHazards}
-        stages={trip ? stages : NO_STAGES}
-        // 過期快照的路段一律不上安全色（未判定 ≠ 安全）；示警路段照舊標出
-        eventsComplete={
-          trip ? trip.eventsFailed !== null && trip.eventsFailed.length === 0 && !snapshot?.expired : false
-        }
-        fromKm={trip?.fromKm ?? null}
+        totalKm={totalKm}
+        zones={zones}
+        activeZone={activeZone}
         etaOf={etaOf}
         onMove={moveTo}
         onSelectMarker={selectMarker}
+        onSelectZone={selectZone}
+        onCloseZone={closeZone}
       />
 
       {afterHero}
@@ -140,7 +178,9 @@ export function ReconView({
         hazards={verdictHazards}
         roadEvents={roadEvents}
         positionKm={positionKm}
-        onJump={moveTo}
+        activeZone={activeZone}
+        onJump={jumpNearKm}
+        onSelectHazard={jumpToHazard}
         etaOf={etaOf}
       />
 
@@ -148,7 +188,10 @@ export function ReconView({
         data={chartData}
         hazards={verdictHazards}
         positionKm={positionKm}
-        totalKm={routeTotalKm(route)}
+        totalKm={totalKm}
+        stops={stops}
+        currentStop={stopHere}
+        onSelectStop={selectStop}
         elevation={currentElevation}
         peakElevation={peakElevation}
         stage={currentStage}

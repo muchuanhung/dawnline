@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import type { Hazard } from "@/lib/routes/recon-geo";
 import { groupRouteEvents, type RouteEvent } from "@/lib/routes/road-events";
 import type { RouteEventsState } from "@/hooks/useRouteBriefing";
+import type { TrackZone } from "@/lib/routes/route-track";
 import { HAZARD_ROW_GRID, HazardRowContent, NoticeRowContent } from "@/components/verdict/hazard-row";
 
 const ROW = cn(
@@ -17,23 +18,28 @@ type EtaOf = ((km: number) => string) | undefined;
 function HazardRows({
   hazards,
   positionKm,
-  onJump,
+  activeZone,
+  onSelect,
   etaOf,
 }: {
   hazards: Hazard[];
   positionKm: number;
-  onJump: (km: number) => void;
+  activeZone: TrackZone | null;
+  onSelect: (hazard: Hazard) => void;
   etaOf: EtaOf;
 }) {
   return (
     <ul className="divide-y divide-border/60 border-y border-border/60">
       {hazards.map((h) => {
-        const isHere = positionKm >= h.startKm && positionKm <= h.endKm;
+        // 停在示警路段時，路段內的示警都算「目前位置」（合併後的路段起點不一定落在每個示警範圍內）
+        const isHere = activeZone
+          ? activeZone.hazards.some((z) => z.id === h.id)
+          : positionKm >= h.startKm && positionKm <= h.endKm;
         return (
           <li key={h.id}>
             <button
               type="button"
-              onClick={() => onJump(h.startKm)}
+              onClick={() => onSelect(h)}
               aria-current={isHere ? "location" : undefined}
               className={cn(ROW, isHere && "bg-muted/60")}
             >
@@ -75,18 +81,26 @@ function EventsStatus({ state }: { state: RouteEventsState }) {
 /**
  * 第 2 層：會影響判定的示警（天氣、災害、事故、管制、異常告警），依里程排序；點擊跳到該處。
  * 其下為不影響判定的沿線路況，「其他的施工」收合成一行。
+ * 路線頁傳入 onSelectHazard／activeZone，點示警時與軌道一樣停到示警路段；沒傳時直接跳到示警起點。
  */
 export function HazardList({
   hazards,
   roadEvents,
   positionKm,
+  activeZone = null,
   onJump,
+  onSelectHazard,
   etaOf,
 }: {
   hazards: Hazard[];
   roadEvents?: RouteEventsState;
   positionKm: number;
+  /** 展開說明中的示警路段 */
+  activeZone?: TrackZone | null;
+  /** 點沿線路況（以及沒有 onSelectHazard 時的示警）跳到該里程 */
   onJump: (km: number) => void;
+  /** 點示警：交給上層決定停到哪個停點 */
+  onSelectHazard?: (hazard: Hazard) => void;
   etaOf?: EtaOf;
 }) {
   const { notices, routine } = groupRouteEvents(roadEvents?.events ?? []);
@@ -103,7 +117,13 @@ export function HazardList({
       {hazards.length === 0 ? (
         <p className="text-sm text-muted-foreground">沿途沒有示警</p>
       ) : (
-        <HazardRows hazards={hazards} positionKm={positionKm} onJump={onJump} etaOf={etaOf} />
+        <HazardRows
+          hazards={hazards}
+          positionKm={positionKm}
+          activeZone={activeZone}
+          onSelect={onSelectHazard ?? ((h) => onJump(h.startKm))}
+          etaOf={etaOf}
+        />
       )}
 
       {notices.length > 0 && (
