@@ -57,12 +57,13 @@ export function RouteStickyBar({
   return (
     <AnimatePresence>
       {scrolledPast && route && (
+        // 卡片底色＋下緣陰影：頁面底色與頂部導覽同色，懸浮後要和下方內容分得出前後
         <motion.div
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -8 }}
           transition={{ duration: 0.18 }}
-          className="fixed inset-x-0 top-0 z-40 border-b border-border bg-background/95 pt-[env(safe-area-inset-top)] backdrop-blur-sm lg:hidden"
+          className="fixed inset-x-0 top-0 z-40 border-b border-border bg-card/95 pt-[env(safe-area-inset-top)] shadow-[0_8px_20px_-12px_rgb(0_0_0/0.45)] backdrop-blur-sm dark:shadow-[0_8px_24px_-10px_rgb(0_0_0/0.8)] lg:hidden"
         >
           <div className="mx-auto flex h-16 max-w-6xl items-center gap-2.5 px-4 sm:px-6">
             <button
