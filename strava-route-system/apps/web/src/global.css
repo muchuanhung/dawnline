@@ -161,6 +161,12 @@
   html:has([data-app-shell]) {
     scrollbar-gutter: stable;
   }
+  /* 路線頁懸浮列（route-sticky-bar，< lg 才出現）是半透明的，展開時藏起底下的頂部導覽，才不會透出品牌字與分隔線 */
+  @media (width < 64rem) {
+    [data-app-shell]:has([data-route-sticky]) > header {
+      visibility: hidden;
+    }
+  }
 }
 
 /* Spinner 三點動畫 */

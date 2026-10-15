@@ -57,16 +57,18 @@ export function RouteStickyBar({
   return (
     <AnimatePresence>
       {scrolledPast && route && (
-        // 外層用頁面底色蓋住頂部導覽（含下緣分隔線），圓角露出的地方才不會看到導覽的線；
-        // 內層用卡片底色＋下緣陰影＋下方 24px 圓角，懸浮後和下方內容分得出前後
+        // 和頂部導覽同一種半透明＋背景模糊，下緣陰影＋下方 24px 圓角讓它和下方內容分得出前後。
+        // 懸浮列蓋在頂部導覽上，展開時把頂部導覽藏起來（data-route-sticky，見 globals.css），
+        // 半透明與圓角露出的地方才不會透出導覽的品牌字和分隔線
         <motion.div
+          data-route-sticky
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.18 }}
-          className="fixed inset-x-0 top-0 z-40 bg-background lg:hidden"
+          className="fixed inset-x-0 top-0 z-40 lg:hidden"
         >
-          <div className="rounded-b-3xl border-b border-border bg-card pt-[env(safe-area-inset-top)] shadow-[0_8px_20px_-12px_rgb(0_0_0/0.45)] dark:shadow-[0_8px_24px_-10px_rgb(0_0_0/0.8)]">
+          <div className="rounded-b-3xl border-b border-border bg-card/80 pt-[env(safe-area-inset-top)] shadow-[0_8px_20px_-12px_rgb(0_0_0/0.45)] backdrop-blur-md dark:shadow-[0_8px_24px_-10px_rgb(0_0_0/0.8)]">
             <div className="mx-auto flex h-16 max-w-6xl items-center gap-2.5 px-4 sm:px-6">
               <button
                 type="button"
