@@ -37,6 +37,33 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+/** 回到登入頁後等這麼久還沒有結果，就當作使用者關掉了 Google 登入分頁 */
+const POPUP_RETURN_GRACE_MS = 3000;
+
+/**
+ * iOS Safari 把登入 popup 開成新分頁；使用者按 X 關掉後，Firebase 偵測不到視窗已關（或計時器在背景被暫停），
+ * signInWithPopup 永遠不會 settle，按鈕就一直轉圈。
+ * 這裡在登入頁從背景回到前景（visibilitychange → visible）後等一小段時間，仍沒結果就以「登入已取消」結束。
+ * 只看 visibilitychange：桌機 popup 是獨立視窗，原頁面一直可見，不會被誤判取消。
+ * 若其實已登入成功、結果晚到，onAuthStateChanged 仍會設好 user，登入頁照常導向。
+ */
+function whenReturnedWithoutResult(): { promise: Promise<never>; dispose: () => void } {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let onVisible: () => void = () => {};
+  const promise = new Promise<never>((_, reject) => {
+    onVisible = () => {
+      if (document.visibilityState !== "visible" || timer != null) return;
+      timer = setTimeout(() => reject(new Error("登入已取消")), POPUP_RETURN_GRACE_MS);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+  });
+  const dispose = () => {
+    document.removeEventListener("visibilitychange", onVisible);
+    if (timer != null) clearTimeout(timer);
+  };
+  return { promise, dispose };
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -75,8 +102,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = useCallback(async () => {
     const auth = authRef.current ?? getAuthClient();
+    const returned = whenReturnedWithoutResult();
     try {
-      const result = await signInWithPopup(auth, googleProvider);
+      const result = await Promise.race([signInWithPopup(auth, googleProvider), returned.promise]);
+      returned.dispose();
       await setSessionFromUser(result.user);
     } catch (err) {
       const code = (err as { code?: string })?.code;
@@ -84,6 +113,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error("登入已取消");
       }
       throw err;
+    } finally {
+      returned.dispose();
     }
   }, [setSessionFromUser]);
 

@@ -161,10 +161,12 @@
   html:has([data-app-shell]) {
     scrollbar-gutter: stable;
   }
-  /* 路線頁懸浮列（route-sticky-bar，< lg 才出現）是半透明的，展開時藏起底下的頂部導覽，才不會透出品牌字與分隔線 */
+  /* 路線頁懸浮列（route-sticky-bar，< lg 才出現）展開時藏起底下的頂部導覽，圓角處才不會露出分隔線。
+     等懸浮列淡入（0.2s）後才藏，避免淡入途中透出空白；收起時立刻還原 */
   @media (width < 64rem) {
     [data-app-shell]:has([data-route-sticky]) > header {
       visibility: hidden;
+      transition: visibility 0s linear 200ms;
     }
   }
 }
