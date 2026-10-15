@@ -19,13 +19,12 @@
 | `/routes` 路線示警 | 路線列表與單一路線偵察：高度圖、依里程對應的行政區路段、沿線 CCTV；判定取自 `/api/routes/briefing`，與 Dashboard 同一份伺服器端判讀 |
 | `/profile` | 個人資料與密碼設定 |
 | `/routes/private` 私人路線 | 上傳私人 GPX 開發中，暫時隱藏（無入口，網址回 404） |
-| `/lab/route-sim` | 3D 路線沙盤（實驗；正式環境需 `NEXT_PUBLIC_LAB_ENABLED=true`） |
 
 ## 技術架構
 
 | 範疇 | 實際使用 |
 |------|----------|
-| 前端／API | Next.js 16（App Router、Route Handlers）、React 19、TypeScript、Tailwind CSS v4、Radix UI、three.js（`/lab`） |
+| 前端／API | Next.js 16（App Router、Route Handlers）、React 19、TypeScript、Tailwind CSS v4、Radix UI |
 | 認證 | Firebase Authentication（client 登入，server 以 Firebase Admin 驗證 `firebase-id-token` cookie） |
 | 資料儲存 | Firestore（CCTV 清單）、Firebase Storage（`gpx/routes/*.gpx` 公開路線） |
 | 背景工作 | Inngest（TDX CCTV 每日同步） |
