@@ -8,6 +8,8 @@
 export interface PrivateRoute {
   id: string;
   name: string;
+  /** 自行車／跑步／健行／雪巴運動，後端依 GPX 判斷（規則同 parse-gpx.ts） */
+  type: string;
   status: "processing" | "ready" | "failed";
   distanceKm: number | null;
   elevationGainM: number | null;
