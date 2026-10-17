@@ -7,8 +7,8 @@ app/
   core/      設定、DB、錯誤格式、Firebase 驗證、cookie
   models/    users、sessions、routes、segments、cctv
   schemas/   API 輸入輸出（camelCase）
-  services/  auth_service（upsert user、建／查／撤銷 session）
-  routers/   health、auth、me
+  services/  auth_service（session）、route_service（GPX 上傳）、gpx（解析）、storage（S3）
+  routers/   health、auth、me、routes
 alembic/     0001 members、sessions；0002 routes；0003 segments、cctv；0004 members 改名 users（raw DDL，InnoDB／utf8mb4）
 tests/       pytest，SQLite + 假 verifier，不連 MySQL、不連 Firebase
 docs/        deploy-aws.md
@@ -22,6 +22,13 @@ docs/        deploy-aws.md
 | POST | `/api/v1/auth/session` | body `{"idToken": "..."}`，驗證後設 `rc_session` cookie，回會員資料 |
 | DELETE | `/api/v1/auth/session` | 登出，一律 204 並清 cookie |
 | GET | `/api/v1/me` | 目前會員；沒登入回 401。每次通過驗證把 session 延長到「現在 + 7 天」 |
+| POST | `/api/v1/routes/uploads` | body `{"fileSize": n}`，回 presigned POST（`uploadId`、`url`、`fields`）；超過配額 409、檔案太大 413 |
+| POST | `/api/v1/routes` | body `{"uploadId", "name"?}`，檔案傳到 S3 後呼叫；解析 GPX 寫入 `routes`，壞檔 422 並刪檔 |
+| GET | `/api/v1/routes` | 自己的路線列表與上限 `limit` |
+| GET | `/api/v1/routes/{id}/gpx` | 回短效 presigned GET 網址 |
+| DELETE | `/api/v1/routes/{id}` | 軟刪除並刪 S3 檔，釋出配額 |
+
+routes 相關端點都要登入；別人的路線一律 404。S3 未設定（`S3_BUCKET` 空）時回 503 `storage_unavailable`。
 
 錯誤一律是 `{"error": {"code": "...", "message": "..."}}`。
 
@@ -35,6 +42,10 @@ docs/        deploy-aws.md
 | `FIREBASE_PROJECT_ID` | 空 | 驗 ID token 用；沒設時登入會失敗 |
 | `SESSION_COOKIE_SECURE` | `true` | 本機 http 開發設 `false`，正式環境必須 `true` |
 | `SESSION_TTL_DAYS` | `7` | session 有效天數 |
+| `S3_BUCKET` | 空 | GPX bucket；EC2 上用 instance role，不設 access key |
+| `S3_REGION` | `ap-northeast-1` | bucket 區域 |
+| `GPX_MAX_BYTES` | `5242880` | 每檔上限 |
+| `GPX_MAX_ROUTES_PER_USER` | `10` | 每人路線上限 |
 
 ## 本機用 Docker 跑（MySQL + API）
 
