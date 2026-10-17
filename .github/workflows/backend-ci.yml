@@ -82,6 +82,30 @@ jobs:
           [ "$(q "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='velorder' AND table_name='members'")" = "0" ]
           q 'SHOW CREATE TABLE users' | grep -q 'uq_users_firebase_uid'
 
+      - name: routes 寫入空間欄位（bbox 用 lon lat WKT、SRID 4326）
+        run: |
+          docker compose exec -T api python - <<'PY'
+          from sqlalchemy import text
+          from sqlalchemy.orm import Session
+          from app.core.db import get_engine, utcnow
+          from app.core.types import geometry_from_wkt
+          from app.models import Route, User
+          wkt = "POLYGON((121.5 25.1,121.6 25.1,121.6 25.2,121.5 25.2,121.5 25.1))"
+          with Session(get_engine()) as db:
+              user = User(firebase_uid="ci", created_at=utcnow(), last_login_at=utcnow())
+              db.add(user)
+              db.flush()
+              db.add(Route(public_id="0" * 26, user_id=user.id, name="ci", s3_key="k", file_size=1,
+                           file_sha256="0" * 64, status="ready", bbox=geometry_from_wkt(db, wkt)))
+              db.flush()
+              row = db.execute(text(
+                  "SELECT ST_AsText(bbox, 'axis-order=long-lat'), ST_SRID(bbox), ST_Latitude(ST_StartPoint(ST_ExteriorRing(bbox))) FROM routes"
+              )).one()
+              print(row)
+              assert row[1] == 4326 and abs(row[2] - 25.1) < 1e-9, row
+              db.rollback()
+          PY
+
       - name: 容器以非 root 執行
         run: '[ "$(docker compose exec -T api id -u)" = "10001" ]'
 
