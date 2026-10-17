@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, SlidersHorizontal, Bike, Footprints, Mountain, Trophy, X } from "lucide-react";
+import Link from "next/link";
+import { Search, SlidersHorizontal, Bike, Footprints, Mountain, Trophy, X, FileUp } from "lucide-react";
 import Spinner from "@/components/ui/Spinner";
 import { Button } from "@/components/ui/button";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer";
@@ -191,6 +192,13 @@ export function RoutesClient({
         {/* 窄螢幕整列換行，不讓標題或連結被拆字 */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <h1 className="mr-auto whitespace-nowrap text-2xl font-black tracking-tight sm:text-3xl">路線</h1>
+          {/* 私人路線入口：未登入會被導到登入頁 */}
+          <Button asChild variant="outline" size="sm" className="gap-1.5">
+            <Link href="/routes/private">
+              <FileUp className="size-3.5" aria-hidden />
+              我的路線
+            </Link>
+          </Button>
           <Drawer open={mobileListOpen} onOpenChange={setMobileListOpen}>
             <DrawerTrigger asChild>
               <Button variant="outline" size="sm" className="gap-1.5 lg:hidden">
