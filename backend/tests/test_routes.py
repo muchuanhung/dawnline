@@ -172,3 +172,25 @@ def test_storage_not_configured_is_503(client):
     res = client.post("/api/v1/routes/uploads", json={"fileSize": 10})
     assert res.status_code == 503
     assert res.json()["error"]["code"] == "storage_unavailable"
+
+
+def _gpx_with(meta: str) -> bytes:
+    return GPX.replace(b"<trk>", f"<trk>{meta}".encode())
+
+
+@pytest.mark.parametrize(
+    ("meta", "file_name", "expected"),
+    [
+        ("", "陽金公路.gpx", "自行車"),
+        ("<type>hike</type>", "七星山.gpx", "健行"),
+        # 與前端相同：hiking 不含 hike，退回預設
+        ("<type>hiking</type>", "七星山.gpx", "自行車"),
+        ("<type>running</type>", "晨跑.gpx", "跑步"),
+        ("<type>cycling</type>", "YMS 雪巴 Day 1.gpx", "雪巴運動"),
+        ("<desc>Peaks of Taiwan</desc>", "day2.gpx", "雪巴運動"),
+    ],
+)
+def test_route_type_follows_frontend_rules(api, s3, meta, file_name, expected):
+    res = upload(api, s3, data=_gpx_with(meta), name=file_name)
+    assert res.status_code == 201, res.text
+    assert res.json()["type"] == expected

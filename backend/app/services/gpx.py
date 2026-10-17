@@ -5,6 +5,7 @@
 """
 
 import math
+import re
 from dataclasses import dataclass
 from xml.etree.ElementTree import Element
 
@@ -12,6 +13,16 @@ from defusedxml import ElementTree
 from defusedxml.common import DefusedXmlException
 
 EARTH_RADIUS_KM = 6371.0
+
+# 路線類型，值與前端 Route["type"] 相同
+ROUTE_TYPES = ("自行車", "跑步", "健行", "雪巴運動")
+DEFAULT_ROUTE_TYPE = "自行車"
+
+_SHERPA = re.compile(r"雪巴|sherpa|園區|ymss?|peaks of taiwan|grand cycling tour", re.I)
+_SHERPA_TYPE = re.compile(r"雪巴|sherpa", re.I)
+_HIKE = re.compile(r"trail_run|trail run|hike|walk|健行|步", re.I)
+_RUN = re.compile(r"run|跑步|jog|road run", re.I)
+_CYCLE = re.compile(r"cycle|cycling|ride|bike|騎|車|騎車|road|mtb", re.I)
 
 
 class InvalidGpxError(Exception):
@@ -21,6 +32,9 @@ class InvalidGpxError(Exception):
 @dataclass(frozen=True)
 class GpxSummary:
     name: str | None
+    # GPX 內第一個 <type>／<desc> 的文字，判斷路線類型用
+    gpx_type: str | None
+    desc: str | None
     point_count: int
     distance_km: float
     elevation_gain_m: int
@@ -31,6 +45,21 @@ class GpxSummary:
         """bbox 轉成 POLYGON WKT（lon lat 軸序，逆時針閉合）。"""
         w, s, e, n = self.bbox
         return f"POLYGON(({w} {s},{e} {s},{e} {n},{w} {n},{w} {s}))"
+
+
+def infer_route_type(summary: "GpxSummary", file_name: str | None = None) -> str:
+    """判斷路線類型，規則與前端 parse-gpx.ts 的 parseGpxType 相同（file_name 對應 routeId）。"""
+    raw = (summary.gpx_type or "").strip().lower()
+    combined = f"{summary.name or ''} {summary.desc or ''} {file_name or ''}".lower()
+    if _SHERPA.search(combined) or _SHERPA_TYPE.search(raw):
+        return "雪巴運動"
+    if _HIKE.search(raw):
+        return "健行"
+    if _RUN.search(raw):
+        return "跑步"
+    if _CYCLE.search(raw):
+        return "自行車"
+    return DEFAULT_ROUTE_TYPE
 
 
 def _local(tag: str) -> str:
@@ -76,14 +105,14 @@ def parse_gpx(data: bytes) -> GpxSummary:
     if _local(root.tag) != "gpx":
         raise InvalidGpxError("根元素不是 <gpx>")
 
-    name: str | None = None
+    texts: dict[str, str | None] = {"name": None, "type": None, "desc": None}
     points: list[tuple[float, float, float | None]] = []
     for el in root.iter():
         tag = _local(el.tag)
         if tag in ("trkpt", "rtept"):
             points.append(_parse_point(el))
-        elif tag == "name" and name is None and el.text and el.text.strip():
-            name = el.text.strip()
+        elif tag in texts and texts[tag] is None and el.text and el.text.strip():
+            texts[tag] = el.text.strip()
 
     if len(points) < 2:
         raise InvalidGpxError("GPX 中無有效 route/track 點位")
@@ -99,7 +128,9 @@ def parse_gpx(data: bytes) -> GpxSummary:
     lats = [p[0] for p in points]
     lons = [p[1] for p in points]
     return GpxSummary(
-        name=name,
+        name=texts["name"],
+        gpx_type=texts["type"],
+        desc=texts["desc"],
         point_count=len(points),
         distance_km=round(distance, 2),
         elevation_gain_m=round(gain),

@@ -9,7 +9,7 @@ app/
   schemas/   API 輸入輸出（camelCase）
   services/  auth_service（session）、route_service（GPX 上傳）、gpx（解析）、storage（S3）
   routers/   health、auth、me、routes
-alembic/     0001 members、sessions；0002 routes；0003 segments、cctv；0004 members 改名 users（raw DDL，InnoDB／utf8mb4）
+alembic/     0001 members、sessions；0002 routes；0003 segments、cctv；0004 members 改名 users；0005 routes 加 route_type（raw DDL，InnoDB／utf8mb4）
 tests/       pytest，SQLite + 假 verifier，不連 MySQL、不連 Firebase
 docs/        deploy-aws.md
 ```

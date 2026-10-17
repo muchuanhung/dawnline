@@ -24,6 +24,7 @@ def _route_out(route: Route) -> RouteOut:
     return RouteOut(
         id=route.public_id,
         name=route.name,
+        type=route.route_type,
         status=route.status,
         distance_km=float(route.distance_km) if route.distance_km is not None else None,
         elevation_gain_m=route.elevation_gain_m,

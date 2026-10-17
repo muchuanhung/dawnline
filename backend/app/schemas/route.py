@@ -26,6 +26,7 @@ class RouteOut(CamelModel):
 
     id: str
     name: str
+    type: str
     status: str
     distance_km: float | None
     elevation_gain_m: int | None

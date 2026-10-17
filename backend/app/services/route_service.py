@@ -16,7 +16,7 @@ from app.core.errors import ApiError
 from app.core.types import geometry_from_wkt
 from app.core.ulid import is_ulid, new_ulid
 from app.models import Route, User
-from app.services.gpx import InvalidGpxError, parse_gpx
+from app.services.gpx import InvalidGpxError, infer_route_type, parse_gpx
 from app.services.storage import GpxStorage, PresignedUpload, gpx_key
 
 NAME_MAX = 100
@@ -95,6 +95,7 @@ def complete_upload(
         public_id=upload_id,
         user_id=user.id,
         name=_route_name(name, summary.name),
+        route_type=infer_route_type(summary, name),
         s3_key=key,
         file_size=len(data),
         file_sha256=hashlib.sha256(data).hexdigest(),

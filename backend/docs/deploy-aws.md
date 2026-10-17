@@ -259,7 +259,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://api.<你的網域>/api/v1/me   
 # DB 端：確認 schema 與時區
 docker run --rm -it mysql:8.4 mysql -h <rds-endpoint> -u velorder -p --ssl-mode=REQUIRED velorder \
   -e "SELECT * FROM alembic_version; SHOW TABLES; SELECT @@global.time_zone, NOW(), UTC_TIMESTAMP();"
-# alembic_version 應為 0004；users、sessions、routes、segments、cctv 都在；NOW() 與 UTC_TIMESTAMP() 相同
+# alembic_version 應為 0005；users、sessions、routes、segments、cctv 都在；NOW() 與 UTC_TIMESTAMP() 相同
 ```
 
 完整登入流程（用真的 Firebase ID token）：

@@ -62,10 +62,10 @@ jobs:
 
       - name: Alembic 版本與 migration 往返
         run: |
-          docker compose exec -T api alembic current | grep -q '0004 (head)'
+          docker compose exec -T api alembic current | grep -q '0005 (head)'
           docker compose exec -T api alembic downgrade base
           docker compose exec -T api alembic upgrade head
-          docker compose exec -T api alembic current | grep -q '0004 (head)'
+          docker compose exec -T api alembic current | grep -q '0005 (head)'
 
       - name: MySQL 設定與 schema（時區、utf8mb4、空間索引、FK）
         run: |
@@ -74,6 +74,7 @@ jobs:
           [ "$(q 'SELECT @@character_set_server')" = "utf8mb4" ]
           q 'SHOW CREATE TABLE routes' | tee /dev/stderr | grep -q 'SPATIAL KEY `sp_routes_bbox`'
           q 'SHOW CREATE TABLE routes' | grep -q 'fk_routes_user'
+          q 'SHOW CREATE TABLE routes' | grep -q '`route_type` varchar(20) NOT NULL DEFAULT'
           q 'SHOW CREATE TABLE segments' | grep -q 'SPATIAL KEY `sp_segments_geom`'
           q 'SHOW CREATE TABLE segments' | grep -q 'fk_segments_route.*ON DELETE CASCADE'
           q 'SHOW CREATE TABLE cctv' | tee /dev/stderr | grep -q 'SPATIAL KEY `sp_cctv_location`'
