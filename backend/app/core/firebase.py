@@ -1,11 +1,17 @@
-"""Firebase ID token 驗證。只在 POST /auth/session 用到，之後的請求一律看自有 session。"""
+"""Firebase ID token 驗證。只在 POST /auth/session 用到，之後的請求一律看自有 session。
+
+直接用 google-auth 對 Google 公鑰驗簽，不經 firebase-admin：後者會去找
+Application Default Credentials，在沒有 GCP 服務帳號的 EC2 上會失敗。
+"""
 
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
 
-import firebase_admin
-from firebase_admin import auth as fb_auth
+import google.auth.exceptions
+import google.auth.transport.requests
+import requests
+from google.oauth2 import id_token as google_id_token
 
 from app.core.config import get_settings
 
@@ -25,22 +31,35 @@ TokenVerifier = Callable[[str], FirebaseIdentity]
 
 
 @lru_cache
-def _firebase_app() -> firebase_admin.App:
-    # 驗 ID token 只需要 projectId 與 Google 公鑰，不需要服務帳號金鑰
-    project_id = get_settings().firebase_project_id
-    if not project_id:
-        raise RuntimeError("FIREBASE_PROJECT_ID 未設定")
-    return firebase_admin.initialize_app(options={"projectId": project_id}, name="velorder")
+def _http_request() -> google.auth.transport.requests.Request:
+    # 共用連線抓 securetoken 公鑰
+    return google.auth.transport.requests.Request(session=requests.Session())
 
 
 def verify_firebase_id_token(id_token: str) -> FirebaseIdentity:
-    """驗證簽章、aud、iss、exp、auth_time；失敗丟 InvalidIdTokenError。"""
+    """驗證簽章、aud、iss、exp 與 sub；失敗丟 InvalidIdTokenError。"""
+    project_id = get_settings().firebase_project_id
+    if not project_id:
+        raise RuntimeError("FIREBASE_PROJECT_ID 未設定")
     try:
-        decoded = fb_auth.verify_id_token(id_token, app=_firebase_app(), clock_skew_seconds=10)
-    except (ValueError, fb_auth.InvalidIdTokenError) as e:
+        # 驗簽章、exp、iat 與 aud（= project_id）
+        decoded = google_id_token.verify_firebase_token(
+            id_token, _http_request(), audience=project_id, clock_skew_in_seconds=10
+        )
+    except (ValueError, google.auth.exceptions.GoogleAuthError) as e:
         raise InvalidIdTokenError(str(e)) from e
+    if not decoded:
+        raise InvalidIdTokenError("empty token payload")
+
+    # verify_firebase_token 不檢查 iss 與 sub，依 Firebase 規範補上
+    if decoded.get("iss") != f"https://securetoken.google.com/{project_id}":
+        raise InvalidIdTokenError("invalid issuer")
+    uid = decoded.get("sub")
+    if not isinstance(uid, str) or not uid or len(uid) > 128:
+        raise InvalidIdTokenError("invalid subject")
+
     return FirebaseIdentity(
-        uid=decoded["uid"],
+        uid=uid,
         email=decoded.get("email"),
         display_name=decoded.get("name"),
     )
