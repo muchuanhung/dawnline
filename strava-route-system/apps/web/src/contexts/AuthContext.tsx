@@ -64,6 +64,24 @@ function whenReturnedWithoutResult(): { promise: Promise<never>; dispose: () => 
   return { promise, dispose };
 }
 
+/**
+ * 同一個 ID token 也換一份 FastAPI 後端的 session（rc_session，經 /api/v1 rewrite 成為同站 cookie）。
+ * 只有私人路線用得到；後端未設定或暫時連不上時不擋登入，私人路線頁遇到 401 會再換一次。
+ */
+async function exchangeBackendSession(idToken: string): Promise<void> {
+  try {
+    const res = await fetch("/api/v1/auth/session", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken }),
+    });
+    if (!res.ok) console.warn("後端 session 設定失敗", res.status);
+  } catch (err) {
+    console.warn("後端 session 設定失敗", err);
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -71,12 +89,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const setSessionFromUser = useCallback(async (user: User) => {
     const idToken = await user.getIdToken();
-    const res = await fetch("/api/auth/session", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token: idToken }),
-    });
+    const [res] = await Promise.all([
+      fetch("/api/auth/session", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: idToken }),
+      }),
+      exchangeBackendSession(idToken),
+    ]);
     if (!res.ok) throw new Error("Session 設定失敗");
   }, []);
 
@@ -147,7 +168,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(async () => {
     const auth = authRef.current ?? getAuthClient();
     await firebaseSignOut(auth);
-    await fetch("/api/auth/signout", { method: "POST" });
+    await Promise.all([
+      fetch("/api/auth/signout", { method: "POST" }),
+      // 後端 session 一併登出；後端未設定時失敗不影響
+      fetch("/api/v1/auth/session", { method: "DELETE", credentials: "include" }).catch(() => undefined),
+    ]);
   }, []);
 
   const refreshSession = useCallback(async () => {

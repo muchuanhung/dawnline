@@ -124,6 +124,82 @@ SESSION_TTL_DAYS=7
 sudo chmod 600 /opt/velorder/api.env
 ```
 
+## 4.5 S3（使用者上傳的 GPX）
+
+瀏覽器拿後端發的 presigned POST 直接傳到 S3，API 再讀回來解析；S3 key 為 `users/{user_id}/routes/{route_id}.gpx`。
+
+### Bucket
+
+- 區域與 EC2 相同（`S3_REGION`），名稱例如 `dawnline-gpx-<帳號後綴>`
+- Block Public Access：四項全開
+- Object Ownership：Bucket owner enforced（ACL 停用）
+- Default encryption：SSE-S3
+- Versioning：可不開（刪除路線時檔案就該消失）
+
+### CORS（Bucket → Permissions → CORS）
+
+```json
+[
+  {
+    "AllowedOrigins": ["https://dawnline-tw.vercel.app", "http://localhost:3000"],
+    "AllowedMethods": ["POST", "GET"],
+    "AllowedHeaders": ["*"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3000
+  }
+]
+```
+
+Vercel preview 網域要測上傳時，把該網域加進 `AllowedOrigins`。
+
+### IAM（掛在 EC2 的 instance role）
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::<bucket>/users/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::<bucket>"
+    }
+  ]
+}
+```
+
+- `s3:PutObject` 是給 presigned POST 用的（URL 以 role 的身分簽名）。
+- `s3:ListBucket` 讓檔案不存在時 HEAD 回 404 而不是 403，API 才能回「找不到這次上傳」。
+- 不需要 access key：boto3 會從 instance metadata 取得 role 的臨時憑證。
+
+### 環境變數（加到 `/opt/velorder/api.env`）
+
+```bash
+S3_BUCKET=<bucket>
+S3_REGION=<與 bucket 相同的區域，例如 ap-northeast-1>
+GPX_MAX_BYTES=5242880          # 每檔 5 MB
+GPX_MAX_ROUTES_PER_USER=10
+```
+
+### Vercel
+
+- 加環境變數 `BACKEND_API_URL=https://api.<你的網域>`（不含結尾斜線），重新部署。
+  `next.config.js` 會把 `/api/v1/*` 轉到後端，`rc_session` 因此是 Vercel 網域上的同站 cookie。
+- 後端必須是 HTTPS（`SESSION_COOKIE_SECURE=true`）。
+
+### 驗證
+
+```bash
+# EC2 上：role 能寫入 bucket
+aws s3 cp /etc/hostname s3://<bucket>/users/0/routes/check.gpx && aws s3 rm s3://<bucket>/users/0/routes/check.gpx
+```
+
+登入網站後打開 `/routes/private`，上傳一個 GPX，列表出現距離與爬升即成功。
+
 ## 5. 建映像與啟動
 
 最簡單的做法是在 EC2 上直接 build（之後可改成 GitHub Actions 推到 ECR）：
@@ -183,7 +259,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://api.<你的網域>/api/v1/me   
 # DB 端：確認 schema 與時區
 docker run --rm -it mysql:8.4 mysql -h <rds-endpoint> -u velorder -p --ssl-mode=REQUIRED velorder \
   -e "SELECT * FROM alembic_version; SHOW TABLES; SELECT @@global.time_zone, NOW(), UTC_TIMESTAMP();"
-# alembic_version 應為 0004；users、sessions、routes、segments、cctv 都在；NOW() 與 UTC_TIMESTAMP() 相同
+# alembic_version 應為 0005；users、sessions、routes、segments、cctv 都在；NOW() 與 UTC_TIMESTAMP() 相同
 ```
 
 完整登入流程（用真的 Firebase ID token）：
@@ -211,6 +287,5 @@ docker run -d --name velorder-api ...   # 同第 5 節
 
 ## 注意事項
 
-- 前端在 Vercel、API 在另一個網域時，`SameSite=Lax` 的 `rc_session` 不會隨跨站 fetch 送出。期中會在 Next.js 加 rewrites 把 `/api/*` 轉到後端，讓 cookie 變成同站；在那之前前端無法直接用這組 API 登入。
+- 前端在 Vercel、API 在另一個網域時，`SameSite=Lax` 的 `rc_session` 不會隨跨站 fetch 送出，所以前端一律經 Vercel 的 `/api/v1/*` rewrite 呼叫後端（見 4.5 的 Vercel 段）。
 - `.env`、`api.env`、RDS 密碼都不要進 git。
-- 這份文件沒有涵蓋 S3（GPX 上傳），期中加 GPX API 時補 IAM role 與 bucket 設定。

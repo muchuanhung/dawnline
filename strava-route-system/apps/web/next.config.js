@@ -30,8 +30,12 @@ const nextConfig = {
     ];
   },
   async rewrites() {
+    // FastAPI 後端（AWS）：/api/v1/* 經 Vercel 轉過去，rc_session 才是同站 cookie。
+    // 未設定 BACKEND_API_URL 時不轉，私人路線 API 會 404。
+    const backend = process.env.BACKEND_API_URL?.replace(/\/+$/, '');
     return [
       { source: '/favicon.ico', destination: '/api/favicon' },
+      ...(backend ? [{ source: '/api/v1/:path*', destination: `${backend}/api/v1/:path*` }] : []),
     ];
   },
   images: {

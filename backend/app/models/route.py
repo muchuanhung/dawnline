@@ -22,6 +22,8 @@ class Route(Base):
     public_id: Mapped[str] = mapped_column(CHAR(26))  # ULID，對外只用這個
     user_id: Mapped[int] = mapped_column(UBigInt, ForeignKey("users.id", name="fk_routes_user"))
     name: Mapped[str] = mapped_column(String(100))
+    # 自行車／跑步／健行／雪巴運動（與前端 Route["type"] 相同），上傳時由 GPX 判斷
+    route_type: Mapped[str] = mapped_column(String(20), default="自行車")
     s3_key: Mapped[str] = mapped_column(String(255))
     file_size: Mapped[int] = mapped_column(UInt)
     file_sha256: Mapped[str] = mapped_column(CHAR(64))
