@@ -14,6 +14,7 @@ import { useRouteCCTV } from "@/hooks/useRouteCCTV";
 import { useRouteBriefing } from "@/hooks/useRouteBriefing";
 import { buildRoutePolylineKm, routeTotalKm } from "@/lib/routes/recon-geo";
 import { formatClock, type Activity } from "@/lib/routes/trip";
+import { cn } from "@/lib/utils";
 
 const PRIVATE_BRIEFING_ENDPOINT = "/api/routes/private/briefing";
 
@@ -24,10 +25,13 @@ const PRIVATE_BRIEFING_ENDPOINT = "/api/routes/private/briefing";
 export function PrivateRouteDetail({
   routeId,
   trip,
+  embedded = false,
 }: {
   routeId: string;
   /** 網址上的行程設定（出發時間 ISO、運動類型），未指定為 null */
   trip: { depart: string | null; activity: Activity | null };
+  /** 嵌在「我的路線」右欄時不顯示返回連結、不限寬 */
+  embedded?: boolean;
 }) {
   const { route, loading, error } = usePrivateRoute(routeId);
   // 途中模式的目前里程與套用時間；at 用來觸發定時重新判讀
@@ -45,7 +49,7 @@ export function PrivateRouteDetail({
     PRIVATE_BRIEFING_ENDPOINT
   );
 
-  const backLink = (
+  const backLink = embedded ? null : (
     <Button asChild variant="ghost" size="sm" className="-ml-2 gap-1">
       <Link href="/routes/private">
         <ChevronLeft className="size-4" aria-hidden />
@@ -70,7 +74,7 @@ export function PrivateRouteDetail({
 
   const suggestion = briefing.briefing?.departureSuggestion;
   return (
-    <div className="mx-auto w-full min-w-0 max-w-5xl space-y-5">
+    <div className={cn("w-full min-w-0 space-y-5", !embedded && "mx-auto max-w-5xl")}>
       {backLink}
       <RouteHeader
         route={route}
