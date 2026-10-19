@@ -12,7 +12,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { PrivateRouteDetail } from "@/components/routes/private-route-detail";
+import { routeCardClassName } from "@/components/routes/route-card-style";
+import { SwipeActions } from "@/components/routes/swipe-actions";
 import { RoutesTabs } from "@/components/routes/routes-tabs";
 import { RouteFilters, matchesTypeFilter, type FilterType } from "@/components/routes/route-filters";
 import { ROUTE_TYPE_ICONS } from "@/constants";
@@ -56,6 +59,9 @@ export function PrivateRoutesContent({
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<FilterType>("全部");
   const [selectedId, setSelectedId] = useState(initialRouteId ?? "");
+  // 手機：目前左滑打開的路線（同時只開一張）與待確認刪除的路線
+  const [swipedId, setSwipedId] = useState<string | null>(null);
+  const [confirmRoute, setConfirmRoute] = useState<PrivateRoute | null>(null);
   const full = limit != null && routes.length >= limit;
   const canUpload = !uploading && !loading && !full && error == null;
 
@@ -107,8 +113,18 @@ export function PrivateRoutesContent({
     }
   }
 
+  /** 桌機用瀏覽器確認框；手機從底部滑出確認面板，按鈕比較好點 */
+  function requestDelete(route: PrivateRoute) {
+    if (!window.matchMedia(DESKTOP_QUERY).matches) {
+      setConfirmRoute(route);
+      return;
+    }
+    if (window.confirm(`刪除「${route.name}」？檔案會一併刪除，無法復原。`)) handleDelete(route);
+  }
+
   async function handleDelete(route: PrivateRoute) {
-    if (!window.confirm(`刪除「${route.name}」？檔案會一併刪除，無法復原。`)) return;
+    setConfirmRoute(null);
+    setSwipedId(null);
     setBusyId(route.id);
     try {
       await remove(route.id);
@@ -158,7 +174,16 @@ export function PrivateRoutesContent({
               </Button>
             </div>
           ) : (
-            <ul className="space-y-2 p-3">
+            <ul
+              className="space-y-2 p-3"
+              // 有卡片左滑打開時，點清單其他地方只收合，不開路線（同 iOS 郵件）
+              onClickCapture={(e) => {
+                if (swipedId == null || (e.target as Element).closest("[data-swipe-actions]")) return;
+                e.preventDefault();
+                e.stopPropagation();
+                setSwipedId(null);
+              }}
+            >
               {/* 第一格「上傳新路線」：桌機選取後右側顯示上傳面板，手機直接選檔 */}
               <li>
                 <button
@@ -197,9 +222,11 @@ export function PrivateRoutesContent({
                     route={route}
                     selected={route.id === selectedRoute?.id}
                     busy={busyId === route.id}
+                    swipeOpen={swipedId === route.id}
+                    onSwipeOpenChange={(open) => setSwipedId(open ? route.id : null)}
                     onSelect={() => select(route.id)}
                     onDownload={() => handleDownload(route)}
-                    onDelete={() => handleDelete(route)}
+                    onDelete={() => requestDelete(route)}
                   />
                 ))
               )}
@@ -230,6 +257,24 @@ export function PrivateRoutesContent({
           <PrivateRouteDetail key={selectedRoute.id} routeId={selectedRoute.id} trip={trip} embedded />
         )}
       </div>
+
+      {/* 手機刪除確認 */}
+      <Drawer open={confirmRoute != null} onOpenChange={(open) => !open && setConfirmRoute(null)}>
+        <DrawerContent className="bg-card pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+          <DrawerHeader className="text-left">
+            <DrawerTitle className="text-foreground">刪除「{confirmRoute?.name}」？</DrawerTitle>
+            <DrawerDescription>GPX 檔案會一併刪除，無法復原。</DrawerDescription>
+          </DrawerHeader>
+          <div className="grid gap-2 px-4">
+            <Button variant="destructive" size="lg" onClick={() => confirmRoute && handleDelete(confirmRoute)}>
+              刪除
+            </Button>
+            <Button variant="outline" size="lg" onClick={() => setConfirmRoute(null)}>
+              取消
+            </Button>
+          </div>
+        </DrawerContent>
+      </Drawer>
     </div>
   );
 }
@@ -322,13 +367,16 @@ function Quota({ used, limit, className }: { used: number; limit: number; classN
 }
 
 /**
- * 清單項目：樣式比照公開路線頁的 RouteCard；下載、刪除收在選單裡。
+ * 清單項目：外框樣式與公開路線頁的 RouteCard 共用。
  * 整張卡可點：桌機切換右側判讀，手機進詳情頁（連結保留，新分頁開啟也能用）。
+ * 下載、刪除：桌機收在 ⋮ 選單；手機左滑露出。
  */
 function PrivateRouteItem({
   route,
   selected,
   busy,
+  swipeOpen,
+  onSwipeOpenChange,
   onSelect,
   onDownload,
   onDelete,
@@ -336,6 +384,8 @@ function PrivateRouteItem({
   route: PrivateRoute;
   selected: boolean;
   busy: boolean;
+  swipeOpen: boolean;
+  onSwipeOpenChange: (open: boolean) => void;
   onSelect: () => void;
   onDownload: () => void;
   onDelete: () => void;
@@ -348,66 +398,95 @@ function PrivateRouteItem({
     onSelect();
   }
   return (
-    <li
-      className={cn(
-        "relative rounded-xl border border-border/40 bg-card/40 p-3.5 transition-colors",
-        // 清單底色就是 card，hover 改用 secondary 才看得出來；選取樣式同公開路線頁 RouteCard（手機點了會換頁，不需要）
-        selected
-          ? "hover:border-border hover:bg-secondary/60 lg:border-strava/30 lg:bg-strava/8 lg:ring-1 lg:ring-strava/20 lg:hover:border-strava/30 lg:hover:bg-strava/8"
-          : "hover:border-border hover:bg-secondary/60",
-        busy && "opacity-60"
-      )}
-    >
-      <div className="flex items-start gap-2">
-        <TypeIcon className="mt-0.5 size-3.5 shrink-0 text-strava" aria-hidden />
-        <div className="min-w-0 flex-1">
-          {/* 點名稱打開詳情與今日判讀；處理中或失敗的路線沒有可讀的 GPX */}
-          {route.status === "ready" ? (
-            <Link
-              href={`/routes/private/${encodeURIComponent(route.id)}`}
-              onClick={handleClick}
-              aria-current={selected ? "true" : undefined}
-              className="break-words text-sm font-semibold text-foreground after:absolute after:inset-0"
+    <li className={cn(busy && "opacity-60")}>
+      <SwipeActions
+        open={swipeOpen}
+        onOpenChange={onSwipeOpenChange}
+        disabled={busy}
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                onSwipeOpenChange(false);
+                onDownload();
+              }}
+              className="flex flex-1 flex-col items-center justify-center gap-1 bg-secondary text-xs font-medium text-foreground"
             >
-              {route.name}
-            </Link>
-          ) : (
-            <p className="break-words text-sm font-semibold text-foreground">{route.name}</p>
-          )}
-          <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-            {route.distanceKm != null && (
-              <span className="inline-flex items-center gap-1">
-                <RouteIcon className="size-3" aria-hidden />
-                {route.distanceKm.toFixed(1)} km
-              </span>
-            )}
-            {route.elevationGainM != null && (
-              <span className="inline-flex items-center gap-1">
-                <Mountain className="size-3" aria-hidden />
-                {route.elevationGainM} m
-              </span>
-            )}
-            <span>{dateFormat.format(new Date(route.createdAt))}</span>
-          </p>
-        </div>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" className="relative z-10 -mr-1.5 -mt-1.5" disabled={busy} aria-label={`${route.name} 的選項`}>
-              <MoreVertical aria-hidden />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={onDownload}>
-              <Download aria-hidden />
-              下載 GPX
-            </DropdownMenuItem>
-            <DropdownMenuItem variant="destructive" onSelect={onDelete}>
-              <Trash2 aria-hidden />
+              <Download className="size-5" aria-hidden />
+              下載
+            </button>
+            <button
+              type="button"
+              onClick={onDelete}
+              className="flex flex-1 flex-col items-center justify-center gap-1 bg-destructive text-xs font-medium text-white"
+            >
+              <Trash2 className="size-5" aria-hidden />
               刪除
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+            </button>
+          </>
+        }
+      >
+        <div className={routeCardClassName({ selected, selectedOn: "desktop", className: "relative" })}>
+          <div className="flex items-start gap-2">
+            <TypeIcon className="mt-0.5 size-3.5 shrink-0 text-strava" aria-hidden />
+            <div className="min-w-0 flex-1">
+              {/* 點名稱打開詳情與今日判讀；處理中或失敗的路線沒有可讀的 GPX */}
+              {route.status === "ready" ? (
+                <Link
+                  href={`/routes/private/${encodeURIComponent(route.id)}`}
+                  onClick={handleClick}
+                  aria-current={selected ? "true" : undefined}
+                  className="break-words text-sm font-semibold text-foreground after:absolute after:inset-0"
+                >
+                  {route.name}
+                </Link>
+              ) : (
+                <p className="break-words text-sm font-semibold text-foreground">{route.name}</p>
+              )}
+              <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                {route.distanceKm != null && (
+                  <span className="inline-flex items-center gap-1">
+                    <RouteIcon className="size-3" aria-hidden />
+                    {route.distanceKm.toFixed(1)} km
+                  </span>
+                )}
+                {route.elevationGainM != null && (
+                  <span className="inline-flex items-center gap-1">
+                    <Mountain className="size-3" aria-hidden />
+                    {route.elevationGainM} m
+                  </span>
+                )}
+                <span>{dateFormat.format(new Date(route.createdAt))}</span>
+              </p>
+            </div>
+            {/* 桌機的 ⋮ 選單；手機改用左滑 */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="relative z-10 -mr-1.5 -mt-1.5 hidden lg:inline-flex"
+                  disabled={busy}
+                  aria-label={`${route.name} 的選項`}
+                >
+                  <MoreVertical aria-hidden />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={onDownload}>
+                  <Download aria-hidden />
+                  下載 GPX
+                </DropdownMenuItem>
+                <DropdownMenuItem variant="destructive" onSelect={onDelete}>
+                  <Trash2 aria-hidden />
+                  刪除
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+      </SwipeActions>
     </li>
   );
 }
