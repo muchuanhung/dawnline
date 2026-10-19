@@ -23,6 +23,7 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged,
 } from "firebase/auth";
+import { PRIVATE_SNAPSHOT_CACHE } from "@/lib/routes/snapshot";
 
 type AuthContextValue = {
   user: User | null;
@@ -82,6 +83,15 @@ async function exchangeBackendSession(idToken: string): Promise<void> {
   }
 }
 
+/**
+ * 刪除私人路線的離線快照（public/sw.js 的 PRIVATE_CACHE），同一台裝置換人登入不會讀到上一位的路線。
+ * 不支援 Cache API 或刪除失敗時略過，不影響登出。
+ */
+function clearPrivateSnapshots(): Promise<unknown> {
+  if (typeof caches === "undefined") return Promise.resolve();
+  return caches.delete(PRIVATE_SNAPSHOT_CACHE).catch(() => false);
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -106,6 +116,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     const unsub = onAuthStateChanged(authRef.current, async (u) => {
       setUser(u ?? null);
+      // 沒有使用者（登出、session 過期、別的分頁登出）就刪私人快照；
+      // 離線時 Firebase 仍從本機還原登入狀態，不會誤刪騎乘中要用的快照
+      if (!u) void clearPrivateSnapshots();
       if (u) {
         try {
           await setSessionFromUser(u);
@@ -172,6 +185,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       fetch("/api/auth/signout", { method: "POST" }),
       // 後端 session 一併登出；後端未設定時失敗不影響
       fetch("/api/v1/auth/session", { method: "DELETE", credentials: "include" }).catch(() => undefined),
+      // onAuthStateChanged 也會刪，這裡等它刪完再回傳，呼叫端換頁時快照已清空
+      clearPrivateSnapshots(),
     ]);
   }, []);
 

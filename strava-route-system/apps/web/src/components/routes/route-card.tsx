@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import type { Route } from "@/lib/routes/route-data";
 import { getStatusColor, getStatusLabel, getDifficultyColor } from "@/lib/routes/route-data";
 import { ROUTE_TYPE_ICONS } from "@/constants";
+import { routeCardClassName } from "@/components/routes/route-card-style";
 
 interface RouteCardProps {
   route: Route;
@@ -30,13 +31,7 @@ export function RouteCard({ route, isSelected, onSelect, index, statusOverride }
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.3, delay: index * 0.06, ease: "easeOut" }}
       onClick={() => onSelect(route.id)}
-      className={cn(
-        "w-full text-left rounded-xl p-3.5 transition-all duration-200 cursor-pointer group",
-        "border",
-        isSelected
-          ? "bg-strava/8 border-strava/30 ring-1 ring-strava/20"
-          : "bg-card/40 border-border/40 hover:bg-card/70 hover:border-border/60"
-      )}
+      className={routeCardClassName({ selected: isSelected, className: "group w-full cursor-pointer text-left" })}
     >
       {/* Top row: name + status */}
       <div className="flex items-start justify-between gap-2 mb-2">

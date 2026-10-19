@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import { SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -42,20 +43,23 @@ function useScrolledPast(el: HTMLElement | null): boolean {
 /**
  * 手機／平板（< lg）往下捲過路線卡後，蓋在頂部導覽上的懸浮列：判定色點＋路線名＋路線列表。
  * 不多佔畫面高度；點路線名捲回頂端，捲回去後自動收起、還原頂部導覽。
- * 判定顏色與文字沿用路線卡（getStatusColor／getStatusLabel），未判定只顯示灰點
+ * 判定顏色與文字沿用路線卡（getStatusColor／getStatusLabel），未判定只顯示灰點。
+ * 「路線列表」：公開路線頁打開抽屜（onOpenList），私人路線詳情連回我的路線（listHref）
  */
 export function RouteStickyBar({
   anchor,
   route,
   status,
   onOpenList,
+  listHref,
 }: {
   /** 路線卡外層（以 callback ref 取得）；捲過它才出現 */
   anchor: HTMLElement | null;
   route: Route | undefined;
   /** 伺服器判定；null 為未判定 */
   status: Route["status"] | null;
-  onOpenList: () => void;
+  onOpenList?: () => void;
+  listHref?: string;
 }) {
   const scrolledPast = useScrolledPast(anchor);
 
@@ -88,10 +92,19 @@ export function RouteStickyBar({
                 />
                 <span className="truncate text-base font-bold text-foreground">{route.name}</span>
               </button>
-              <Button variant="outline" size="sm" className="shrink-0 gap-1.5" onClick={onOpenList}>
-                <SlidersHorizontal className="size-3.5" aria-hidden />
-                路線列表
-              </Button>
+              {listHref ? (
+                <Button asChild variant="outline" size="sm" className="shrink-0 gap-1.5">
+                  <Link href={listHref}>
+                    <SlidersHorizontal className="size-3.5" aria-hidden />
+                    路線列表
+                  </Link>
+                </Button>
+              ) : (
+                <Button variant="outline" size="sm" className="shrink-0 gap-1.5" onClick={onOpenList}>
+                  <SlidersHorizontal className="size-3.5" aria-hidden />
+                  路線列表
+                </Button>
+              )}
             </div>
           </div>
         </motion.div>

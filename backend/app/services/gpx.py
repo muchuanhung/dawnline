@@ -20,7 +20,8 @@ DEFAULT_ROUTE_TYPE = "自行車"
 
 _SHERPA = re.compile(r"雪巴|sherpa|園區|ymss?|peaks of taiwan|grand cycling tour", re.I)
 _SHERPA_TYPE = re.compile(r"雪巴|sherpa", re.I)
-_HIKE = re.compile(r"trail_run|trail run|hike|walk|健行|步", re.I)
+# "hiking" 不含 "hike"，要單獨列出（與前端 parse-gpx.ts 相同）
+_HIKE = re.compile(r"trail_run|trail run|hike|hiking|walk|健行|步", re.I)
 _RUN = re.compile(r"run|跑步|jog|road run", re.I)
 _CYCLE = re.compile(r"cycle|cycling|ride|bike|騎|車|騎車|road|mtb", re.I)
 

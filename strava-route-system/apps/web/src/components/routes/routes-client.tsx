@@ -1,26 +1,21 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import Link from "next/link";
-import { Search, SlidersHorizontal, Bike, FileUp } from "lucide-react";
+import { Search, SlidersHorizontal, Bike } from "lucide-react";
 import Spinner from "@/components/ui/Spinner";
 import { Button } from "@/components/ui/button";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer";
 import type { Route } from "@/lib/routes/route-data";
 import { useRoutesFromStorage } from "@/hooks/useRoutesFromStorage";
 import { RoutesLoading } from "@/components/routes/routes-loading";
-import { useRouteCCTV } from "@/hooks/useRouteCCTV";
-import { useRouteBriefing, verdictOf } from "@/hooks/useRouteBriefing";
+import { useRouteRecon } from "@/hooks/useRouteRecon";
 import { RouteCard } from "@/components/routes/route-card";
+import { RoutesTabs } from "@/components/routes/routes-tabs";
 import { RouteFilters, type FilterType } from "@/components/routes/route-filters";
-import { RouteHeader, statusOfVerdict } from "@/components/routes/route-header";
 import { RouteStickyBar } from "@/components/routes/route-sticky-bar";
-import { ReconView } from "@/components/routes/recon-view";
-import { TripSettings } from "@/components/trip/trip-settings";
-import { RideAhead } from "@/components/routes/ride-ahead";
-import { buildRoutePolylineKm, routeTotalKm } from "@/lib/routes/recon-geo";
-import { formatClock, type Activity } from "@/lib/routes/trip";
+import { RouteReconBody } from "@/components/routes/route-recon-body";
+import type { Activity } from "@/lib/routes/trip";
 
 /**
  * 路線（客戶端）：路線清單＋偵察畫面（逐段示警、坡度、CCTV）。
@@ -41,9 +36,6 @@ export function RoutesClient({
   const [mobileListOpen, setMobileListOpen] = useState(false);
   const [drawerLoading, setDrawerLoading] = useState(false);
   const [switchingRoute, setSwitchingRoute] = useState(false);
-  // 途中模式的目前里程，綁定路線：換路線後自動失效，不會把 A 路線的里程套到 B 路線
-  // at：套用時間，同一里程定時重新判讀時用來觸發重抓
-  const [ahead, setAhead] = useState<{ routeId: string; km: number; at: number } | null>(null);
   // 路線卡：手機往下捲過它後，頂部改顯示懸浮列（路線名＋路線列表）
   const [routeHeaderEl, setRouteHeaderEl] = useState<HTMLDivElement | null>(null);
 
@@ -75,25 +67,9 @@ export function RoutesClient({
   }, [routes, selectedId]);
 
   const selectedRoute = routes.find((r) => r.id === selectedId) || routes[0];
-  const {
-    feeds: cctvFeeds,
-    loading: cctvLoading,
-    error: cctvError,
-    offline: cctvOffline,
-  } = useRouteCCTV(selectedRoute ?? null);
-  const aheadOfRoute = ahead && ahead.routeId === selectedRoute?.id ? ahead : null;
-  const aheadKm = aheadOfRoute?.km ?? null;
-  const selectedPolyline = useMemo(() => (selectedRoute ? buildRoutePolylineKm(selectedRoute) : null), [selectedRoute]);
-  const selectedRouteId = selectedRoute?.id;
-  const setAheadKm = useCallback(
-    (km: number | null) =>
-      setAhead(km != null && selectedRouteId ? { routeId: selectedRouteId, km, at: Date.now() } : null),
-    [selectedRouteId]
-  );
-  // 判定、示警、建議時段全由伺服器算（與 Dashboard 同一流程），前端只顯示
-  const briefing = useRouteBriefing(selectedRoute?.id, trip, aheadKm, aheadOfRoute?.at ?? null);
-  const verdict = verdictOf(briefing);
-  const routeStatus = briefing.briefing ? statusOfVerdict(verdict.level) : null;
+  // CCTV、途中模式、判讀與判定（與私人路線詳情共用）
+  const recon = useRouteRecon(selectedRoute, trip);
+  const routeStatus = recon.status;
   const filteredRoutes = routes.filter((r) => {
     const matchesSearch = r.name.toLowerCase().includes(search.toLowerCase()) || r.nameZh.includes(search);
     const matchesType = typeFilter === "全部" || r.type === typeFilter;
@@ -147,6 +123,11 @@ export function RoutesClient({
         aria-label="路線清單"
         className="hidden overflow-hidden rounded-2xl border border-border bg-card lg:sticky lg:top-24 lg:flex lg:max-h-[calc(100dvh-8rem)] lg:flex-col"
       >
+        {/* 桌機：探索／我的路線切換放在清單頂端（切換的是這份清單）；手機在頁面標題下方 */}
+        <div className="hidden border-b border-border p-3 lg:block">
+          <h1 className="sr-only">路線</h1>
+          <RoutesTabs current="explore" className="sm:w-full" />
+        </div>
         <div className="border-b border-border p-4">
           <RouteFilters search={search} onSearch={setSearch} typeFilter={typeFilter} onFilter={setTypeFilter} />
         </div>
@@ -179,16 +160,9 @@ export function RoutesClient({
       />
 
       <div className="relative min-w-0 space-y-5">
-        {/* 窄螢幕整列換行，不讓標題或連結被拆字 */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        {/* 標題與切換只在手機顯示（桌機的切換在左側清單頂端）；窄螢幕整列換行，不讓標題或連結被拆字 */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 lg:hidden">
           <h1 className="mr-auto whitespace-nowrap text-2xl font-black tracking-tight sm:text-3xl">路線</h1>
-          {/* 私人路線入口：未登入會被導到登入頁 */}
-          <Button asChild variant="outline" size="sm" className="gap-1.5">
-            <Link href="/routes/private">
-              <FileUp className="size-3.5" aria-hidden />
-              我的路線
-            </Link>
-          </Button>
           <Drawer open={mobileListOpen} onOpenChange={setMobileListOpen}>
             <DrawerTrigger asChild>
               <Button variant="outline" size="sm" className="gap-1.5 lg:hidden">
@@ -219,6 +193,8 @@ export function RoutesClient({
             </DrawerContent>
           </Drawer>
         </div>
+        {/* 與「我的路線」同一層的切換，兩頁位置相同 */}
+        <RoutesTabs current="explore" className="lg:hidden" />
 
         {switchingRoute && (
           <div className="absolute inset-0 z-10 flex items-start justify-center bg-background/80 pt-32 backdrop-blur-sm">
@@ -235,46 +211,7 @@ export function RoutesClient({
               transition={{ duration: 0.25 }}
               className="w-full min-w-0 space-y-5"
             >
-              <div ref={setRouteHeaderEl}>
-              <RouteHeader
-                route={selectedRoute}
-                departureLabel={(() => {
-                  const s = briefing.briefing?.departureSuggestion;
-                  if (!s) return null;
-                  return s.nowIsBest ? "現在" : formatClock(new Date(s.from), new Date());
-                })()}
-              />
-              </div>
-              <ReconView
-                route={selectedRoute}
-                cctvFeeds={cctvFeeds}
-                cctvLoading={cctvLoading}
-                cctvError={cctvError}
-                cctvOffline={cctvOffline}
-                briefing={briefing}
-                afterHero={
-                  <div className="space-y-3">
-                  <RideAhead
-                    routeId={selectedRoute.id}
-                    polyline={selectedPolyline}
-                    totalKm={routeTotalKm(selectedRoute)}
-                    fromKm={aheadKm}
-                    onChange={setAheadKm}
-                  />
-                  {/* 途中模式的出發時間是由目前位置反推的，不提供出發時間設定，避免與「現在」矛盾 */}
-                  {briefing.briefing && aheadKm == null && (
-                    <TripSettings
-                      departure={briefing.briefing.departure}
-                      activity={briefing.briefing.activity}
-                      speedKmh={briefing.briefing.speedKmh}
-                      defaultActivity={briefing.briefing.defaultActivity}
-                      explicitActivity={trip.activity}
-                      explicitDeparture={trip.depart}
-                    />
-                  )}
-                  </div>
-                }
-              />
+              <RouteReconBody route={selectedRoute} trip={trip} recon={recon} headerRef={setRouteHeaderEl} />
             </motion.div>
           )}
         </AnimatePresence>

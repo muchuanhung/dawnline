@@ -183,8 +183,8 @@ def _gpx_with(meta: str) -> bytes:
     [
         ("", "陽金公路.gpx", "自行車"),
         ("<type>hike</type>", "七星山.gpx", "健行"),
-        # 與前端相同：hiking 不含 hike，退回預設
-        ("<type>hiking</type>", "七星山.gpx", "自行車"),
+        ("<type>hiking</type>", "七星山.gpx", "健行"),
+        ("<type>Hiking</type>", "七星山.gpx", "健行"),
         ("<type>running</type>", "晨跑.gpx", "跑步"),
         ("<type>cycling</type>", "YMS 雪巴 Day 1.gpx", "雪巴運動"),
         ("<desc>Peaks of Taiwan</desc>", "day2.gpx", "雪巴運動"),

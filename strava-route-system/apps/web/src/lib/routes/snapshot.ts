@@ -12,6 +12,9 @@ import type { ReconVerdict } from "./recon-geo";
 /** SW 回傳快取時加上的標頭，值為存檔時間（epoch ms）；與 public/sw.js 的 SNAPSHOT_HEADER 必須一致 */
 export const SNAPSHOT_HEADER = "x-dawnline-snapshot-at";
 
+/** 私人路線的離線快照另存一個 Cache（public/sw.js 的 PRIVATE_CACHE），登出時整個刪除；名稱兩邊必須一致 */
+export const PRIVATE_SNAPSHOT_CACHE = "dawnline-private-v1";
+
 /** 快照有效時間：即時雨量 10 分鐘更新、路況事件隨時會變，超過 30 分鐘「沒有示警」不再代表安全 */
 export const SNAPSHOT_MAX_AGE_MS = 30 * 60_000;
 
