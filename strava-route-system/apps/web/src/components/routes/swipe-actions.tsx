@@ -98,7 +98,12 @@ export function SwipeActions({
         {actions}
       </div>
       <div
-        className={cn("relative rounded-xl bg-card", dragX == null && "transition-transform duration-200")}
+        className={cn(
+          "relative rounded-xl bg-card",
+          dragX == null && "transition-transform duration-200",
+          // 滑開時卡片右側改成直角、去掉右框線，和操作鈕平整接合（不留圓角缺口）
+          offset !== 0 && "rounded-r-none *:rounded-r-none *:border-r-0"
+        )}
         // pan-y：上下捲動交給瀏覽器，左右滑動才會送到這裡
         style={{ transform: offset ? `translateX(${offset}px)` : undefined, touchAction: "pan-y" }}
         onPointerDown={onPointerDown}
