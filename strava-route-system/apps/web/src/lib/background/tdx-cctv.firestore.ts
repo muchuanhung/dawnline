@@ -4,6 +4,7 @@
  * 含 geohash 供後續 GeoQuery（bbox 查詢）
  */
 
+import { unstable_cache } from "next/cache";
 import { getFirestoreAdmin } from "@/lib/firebase/admin";
 import { encodeGeohash } from "@/lib/geo/geohash";
 import type { TDXCCTVItem } from "@/lib/tdx/client";
@@ -88,31 +89,48 @@ export async function getCCTVCountFirestore(): Promise<number> {
   return snap.data().count ?? 0;
 }
 
+/** 快取的欄位：只留 near-route 需要的，壓低快取大小（Next 資料快取單筆上限 2MB） */
+const CACHED_FIELDS = ["id", "lat", "lon", "label", "roadName", "county", "videoUrl", "syncedAt"] as const;
+
+/** near-route 用的鏡頭資料（CCTVFirestoreDoc 的子集） */
+export type CCTVListItem = Pick<CCTVFirestoreDoc, (typeof CACHED_FIELDS)[number]>;
+
+/**
+ * 整個 cctv collection 的讀取結果，快取 1 小時。
+ * 每次讀取都會計入 Firestore 讀取數（每支鏡頭 1 次），清單每天才同步一次，
+ * 所以不必每看一次路線就重讀；bbox 篩選放在快取之後做。
+ */
+const loadAllCCTV = unstable_cache(
+  async (): Promise<CCTVListItem[]> => {
+    const db = getFirestoreAdmin();
+    const snap = await db.collection(COLLECTION).select(...CACHED_FIELDS).get();
+    return snap.docs.map((d) => d.data() as CCTVListItem);
+  },
+  ["tdx-cctv-all", "v1"],
+  { revalidate: 3600, tags: ["tdx-cctv"] }
+);
+
 /** bbox [minLon, minLat, maxLon, maxLat]，擴展 ~500m (0.005° ≈ 555m) 後篩選，最多回傳 limit 筆 */
 export async function getCCTVInBbox(
   bbox: [number, number, number, number],
   limit = 15
-): Promise<CCTVFirestoreDoc[]> {
+): Promise<CCTVListItem[]> {
   const [minLon, minLat, maxLon, maxLat] = bbox;
   const pad = 0.005; // ~555m at Taiwan latitude
-  const db = getFirestoreAdmin();
-  const snap = await db.collection(COLLECTION).get();
-  const all = snap.docs
-    .map((d) => d.data() as CCTVFirestoreDoc)
-    .filter(
-      (d) =>
-        d.lat != null &&
-        d.lon != null &&
-        d.lat >= minLat - pad &&
-        d.lat <= maxLat + pad &&
-        d.lon >= minLon - pad &&
-        d.lon <= maxLon + pad
-    );
+  const all = (await loadAllCCTV()).filter(
+    (d) =>
+      d.lat != null &&
+      d.lon != null &&
+      d.lat >= minLat - pad &&
+      d.lat <= maxLat + pad &&
+      d.lon >= minLon - pad &&
+      d.lon <= maxLon + pad
+  );
 
   // 依緯度分層取樣，避免全集中單一行政區；最後依緯度排序，顯示順序與路線方向一致
   const bands = 5;
   const perBand = Math.ceil(limit / bands);
-  const result: CCTVFirestoreDoc[] = [];
+  const result: CCTVListItem[] = [];
   for (let i = 0; i < bands; i++) {
     const bandMinLat = minLat - pad + ((maxLat - minLat + 2 * pad) * i) / bands;
     const bandMaxLat = minLat - pad + ((maxLat - minLat + 2 * pad) * (i + 1)) / bands;
