@@ -12,6 +12,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { RoutesTabs } from "@/components/routes/routes-tabs";
 import { RouteFilters, matchesTypeFilter, type FilterType } from "@/components/routes/route-filters";
 import { ROUTE_TYPE_ICONS } from "@/constants";
 import { usePrivateRoutes } from "@/hooks/usePrivateRoutes";
@@ -209,18 +210,20 @@ export function PrivateRoutesContent() {
   );
 }
 
+/** 標題「路線」＋分段切換＋說明；手機在清單上方，桌機在右欄 */
 function PageTitle({ used, limit, className }: { used: number; limit: number | null; className?: string }) {
   return (
-    <div className={className}>
+    <div className={cn("space-y-3", className)}>
       <div className="flex items-center gap-3">
-        <h1 className="mr-auto text-2xl font-black tracking-tight text-foreground sm:text-3xl">我的路線</h1>
+        <h1 className="mr-auto text-2xl font-black tracking-tight text-foreground sm:text-3xl">路線</h1>
         {limit != null && (
           <span className="text-sm tabular-nums text-muted-foreground lg:hidden">
             {used} / {limit} 條
           </span>
         )}
       </div>
-      <p className="mt-2 text-sm text-muted-foreground">上傳你的 GPX 路線，只有你自己看得到。</p>
+      <RoutesTabs current="mine" />
+      <p className="text-sm text-muted-foreground">上傳你的 GPX 路線，只有你自己看得到。</p>
     </div>
   );
 }

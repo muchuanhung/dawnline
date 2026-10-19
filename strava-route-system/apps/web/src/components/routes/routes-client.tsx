@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import Link from "next/link";
-import { Search, SlidersHorizontal, Bike, FileUp } from "lucide-react";
+import { Search, SlidersHorizontal, Bike } from "lucide-react";
 import Spinner from "@/components/ui/Spinner";
 import { Button } from "@/components/ui/button";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger } from "@/components/ui/drawer";
@@ -13,6 +12,7 @@ import { RoutesLoading } from "@/components/routes/routes-loading";
 import { useRouteCCTV } from "@/hooks/useRouteCCTV";
 import { useRouteBriefing, verdictOf } from "@/hooks/useRouteBriefing";
 import { RouteCard } from "@/components/routes/route-card";
+import { RoutesTabs } from "@/components/routes/routes-tabs";
 import { RouteFilters, type FilterType } from "@/components/routes/route-filters";
 import { RouteHeader, statusOfVerdict } from "@/components/routes/route-header";
 import { RouteStickyBar } from "@/components/routes/route-sticky-bar";
@@ -182,13 +182,6 @@ export function RoutesClient({
         {/* 窄螢幕整列換行，不讓標題或連結被拆字 */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <h1 className="mr-auto whitespace-nowrap text-2xl font-black tracking-tight sm:text-3xl">路線</h1>
-          {/* 私人路線入口：未登入會被導到登入頁 */}
-          <Button asChild variant="outline" size="sm" className="gap-1.5">
-            <Link href="/routes/private">
-              <FileUp className="size-3.5" aria-hidden />
-              我的路線
-            </Link>
-          </Button>
           <Drawer open={mobileListOpen} onOpenChange={setMobileListOpen}>
             <DrawerTrigger asChild>
               <Button variant="outline" size="sm" className="gap-1.5 lg:hidden">
@@ -219,6 +212,8 @@ export function RoutesClient({
             </DrawerContent>
           </Drawer>
         </div>
+        {/* 與「我的路線」同一層的切換，兩頁位置相同 */}
+        <RoutesTabs current="explore" />
 
         {switchingRoute && (
           <div className="absolute inset-0 z-10 flex items-start justify-center bg-background/80 pt-32 backdrop-blur-sm">
