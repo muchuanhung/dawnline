@@ -16,7 +16,7 @@ interface Point {
  * 從 GPX XML 與檔名判斷路線類型
  * 雪巴運動：檔名或 name/type 含 園區|YMS|Peaks of Taiwan|雪巴|Sherpa 等
  */
-function parseGpxType(xml: string, routeId?: string): Route["type"] {
+export function parseGpxType(xml: string, routeId?: string): Route["type"] {
   const typeMatch = xml.match(/<type>\s*([^<]+)\s*<\/type>/i);
   const nameMatch = xml.match(/<name>\s*([^<]+)\s*<\/name>/i);
   const descMatch = xml.match(/<desc>\s*([^<]+)\s*<\/desc>/i);
@@ -28,7 +28,8 @@ function parseGpxType(xml: string, routeId?: string): Route["type"] {
   if (/雪巴|sherpa|園區|ymss?|peaks of taiwan|grand cycling tour/i.test(combined) || /雪巴|sherpa/i.test(raw)) {
     return "雪巴運動";
   }
-  if (/trail_run|trail run|hike|walk|健行|步/i.test(raw)) return "健行";
+  // "hiking" does not contain "hike", so it is listed on its own (backend gpx.py keeps the same rule)
+  if (/trail_run|trail run|hike|hiking|walk|健行|步/i.test(raw)) return "健行";
   if (/run|跑步|jog|road run/i.test(raw)) return "跑步";
   if (/cycle|cycling|ride|bike|騎|車|騎車|road|mtb/i.test(raw)) return "自行車";
   return "自行車"; // 預設
