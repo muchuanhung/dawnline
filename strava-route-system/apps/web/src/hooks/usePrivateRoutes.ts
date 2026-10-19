@@ -5,10 +5,12 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
   BackendError,
   deletePrivateRoute,
+  fetchPrivateRouteDetail,
   listPrivateRoutes,
   uploadGpx,
   type PrivateRoute,
 } from "@/lib/routes/private-routes";
+import type { Route } from "@/lib/routes/route-data";
 
 interface State {
   routes: PrivateRoute[];
@@ -21,11 +23,10 @@ interface State {
  * 私人路線列表、上傳與刪除。
  * 後端 session（rc_session）過期時回 401：重新用 Firebase ID token 換 session 後重試一次。
  */
-export function usePrivateRoutes() {
-  const { user, loading: authLoading, refreshSession } = useAuth();
-  const [state, setState] = useState<State>({ routes: [], limit: null, loading: true, error: null });
-
-  const withSessionRetry = useCallback(
+/** 後端 session 過期（401）時重新換 session 後重試一次；列表與詳情共用 */
+function useSessionRetry() {
+  const { refreshSession } = useAuth();
+  return useCallback(
     async <T,>(fn: () => Promise<T>): Promise<T> => {
       try {
         return await fn();
@@ -37,6 +38,12 @@ export function usePrivateRoutes() {
     },
     [refreshSession]
   );
+}
+
+export function usePrivateRoutes() {
+  const { user, loading: authLoading } = useAuth();
+  const [state, setState] = useState<State>({ routes: [], limit: null, loading: true, error: null });
+  const withSessionRetry = useSessionRetry();
 
   const refetch = useCallback(async () => {
     setState((s) => ({ ...s, loading: true, error: null }));
@@ -71,4 +78,36 @@ export function usePrivateRoutes() {
   );
 
   return { ...state, refetch, upload, remove };
+}
+
+/**
+ * 單一私人路線詳情（已解析成 Route，可直接給偵察畫面用）。
+ * 先完成 session 重換，之後同頁的判讀請求（/api/routes/private/briefing）才帶得到有效 cookie。
+ */
+export function usePrivateRoute(id: string) {
+  const { user, loading: authLoading } = useAuth();
+  const withSessionRetry = useSessionRetry();
+  const [state, setState] = useState<{ route: Route | null; loading: boolean; error: string | null }>({
+    route: null,
+    loading: true,
+    error: null,
+  });
+
+  useEffect(() => {
+    if (authLoading || !user) return;
+    let cancelled = false;
+    setState({ route: null, loading: true, error: null });
+    withSessionRetry(() => fetchPrivateRouteDetail(id))
+      .then((route) => {
+        if (!cancelled) setState({ route, loading: false, error: null });
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setState({ route: null, loading: false, error: err instanceof Error ? err.message : "無法載入路線" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, authLoading, user, withSessionRetry]);
+
+  return state;
 }

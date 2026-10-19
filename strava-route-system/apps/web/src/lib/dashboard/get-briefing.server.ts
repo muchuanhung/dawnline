@@ -75,6 +75,14 @@ export async function getPublicBriefings(limit = 3): Promise<RouteBriefing[]> {
 export async function getRouteBriefing(routeId: string, trip: TripOptions = {}): Promise<RouteBriefing | null> {
   const route = (await loadRoutes()).find((r) => r.id === routeId);
   if (!route) return null;
+  return briefLoadedRoute(route, trip);
+}
+
+/**
+ * 已解析好的單一路線判讀（私人路線用）：路線不在 loadRoutes 裡，由呼叫端讀取 GPX 後傳入。
+ * 判讀流程與公開路線完全相同。
+ */
+export async function briefLoadedRoute(route: Route, trip: TripOptions = {}): Promise<RouteBriefing | null> {
   return (await briefRoutes([route], trip, route.id)).briefings[0] ?? null;
 }
 

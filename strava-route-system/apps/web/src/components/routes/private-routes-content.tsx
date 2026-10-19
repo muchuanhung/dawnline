@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Link from "next/link";
 import { Download, FileUp, MoreVertical, Mountain, Route as RouteIcon, Search, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -247,7 +248,7 @@ function Quota({ used, limit, className }: { used: number; limit: number; classN
   );
 }
 
-/** 清單項目：樣式比照公開路線頁的 RouteCard；下載、刪除收在選單裡 */
+/** 清單項目：樣式比照公開路線頁的 RouteCard；整張卡可點開詳情，下載、刪除收在選單裡 */
 function PrivateRouteItem({
   route,
   busy,
@@ -261,11 +262,26 @@ function PrivateRouteItem({
 }) {
   const TypeIcon = ROUTE_TYPE_ICONS[route.type as Route["type"]] ?? RouteIcon;
   return (
-    <li className={cn("rounded-xl border border-border/40 bg-card/40 p-3.5", busy && "opacity-60")}>
+    <li
+      className={cn(
+        "relative rounded-xl border border-border/40 bg-card/40 p-3.5 transition-colors hover:bg-card",
+        busy && "opacity-60"
+      )}
+    >
       <div className="flex items-start gap-2">
         <TypeIcon className="mt-0.5 size-3.5 shrink-0 text-strava" aria-hidden />
         <div className="min-w-0 flex-1">
-          <p className="break-words text-sm font-semibold text-foreground">{route.name}</p>
+          {/* 點名稱打開詳情與今日判讀；處理中或失敗的路線沒有可讀的 GPX */}
+          {route.status === "ready" ? (
+            <Link
+              href={`/routes/private/${encodeURIComponent(route.id)}`}
+              className="break-words text-sm font-semibold text-foreground after:absolute after:inset-0 hover:underline"
+            >
+              {route.name}
+            </Link>
+          ) : (
+            <p className="break-words text-sm font-semibold text-foreground">{route.name}</p>
+          )}
           <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
             {route.distanceKm != null && (
               <span className="inline-flex items-center gap-1">
@@ -284,7 +300,7 @@ function PrivateRouteItem({
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" className="-mr-1.5 -mt-1.5" disabled={busy} aria-label={`${route.name} 的選項`}>
+            <Button variant="ghost" size="icon-sm" className="relative z-10 -mr-1.5 -mt-1.5" disabled={busy} aria-label={`${route.name} 的選項`}>
               <MoreVertical aria-hidden />
             </Button>
           </DropdownMenuTrigger>

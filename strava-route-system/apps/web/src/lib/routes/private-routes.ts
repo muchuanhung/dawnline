@@ -5,6 +5,8 @@
  * 上傳流程：POST /uploads 拿 presigned POST → 瀏覽器直傳 S3 → POST /routes 完成（後端解析 GPX）。
  */
 
+import type { Route } from "@/lib/routes/route-data";
+
 export interface PrivateRoute {
   id: string;
   name: string;
@@ -103,4 +105,15 @@ export function deletePrivateRoute(id: string): Promise<void> {
 export async function privateRouteDownloadUrl(id: string): Promise<string> {
   const { url } = await request<{ url: string }>(`/${encodeURIComponent(id)}/gpx`);
   return url;
+}
+
+/**
+ * 私人路線詳情：Next.js 伺服器端讀 GPX 並解析成 Route（/api/routes/private），
+ * 401 時同樣丟 BackendError，呼叫端可重換 session 後重試。
+ */
+export async function fetchPrivateRouteDetail(id: string): Promise<Route> {
+  const res = await fetch(`/api/routes/private?route=${encodeURIComponent(id)}`, { credentials: "include" });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new BackendError(res.status, "http_error", data?.error ?? `HTTP ${res.status}`);
+  return data as Route;
 }

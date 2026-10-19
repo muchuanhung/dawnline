@@ -42,12 +42,15 @@ const EMPTY: FetchState = { briefing: null, loading: false, error: false, savedA
  *
  * 離線：網路失敗時（fetch reject）沿用 SW 快取（回應帶快照標頭）或畫面上同一路線、同一行程設定的上一份判讀，
  * 標成快照而不是清空；伺服器錯誤（非 2xx）仍視為取不到，不拿舊資料頂替。
+ *
+ * endpoint：判讀 API；私人路線用 /api/routes/private/briefing（參數相同）。
  */
 export function useRouteBriefing(
   routeId: string | null | undefined,
   trip: TripParams = {},
   fromKm: number | null = null,
-  refreshAt: number | null = null
+  refreshAt: number | null = null,
+  endpoint = "/api/routes/briefing"
 ): RouteBriefingState {
   const { depart, activity } = trip;
   const [state, setState] = useState<FetchState>(EMPTY);
@@ -73,7 +76,7 @@ export function useRouteBriefing(
       error: false,
       savedAt: keep ? s.savedAt : null,
     }));
-    const url = withTrip(`/api/routes/briefing?route=${encodeURIComponent(routeId)}`, { depart, activity });
+    const url = withTrip(`${endpoint}?route=${encodeURIComponent(routeId)}`, { depart, activity });
     fetch(fromKm != null ? `${url}&from=${fromKm.toFixed(2)}` : url)
       .then(async (res) => {
         if (!res.ok) throw new Error(`路線判讀 ${res.status}`);
@@ -96,7 +99,7 @@ export function useRouteBriefing(
     return () => {
       cancelled = true;
     };
-  }, [routeId, depart, activity, fromKm, refreshAt]);
+  }, [routeId, depart, activity, fromKm, refreshAt, endpoint]);
 
   // 顯示快照期間定時更新現在時間，讓過期規則不必等到下一次請求
   const { savedAt } = state;
