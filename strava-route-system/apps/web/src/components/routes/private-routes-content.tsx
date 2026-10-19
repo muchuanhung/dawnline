@@ -317,15 +317,12 @@ function UploadPanel({ canUpload, uploading, full, used, limit, onPick, onFile }
         <span className="mt-1 text-xs text-muted-foreground">單檔 {MAX_MB} MB 以內</span>
       </button>
       {limit != null && <Quota used={used} limit={limit} className="mt-5" />}
-      <ul className="mt-4 space-y-1 text-xs text-muted-foreground">
-        <li>・只有你看得到</li>
-        <li>・刪除路線時檔案一併刪除，無法復原</li>
-      </ul>
+      <p className="mt-4 text-xs text-muted-foreground">刪除路線時檔案一併刪除，無法復原</p>
     </section>
   );
 }
 
-/** 標題「路線」＋分段切換＋說明；手機在清單上方，桌機在右欄 */
+/** 標題「路線」＋分段切換；手機在清單上方，桌機在右欄 */
 function PageTitle({ used, limit, className }: { used: number; limit: number | null; className?: string }) {
   return (
     <div className={cn("space-y-3", className)}>
@@ -338,7 +335,6 @@ function PageTitle({ used, limit, className }: { used: number; limit: number | n
         )}
       </div>
       <RoutesTabs current="mine" />
-      <p className="text-sm text-muted-foreground">上傳你的 GPX 路線，只有你自己看得到。</p>
     </div>
   );
 }
