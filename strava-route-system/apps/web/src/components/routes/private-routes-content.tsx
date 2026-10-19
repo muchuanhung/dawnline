@@ -166,7 +166,7 @@ export function PrivateRoutesContent({
                   disabled={full || uploading}
                   onClick={() => (window.matchMedia(DESKTOP_QUERY).matches ? select(UPLOAD_ITEM) : openPicker())}
                   className={cn(
-                    "flex w-full items-center gap-2 rounded-xl border border-dashed border-border p-3.5 text-left text-sm font-semibold text-muted-foreground transition-colors hover:bg-card hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60",
+                    "flex w-full items-center gap-2 rounded-xl border border-dashed border-border p-3.5 text-left text-sm font-semibold text-muted-foreground transition-colors hover:border-primary/50 hover:bg-secondary/60 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60",
                     showUploadPanel && "lg:border-solid lg:border-primary lg:bg-accent lg:text-accent-foreground"
                   )}
                 >
@@ -350,9 +350,11 @@ function PrivateRouteItem({
   return (
     <li
       className={cn(
-        "relative rounded-xl border border-border/40 bg-card/40 p-3.5 transition-colors hover:bg-card",
-        // 選取樣式同公開路線頁 RouteCard；手機點了會換頁，不需要
-        selected && "lg:border-strava/30 lg:bg-strava/8 lg:ring-1 lg:ring-strava/20",
+        "relative rounded-xl border border-border/40 bg-card/40 p-3.5 transition-colors",
+        // 清單底色就是 card，hover 改用 secondary 才看得出來；選取樣式同公開路線頁 RouteCard（手機點了會換頁，不需要）
+        selected
+          ? "hover:border-border hover:bg-secondary/60 lg:border-strava/30 lg:bg-strava/8 lg:ring-1 lg:ring-strava/20 lg:hover:border-strava/30 lg:hover:bg-strava/8"
+          : "hover:border-border hover:bg-secondary/60",
         busy && "opacity-60"
       )}
     >
@@ -365,7 +367,7 @@ function PrivateRouteItem({
               href={`/routes/private/${encodeURIComponent(route.id)}`}
               onClick={handleClick}
               aria-current={selected ? "true" : undefined}
-              className="break-words text-sm font-semibold text-foreground after:absolute after:inset-0 hover:underline"
+              className="break-words text-sm font-semibold text-foreground after:absolute after:inset-0"
             >
               {route.name}
             </Link>
