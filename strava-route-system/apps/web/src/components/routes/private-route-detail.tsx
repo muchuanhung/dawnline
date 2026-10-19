@@ -1,25 +1,21 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { RoutesLoading } from "@/components/routes/routes-loading";
-import { RouteHeader } from "@/components/routes/route-header";
-import { ReconView } from "@/components/routes/recon-view";
-import { RideAhead } from "@/components/routes/ride-ahead";
-import { TripSettings } from "@/components/trip/trip-settings";
+import { RouteReconBody } from "@/components/routes/route-recon-body";
+import { RouteStickyBar } from "@/components/routes/route-sticky-bar";
 import { usePrivateRoute } from "@/hooks/usePrivateRoutes";
-import { useRouteCCTV } from "@/hooks/useRouteCCTV";
-import { useRouteBriefing } from "@/hooks/useRouteBriefing";
-import { buildRoutePolylineKm, routeTotalKm } from "@/lib/routes/recon-geo";
-import { formatClock, type Activity } from "@/lib/routes/trip";
+import { useRouteRecon } from "@/hooks/useRouteRecon";
+import type { Activity } from "@/lib/routes/trip";
 import { cn } from "@/lib/utils";
 
 const PRIVATE_BRIEFING_ENDPOINT = "/api/routes/private/briefing";
 
 /**
- * 私人路線詳情：與公開路線頁同一套偵察畫面（判定、示警、坡度、CCTV、途中模式、行程設定），
+ * 私人路線詳情：與公開路線頁同一套偵察畫面（RouteReconBody＋useRouteRecon）與手機懸浮路線列，
  * 只是路線來自使用者上傳的 GPX，判讀改打 /api/routes/private/briefing。
  */
 export function PrivateRouteDetail({
@@ -34,20 +30,10 @@ export function PrivateRouteDetail({
   embedded?: boolean;
 }) {
   const { route, loading, error } = usePrivateRoute(routeId);
-  // 途中模式的目前里程與套用時間；at 用來觸發定時重新判讀
-  const [ahead, setAhead] = useState<{ km: number; at: number } | null>(null);
-  const setAheadKm = useCallback((km: number | null) => setAhead(km != null ? { km, at: Date.now() } : null), []);
-
-  const cctv = useRouteCCTV(route);
-  const polyline = useMemo(() => (route ? buildRoutePolylineKm(route) : null), [route]);
   // 路線還沒載入完成前不打判讀，避免 session 尚未重換時拿到 401
-  const briefing = useRouteBriefing(
-    route?.id,
-    trip,
-    ahead?.km ?? null,
-    ahead?.at ?? null,
-    PRIVATE_BRIEFING_ENDPOINT
-  );
+  const recon = useRouteRecon(route, trip, PRIVATE_BRIEFING_ENDPOINT);
+  // 路線卡：手機往下捲過它後，頂部改顯示懸浮列（路線名＋回我的路線）
+  const [routeHeaderEl, setRouteHeaderEl] = useState<HTMLDivElement | null>(null);
 
   const backLink = embedded ? null : (
     <Button asChild variant="ghost" size="sm" className="-ml-2 gap-1">
@@ -72,44 +58,14 @@ export function PrivateRouteDetail({
     );
   }
 
-  const suggestion = briefing.briefing?.departureSuggestion;
   return (
     <div className={cn("w-full min-w-0 space-y-5", !embedded && "mx-auto max-w-5xl")}>
+      {/* 嵌在桌機右欄時懸浮列本來就不顯示（lg:hidden），不必掛 */}
+      {!embedded && (
+        <RouteStickyBar anchor={routeHeaderEl} route={route} status={recon.status} listHref="/routes/private" />
+      )}
       {backLink}
-      <RouteHeader
-        route={route}
-        departureLabel={suggestion ? (suggestion.nowIsBest ? "現在" : formatClock(new Date(suggestion.from), new Date())) : null}
-      />
-      <ReconView
-        route={route}
-        cctvFeeds={cctv.feeds}
-        cctvLoading={cctv.loading}
-        cctvError={cctv.error}
-        cctvOffline={cctv.offline}
-        briefing={briefing}
-        afterHero={
-          <div className="space-y-3">
-            <RideAhead
-              routeId={route.id}
-              polyline={polyline}
-              totalKm={routeTotalKm(route)}
-              fromKm={ahead?.km ?? null}
-              onChange={setAheadKm}
-            />
-            {/* 途中模式的出發時間由目前位置反推，不提供出發時間設定（同公開路線頁） */}
-            {briefing.briefing && ahead == null && (
-              <TripSettings
-                departure={briefing.briefing.departure}
-                activity={briefing.briefing.activity}
-                speedKmh={briefing.briefing.speedKmh}
-                defaultActivity={briefing.briefing.defaultActivity}
-                explicitActivity={trip.activity}
-                explicitDeparture={trip.depart}
-              />
-            )}
-          </div>
-        }
-      />
+      <RouteReconBody route={route} trip={trip} recon={recon} headerRef={setRouteHeaderEl} />
     </div>
   );
 }

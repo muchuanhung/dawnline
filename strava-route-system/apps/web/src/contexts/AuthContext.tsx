@@ -23,6 +23,7 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged,
 } from "firebase/auth";
+import { PRIVATE_SNAPSHOT_CACHE } from "@/lib/routes/snapshot";
 
 type AuthContextValue = {
   user: User | null;
@@ -172,6 +173,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       fetch("/api/auth/signout", { method: "POST" }),
       // 後端 session 一併登出；後端未設定時失敗不影響
       fetch("/api/v1/auth/session", { method: "DELETE", credentials: "include" }).catch(() => undefined),
+      // 私人路線的離線快照一併刪除，同一台裝置換人登入不會讀到上一位的路線
+      typeof caches !== "undefined" ? caches.delete(PRIVATE_SNAPSHOT_CACHE).catch(() => false) : undefined,
     ]);
   }, []);
 
