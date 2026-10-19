@@ -150,7 +150,7 @@ export function PrivateRoutesContent({
         onChange={(e) => handleFile(e.target.files?.[0])}
       />
 
-      {/* 標題：手機在清單上方；桌機放在右欄（見下方） */}
+      {/* 標題與切換：手機在清單上方；桌機的切換在清單頂端，不另放標題 */}
       <PageTitle used={routes.length} limit={limit} className="lg:hidden" />
 
       {/* 路線清單：桌機和公開路線頁一樣固定在左側 */}
@@ -158,6 +158,11 @@ export function PrivateRoutesContent({
         aria-label="我的路線清單"
         className="mt-5 overflow-hidden rounded-2xl border border-border bg-card lg:sticky lg:top-24 lg:mt-0 lg:flex lg:max-h-[calc(100dvh-8rem)] lg:flex-col"
       >
+        {/* 桌機：探索／我的路線切換放在清單頂端（切換的是這份清單）；手機在頁面標題下方 */}
+        <div className="hidden border-b border-border p-3 lg:block">
+          <h1 className="sr-only">路線</h1>
+          <RoutesTabs current="mine" className="sm:w-full" />
+        </div>
         <div className="border-b border-border p-4">
           <RouteFilters search={search} onSearch={setSearch} typeFilter={typeFilter} onFilter={setTypeFilter} />
         </div>
@@ -240,9 +245,8 @@ export function PrivateRoutesContent({
         )}
       </aside>
 
-      {/* 右欄（只在桌機顯示）：標題＋選取路線的判讀；沒有路線或選了「上傳新路線」時顯示上傳面板 */}
+      {/* 右欄（只在桌機顯示）：選取路線的判讀；沒有路線或選了「上傳新路線」時顯示上傳面板 */}
       <div className="hidden min-w-0 space-y-5 lg:block">
-        <PageTitle used={routes.length} limit={limit} />
         {loading ? null : showUploadPanel ? (
           <UploadPanel
             canUpload={canUpload}
@@ -322,14 +326,14 @@ function UploadPanel({ canUpload, uploading, full, used, limit, onPick, onFile }
   );
 }
 
-/** 標題「路線」＋分段切換；手機在清單上方，桌機在右欄 */
+/** 標題「路線」＋分段切換＋額度；只在手機顯示，在清單上方 */
 function PageTitle({ used, limit, className }: { used: number; limit: number | null; className?: string }) {
   return (
     <div className={cn("space-y-3", className)}>
       <div className="flex items-center gap-3">
         <h1 className="mr-auto text-2xl font-black tracking-tight text-foreground sm:text-3xl">路線</h1>
         {limit != null && (
-          <span className="text-sm tabular-nums text-muted-foreground lg:hidden">
+          <span className="text-sm tabular-nums text-muted-foreground">
             {used} / {limit} 條
           </span>
         )}

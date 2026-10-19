@@ -123,6 +123,11 @@ export function RoutesClient({
         aria-label="路線清單"
         className="hidden overflow-hidden rounded-2xl border border-border bg-card lg:sticky lg:top-24 lg:flex lg:max-h-[calc(100dvh-8rem)] lg:flex-col"
       >
+        {/* 桌機：探索／我的路線切換放在清單頂端（切換的是這份清單）；手機在頁面標題下方 */}
+        <div className="hidden border-b border-border p-3 lg:block">
+          <h1 className="sr-only">路線</h1>
+          <RoutesTabs current="explore" className="sm:w-full" />
+        </div>
         <div className="border-b border-border p-4">
           <RouteFilters search={search} onSearch={setSearch} typeFilter={typeFilter} onFilter={setTypeFilter} />
         </div>
@@ -155,8 +160,8 @@ export function RoutesClient({
       />
 
       <div className="relative min-w-0 space-y-5">
-        {/* 窄螢幕整列換行，不讓標題或連結被拆字 */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        {/* 標題與切換只在手機顯示（桌機的切換在左側清單頂端）；窄螢幕整列換行，不讓標題或連結被拆字 */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 lg:hidden">
           <h1 className="mr-auto whitespace-nowrap text-2xl font-black tracking-tight sm:text-3xl">路線</h1>
           <Drawer open={mobileListOpen} onOpenChange={setMobileListOpen}>
             <DrawerTrigger asChild>
@@ -189,7 +194,7 @@ export function RoutesClient({
           </Drawer>
         </div>
         {/* 與「我的路線」同一層的切換，兩頁位置相同 */}
-        <RoutesTabs current="explore" />
+        <RoutesTabs current="explore" className="lg:hidden" />
 
         {switchingRoute && (
           <div className="absolute inset-0 z-10 flex items-start justify-center bg-background/80 pt-32 backdrop-blur-sm">
