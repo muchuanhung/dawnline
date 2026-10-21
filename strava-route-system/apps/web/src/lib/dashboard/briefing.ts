@@ -419,17 +419,24 @@ export function suggestDeparture(
 /** 越小越安全；未判定不可拿來推薦 */
 const SAFETY_RANK: Record<VerdictLevel, number> = { clear: 0, caution: 1, risky: 2, unknown: 99 };
 
+/** 路線經過的縣市（舊名正規化，例：台北縣 → 新北市） */
+const routeCounties = (b: RouteBriefing) =>
+  new Set(b.segments.flatMap((s) => (s.county ? [normalizeCountyForCWB(s.county)] : [])));
+
 /**
- * 建議替代路線：比目前路線「更安全」的路線中最安全者；
+ * 建議替代路線：和目前路線經過同一縣市、且比目前路線「更安全」的路線中最安全者；
  * 同等級時示警少者優先，再比距離短者。
- * 目前路線已安全、未判定（無從比較），或沒有更安全的路線時回傳 null。
+ * 不跨縣市推薦（台北的路線危險，推薦台南的路線沒有意義）。
+ * 目前路線已安全、未判定（無從比較），或附近沒有更安全的路線時回傳 null。
  */
 export function pickAlternative(current: RouteBriefing, all: RouteBriefing[]): RouteBriefing | null {
   const level = current.verdict.level;
   if (level === "clear" || level === "unknown") return null;
   const currentRank = SAFETY_RANK[level];
+  const counties = routeCounties(current);
+  const nearby = (b: RouteBriefing) => [...routeCounties(b)].some((c) => counties.has(c));
   const candidates = all
-    .filter((b) => b.id !== current.id && SAFETY_RANK[b.verdict.level] < currentRank)
+    .filter((b) => b.id !== current.id && SAFETY_RANK[b.verdict.level] < currentRank && nearby(b))
     .sort(
       (a, b) =>
         SAFETY_RANK[a.verdict.level] - SAFETY_RANK[b.verdict.level] ||
