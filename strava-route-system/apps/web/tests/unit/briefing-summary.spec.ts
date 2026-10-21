@@ -109,6 +109,11 @@ test.describe("checkSummary", () => {
     expect(checkSummary("12.4 km 起降雨機率 70%，另有 1 項示警。", caution)).toBeNull();
   });
 
+  test("擋下：句子自己給行動建議（建議由規則產生）", () => {
+    expect(checkSummary("12.4 km 起降雨機率 70%，請先避開此路段。", caution)).toBeNull();
+    expect(checkSummary("12.4 km 起降雨機率 70%，建議改期。", caution)).toBeNull();
+  });
+
   test("擋下：事實裡沒有的數字", () => {
     expect(checkSummary("12.4 km 起降雨機率 80%，請小心。", caution)).toBeNull();
     expect(checkSummary("10 km 起降雨機率 70%。", caution)).toBeNull();
