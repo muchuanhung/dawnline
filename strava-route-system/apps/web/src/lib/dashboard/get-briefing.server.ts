@@ -1,8 +1,11 @@
 /**
  * Dashboard 今日判讀的資料組裝（伺服器端專用）
  * 路線與各行政區天氣平行抓取；同一縣市的 CWB 請求由 fetch 快取去重。
+ * 單一公開路線的判讀快取 10 分鐘（與 CWB 即時雨量、TDX 事件的快取一致），
+ * Dashboard、路線頁判讀 API、AI 摘要與預熱排程共用同一份，不重複計算。
  */
 
+import { unstable_cache } from "next/cache";
 import { loadRoutes } from "@/lib/routes/load-routes.server";
 import type { Route } from "@/lib/routes/route-data";
 import { demoRoadEvents } from "@/lib/routes/demo-route";
@@ -24,11 +27,10 @@ export type DashboardBriefing =
       status: "ok";
       featured: RouteBriefing;
       routes: { id: string; name: string }[];
-      /** 有天氣資料的行政區數 / 總數 */
-      weatherCoverage: { ok: number; total: number };
-      /** 路況事件取不到的縣市；null 代表整個事件服務失敗 */
-      eventsFailed: string[] | null;
     };
+
+/** 判讀快取秒數；資料來源本身也是 10 分鐘更新，再短沒有意義 */
+const BRIEFING_CACHE_SECONDS = 600;
 
 /** 行程設定：出發時間與運動類型；未指定為現在、依路線類型 */
 export interface TripOptions {
@@ -41,22 +43,16 @@ export interface TripOptions {
 export async function getDashboardBriefing(routeId?: string, trip: TripOptions = {}): Promise<DashboardBriefing> {
   const routes = await loadRoutes();
   if (routes.length === 0) return { status: "no-routes" };
-  // 目前要看的路線排最前面：TDX 限流時優先抓到它經過縣市的路況事件
   const current = routes.find((r) => r.id === routeId) ?? routes[0]!;
-  const { briefings, weatherCoverage, eventsFailed } = await briefRoutes(
-    [current, ...routes.filter((r) => r !== current)],
-    trip,
-    current.id
-  );
-  const featured = briefings.find((b) => b.id === routeId) ?? briefings[0]!;
+  // 只判讀畫面上這一條；切換列只需要名稱，不必把每條路線都判讀一次
+  const featured = await getRouteBriefing(current.id, trip);
+  if (!featured) return { status: "no-routes" };
 
   return {
     status: "ok",
     featured,
-    // 切換列維持原本路線順序（判讀時為了抓取優先順序重排過）
-    routes: routes.flatMap((r) => briefings.filter((b) => b.id === r.id).map((b) => ({ id: b.id, name: b.name }))),
-    weatherCoverage,
-    eventsFailed,
+    // 名稱規則與 briefRoute 相同（中文名優先）
+    routes: routes.map((r) => ({ id: r.id, name: r.nameZh || r.name })),
   };
 }
 
@@ -67,11 +63,34 @@ export async function getPublicBriefings(limit = 3): Promise<RouteBriefing[]> {
   return (await briefRoutes(routes)).briefings;
 }
 
-/** 單一路線判讀（/routes 與 lab 頁用）；與 Dashboard 同一條流程，前端不再自行判定 */
-export async function getRouteBriefing(routeId: string, trip: TripOptions = {}): Promise<RouteBriefing | null> {
+/** 單一公開路線判讀，不經快取 */
+async function briefPublicRoute(routeId: string, trip: TripOptions): Promise<RouteBriefing | null> {
   const route = (await loadRoutes()).find((r) => r.id === routeId);
   if (!route) return null;
   return briefLoadedRoute(route, trip);
+}
+
+/**
+ * 快取 key：路線、出發時間（ISO；null 為「現在出發」）、運動類型。
+ * 「現在出發」在快取期間沿用計算當下的時間，最多相差 10 分鐘。
+ */
+const cachedRouteBriefing = unstable_cache(
+  (routeId: string, departureIso: string | null, activity: Activity | null) =>
+    briefPublicRoute(routeId, {
+      departure: departureIso ? new Date(departureIso) : undefined,
+      activity: activity ?? undefined,
+    }),
+  ["route-briefing-v1"],
+  { revalidate: BRIEFING_CACHE_SECONDS }
+);
+
+/**
+ * 單一路線判讀（Dashboard、/routes、AI 摘要共用）；與 Dashboard 同一條流程，前端不再自行判定。
+ * 途中模式（fromKm）每次里程都不同，不快取。
+ */
+export async function getRouteBriefing(routeId: string, trip: TripOptions = {}): Promise<RouteBriefing | null> {
+  if (trip.fromKm != null) return briefPublicRoute(routeId, trip);
+  return cachedRouteBriefing(routeId, trip.departure?.toISOString() ?? null, trip.activity ?? null);
 }
 
 /**
@@ -136,5 +155,5 @@ async function briefRoutes(routes: Route[], trip: TripOptions = {}, suggestFor?:
       fromKm: route.id === suggestFor ? trip.fromKm : undefined,
     })
   );
-  return { briefings, weatherCoverage: { ok: lookup.size, total: keys.length }, eventsFailed };
+  return { briefings };
 }
