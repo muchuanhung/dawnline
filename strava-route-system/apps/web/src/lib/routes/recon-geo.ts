@@ -584,8 +584,7 @@ export function summarizeVerdict(
   const noWeather = withWeather === 0;
   const partial = withWeather > 0 && withWeather < stages.length;
   const eventsIncomplete = eventsFailed === null || (eventsFailed?.length ?? 0) > 0;
-  // 即時雨量只是補充：附近沒有測站時加註，不改判 unknown（預報資料仍在）
-  const noNearbyGauge = stages.some((s) => s.hasWeather && s.observedRainMmPerHr === null);
+  // 即時雨量只是補充：附近沒有測站時不改判 unknown（預報資料仍在），也不加註——這是內部資料來源細節，使用者無從行動
 
   const worst = hazards.reduce<Hazard | null>(
     (best, h) => (!best || LEVEL_RANK[h.level] > LEVEL_RANK[best.level] ? h : best),
@@ -596,7 +595,6 @@ export function summarizeVerdict(
   if (worst && hazards.length > 1) notes.push(`另有 ${hazards.length - 1} 項示警`);
   if (noWeather && worst) notes.push("尚無天氣資料");
   if (partial) notes.push("部分路段無天氣資料");
-  if (noNearbyGauge) notes.push("部分路段附近無即時雨量站");
   if (eventsFailed === null) notes.push("路況事件暫時取不到");
   else if (eventsFailed?.length) notes.push(`${eventsFailed.join("、")}路況事件取不到`);
   const note = notes.join("・");
