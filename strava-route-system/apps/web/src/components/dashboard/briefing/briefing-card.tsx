@@ -101,7 +101,7 @@ export function BriefingCard({
             <>
               <AiHeadline routeId={featured.id} trip={trip} verdict={verdict} className="text-lg font-bold" />
               <p className={cn("text-sm", s.muted)}>
-                {verdict.level === "risky" ? riskyAdvice(featured, new Date()) : s.advice}
+                {verdict.level === "risky" ? riskyAdvice(featured) : s.advice}
                 {verdict.note && `・${verdict.note}`}
               </p>
             </>

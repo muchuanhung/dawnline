@@ -20,22 +20,16 @@ const route = (departureSuggestion: DepartureSuggestion | null, name = "冷水�
   ({ id: name, name, departureSuggestion, hazards }) as RouteBriefing;
 
 test.describe("riskyAdvice", () => {
-  test("沒有替代路線、有較好的出發時段時給時間", () => {
-    expect(riskyAdvice(route(suggestion({ level: "caution" })), NOW)).toBe("建議改 10:00 出發，或改期。");
+  test("有較好的出發時段時建議改時段（時間由建議出發時段列顯示）", () => {
+    expect(riskyAdvice(route(suggestion({ level: "caution" })))).toBe("建議改時段出發，或改期。");
   });
 
-  test("各時段都危險時說明原因並建議改期", () => {
-    expect(riskyAdvice(route(suggestion({ level: "risky" })), NOW)).toBe("未來 12 小時都有危險天氣，建議改期。");
-    expect(riskyAdvice(route(suggestion({ nowIsBest: true, level: "risky" })), NOW)).toBe(
-      "未來 12 小時都有危險天氣，建議改期。"
-    );
-  });
-
-  test("危險來自路況事件、沒有建議時段或現在就是最佳時段時只說改期", () => {
+  test("各時段都危險、危險來自路況事件、沒有建議時段或現在就是最佳時段時只說改期", () => {
     const event = { id: "e", kind: "event" as const, level: "risky" as const, startKm: 3, endKm: 3.2, label: "事故" };
-    expect(riskyAdvice(route(suggestion({ level: null }), "冷水坑", [event]), NOW)).toBe("建議改期。");
-    expect(riskyAdvice(route(null), NOW)).toBe("建議改期。");
-    expect(riskyAdvice(route(suggestion({ nowIsBest: true })), NOW)).toBe("建議改期。");
+    expect(riskyAdvice(route(suggestion({ level: "risky" })))).toBe("建議改期。");
+    expect(riskyAdvice(route(suggestion({ level: null }), "冷水坑", [event]))).toBe("建議改期。");
+    expect(riskyAdvice(route(null))).toBe("建議改期。");
+    expect(riskyAdvice(route(suggestion({ nowIsBest: true })))).toBe("建議改期。");
   });
 });
 
