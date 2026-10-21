@@ -1,6 +1,8 @@
 import { inngest } from "@/inngest/client";
 import { fetchAllCCTV, TDX_SYNC_CITIES } from "@/lib/tdx/client";
 import { persistCCTVFirestore } from "@/lib/background/tdx-cctv.firestore";
+import { loadRoutes } from "@/lib/routes/load-routes.server";
+import { getPublicRouteSummary } from "@/lib/ai/summary.server";
 
 /**
  * TDX CCTV 每日同步
@@ -27,4 +29,29 @@ export const syncTDXCCTV = inngest.createFunction(
   }
 );
 
-export const allInngestFunctions = [syncTDXCCTV];
+/**
+ * 公開路線 AI 摘要預熱
+ *
+ * ## 觸發
+ * cron: "*\/10 * * * *" → 每 10 分鐘（與 getPublicRouteSummary 的 10 分鐘快取對齊）
+ *
+ * ## 流程
+ * 每條公開路線一個 step：以「現在出發、預設運動類型」（網址沒帶 depart／activity）呼叫 getPublicRouteSummary，
+ * 把判讀與 AI 句子放進同一份快取，使用者第一次打開路線頁就直接命中。
+ * Claude 只在判讀事實改變時才會被呼叫（句子以事實為 key 快取一天），其餘只是重算判讀（天氣、路況本身也有快取）。
+ */
+export const warmRouteSummaries = inngest.createFunction(
+  { id: "route-summary-warm", name: "公開路線 AI 摘要預熱" },
+  { cron: "*/10 * * * *" },
+  async ({ step }) => {
+    const ids = await step.run("list-routes", async () => (await loadRoutes()).map((r) => r.id));
+    let phrased = 0;
+    for (const id of ids) {
+      const ok = await step.run(`warm-${id}`, async () => (await getPublicRouteSummary(id, null, null)).summary != null);
+      if (ok) phrased += 1;
+    }
+    return { routes: ids.length, phrased };
+  }
+);
+
+export const allInngestFunctions = [syncTDXCCTV, warmRouteSummaries];
