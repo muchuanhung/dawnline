@@ -22,8 +22,9 @@ Rules:
 - If level is "caution" or "risky", never use words like 安全, 放心, 沒問題.
 - Every number you write must appear in the facts exactly as given, in Arabic digits.
 - Do not mention any weather or road condition that is not in the facts.
-- Lead with what matters most: the first hazard and where it starts, then the suggested departure time if one is given.
-- At most 50 characters, a single sentence, no quotes, emoji or markdown. Output only the sentence.`;
+- The verdict word (危險/注意/安全/未判定) and the number of other hazards are already shown next to your sentence. Do not repeat them, and do not add generic advice such as 審慎評估.
+- Lead with what matters most: the first hazard and where it starts. Then, if given, name the alternative route, or else the suggested departure time.
+- At most 50 characters, a single sentence, full-width Chinese punctuation, no quotes, emoji or markdown. Output only the sentence.`;
 
 let client: Anthropic | null = null;
 const getClient = () => (client ??= new Anthropic({ timeout: REQUEST_TIMEOUT_MS, maxRetries: 1 }));
@@ -52,11 +53,16 @@ async function phrase(factsJson: string): Promise<string | null> {
 }
 
 // 快取 key 為函式參數（事實 JSON）；事實不變就沿用同一句
-const cachedPhrase = unstable_cache(phrase, ["briefing-summary-v1"], { revalidate: CACHE_SECONDS });
+const cachedPhrase = unstable_cache(phrase, ["briefing-summary-v2"], { revalidate: CACHE_SECONDS });
 
-export async function summarizeBriefing(briefing: RouteBriefing, now = new Date()): Promise<BriefingSummary | null> {
+/** alternative：pickAlternative 挑出的替代路線（只有公開路線有，私人路線傳 null） */
+export async function summarizeBriefing(
+  briefing: RouteBriefing,
+  alternative: RouteBriefing | null = null,
+  now = new Date()
+): Promise<BriefingSummary | null> {
   if (!process.env.ANTHROPIC_API_KEY) return null;
-  const facts = briefingFacts(briefing, now);
+  const facts = briefingFacts(briefing, now, alternative);
   try {
     const raw = await cachedPhrase(JSON.stringify(facts));
     const text = raw ? checkSummary(raw, facts) : null;

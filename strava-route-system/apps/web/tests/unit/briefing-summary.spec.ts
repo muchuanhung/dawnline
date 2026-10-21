@@ -61,12 +61,20 @@ test.describe("briefingFacts", () => {
   test("只帶規則算好的結果，里程四捨五入到 0.1 km", () => {
     const f = briefingFacts(CAUTION, NOW);
     expect(f.level).toBe("caution");
-    expect(f.levelWord).toBe("注意");
     expect(f.headline).toBe("12.4 km 起降雨 70%");
     expect(f.distanceKm).toBe(32.4);
     expect(f.hazards[0]).toEqual({ label: "降雨 70%", startKm: 12.4, endKm: 18, level: "注意" });
     expect(f.weather).toBe("降雨機率最高 70%、風速最高 18 km/h、氣溫 21–26°C");
     expect(f.departureSuggestion).toBe("06:00–08:00");
+    expect(f.alternative).toBeNull();
+    // 判定詞與 note（示警數）畫面已顯示，不給模型
+    expect(f).not.toHaveProperty("note");
+    expect(f).not.toHaveProperty("levelWord");
+  });
+
+  test("帶入 pickAlternative 挑出的替代路線", () => {
+    const f = briefingFacts(CAUTION, NOW, { ...CLEAR, name: "河濱自行車道" });
+    expect(f.alternative).toEqual({ route: "河濱自行車道", level: "安全" });
   });
 
   test("現在出發就是最佳時段時不帶建議；沒有天氣資料時 weather 為 null", () => {
@@ -75,7 +83,7 @@ test.describe("briefingFacts", () => {
     expect(f.weather).toBeNull();
   });
 
-  test("示警最多 3 項，其餘只記數量", () => {
+  test("示警最多 3 項", () => {
     const hazards = Array.from({ length: 5 }, (_, i) => ({
       id: `h${i}`,
       kind: "rain" as const,
@@ -86,7 +94,6 @@ test.describe("briefingFacts", () => {
     }));
     const f = briefingFacts(briefing(CAUTION.verdict, { hazards }), NOW);
     expect(f.hazards).toHaveLength(3);
-    expect(f.otherHazardCount).toBe(2);
   });
 });
 
@@ -99,6 +106,15 @@ test.describe("checkSummary", () => {
     expect(checkSummary("「建議 06:00–08:00 出發，12.4 km 起降雨機率 70%。」", caution)).toBe(
       "建議 06:00–08:00 出發，12.4 km 起降雨機率 70%。"
     );
+  });
+
+  test("半形逗號換成全形", () => {
+    expect(checkSummary("12.4 km 起降雨機率 70%,建議 06:00 出發。", caution)).toBe("12.4 km 起降雨機率 70%，建議 06:00 出發。");
+  });
+
+  test("擋下：重複畫面已有的判定等級與示警數", () => {
+    expect(checkSummary("此路線屬注意等級，12.4 km 起降雨機率 70%。", caution)).toBeNull();
+    expect(checkSummary("12.4 km 起降雨機率 70%，另有 1 項示警。", caution)).toBeNull();
   });
 
   test("擋下：事實裡沒有的數字", () => {

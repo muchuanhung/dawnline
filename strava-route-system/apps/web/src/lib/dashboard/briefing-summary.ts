@@ -16,22 +16,25 @@ const LEVEL_WORD: Record<VerdictLevel, string> = {
   unknown: "未判定",
 };
 
+/**
+ * 畫面上已另外顯示判定詞（危險／注意…）與 note（示警數、資料缺口），
+ * 所以事實裡不放這兩項，避免句子重複。
+ */
 export interface SummaryFacts {
   route: string;
   level: VerdictLevel;
-  levelWord: string;
   /** 規則產生的短句，例：「12.4 km 起降雨 70%」 */
   headline: string;
-  note: string;
   distanceKm: number;
   /** 影響判定的示警，依里程排序，最多 3 項 */
   hazards: { label: string; startKm: number; endKm: number; level: string }[];
-  otherHazardCount: number;
   /** 天氣統計寫成中文，模型引用的用詞與數字都能在這裡找到 */
   weather: string | null;
   period: string | null;
   /** 天氣最佳出發時段（台灣時間），例：「06:00–08:00」 */
   departureSuggestion: string | null;
+  /** pickAlternative 挑出、判定較安全的替代路線；沒有時為 null */
+  alternative: { route: string; level: string } | null;
 }
 
 /** 摘要結果；level／headline 記錄依據的判定，前端只在跟畫面上的判定相同時才替換 */
@@ -46,7 +49,7 @@ const MAX_HAZARDS = 3;
 export const SUMMARY_MAX_CHARS = 60;
 
 /** 從判讀結果挑出要講的事實；只放規則已算好的結果，不給原始資料 */
-export function briefingFacts(b: RouteBriefing, now: Date): SummaryFacts {
+export function briefingFacts(b: RouteBriefing, now: Date, alternative: RouteBriefing | null = null): SummaryFacts {
   const { verdict } = b;
   const weatherParts: string[] = [];
   if (b.maxRain != null) weatherParts.push(`降雨機率最高 ${b.maxRain}%`);
@@ -60,9 +63,7 @@ export function briefingFacts(b: RouteBriefing, now: Date): SummaryFacts {
   return {
     route: b.name,
     level: verdict.level,
-    levelWord: LEVEL_WORD[verdict.level],
     headline: verdict.headline,
-    note: verdict.note,
     distanceKm: Math.round(b.distanceKm * 10) / 10,
     hazards: b.hazards.slice(0, MAX_HAZARDS).map((h) => ({
       label: h.label,
@@ -70,10 +71,10 @@ export function briefingFacts(b: RouteBriefing, now: Date): SummaryFacts {
       endKm: Math.round(h.endKm * 10) / 10,
       level: LEVEL_WORD[h.level],
     })),
-    otherHazardCount: Math.max(0, b.hazards.length - MAX_HAZARDS),
     weather: weatherParts.length ? weatherParts.join("、") : null,
     period: b.periodLabel,
     departureSuggestion,
+    alternative: alternative ? { route: alternative.name, level: LEVEL_WORD[alternative.verdict.level] } : null,
   };
 }
 
@@ -88,15 +89,24 @@ const UNKNOWN_WORDS = ["未判定", "無法判定", "無法確認"];
  */
 const CONDITION_TERMS = ["雨", "風", "雷", "溫", "熱", "冷", "寒", "霧", "濕", "滑", "積水", "施工", "事故", "封閉", "坍方", "落石", "壅塞", "塞車", "管制", "颱"];
 
+/** 畫面上已顯示的資訊，句子再講一次就是重複 */
+const REPEATED_PHRASES = ["項示警", "等級"];
+
 const numbersIn = (s: string) => (s.match(/\d+(?:\.\d+)?/g) ?? []).map(Number);
 
 /**
  * 驗證模型寫的句子；通過回傳整理後的句子，不通過回 null。
- * 規則：一句、長度上限、用詞與數字都要出自事實、未判定要說未判定、有示警不能說安全。
+ * 規則：一句、長度上限、不重複畫面已有的資訊、用詞與數字都要出自事實、未判定要說未判定、有示警不能說安全。
  */
 export function checkSummary(raw: string, facts: SummaryFacts): string | null {
-  const text = raw.trim().replace(/^[「『"']+|[」』"']+$/g, "").trim();
+  const text = raw
+    .trim()
+    .replace(/^[「『"']+|[」』"']+$/g, "")
+    .trim()
+    // 半形逗號統一成全形，與畫面其他中文標點一致
+    .replace(/\s*,\s*/g, "，");
   if (!text || /[\r\n]/.test(text)) return null;
+  if (REPEATED_PHRASES.some((p) => text.includes(p))) return null;
   if (Array.from(text).length > SUMMARY_MAX_CHARS) return null;
   // 只能有一句：句末標點只能出現在最後
   if (/[。！？!?]/.test(text.slice(0, -1))) return null;
