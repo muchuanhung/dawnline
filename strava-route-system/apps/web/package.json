@@ -52,7 +52,7 @@
     "firebase": "^11.6.0",
     "firebase-admin": "^13.0.0",
     "framer-motion": "^11.11.0",
-    "inngest": "^3.19.0",
+    "inngest": "^3.54.2",
     "input-otp": "1.4.1",
     "lucide-react": "^0.454.0",
     "next": "16.1.6",
