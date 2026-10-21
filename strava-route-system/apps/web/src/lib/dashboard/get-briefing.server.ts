@@ -71,10 +71,14 @@ const cachedRouteBriefing = unstable_cache(
  */
 export async function getRouteBriefing(routeId: string, trip: TripOptions = {}): Promise<RouteBriefing | null> {
   if (trip.fromKm != null) return briefPublicRoute(routeId, trip);
+  const started = Date.now();
   const cached = await cachedRouteBriefing(routeId, trip.departure?.toISOString() ?? null, trip.activity ?? null);
+  const ageS = Math.round((Date.now() - cached.computedAt) / 1000);
+  // 暫時的計時紀錄（Vercel Logs 搜尋「判讀計時」）：確認快取有沒有命中、慢在哪裡；查完就移除
+  console.info(`[判讀計時] route=${routeId} ${Date.now() - started}ms cacheAge=${ageS}s`);
   // unstable_cache 過期後仍會先回舊值、背景再重算；很久沒人看的路線可能拿到幾小時前的判讀，
   // 超過上限就當場重算，不顯示過期判讀（背景重算已由這次讀取觸發）
-  if (Date.now() - cached.computedAt > BRIEFING_MAX_AGE_MS) return briefPublicRoute(routeId, trip);
+  if (ageS * 1000 > BRIEFING_MAX_AGE_MS) return briefPublicRoute(routeId, trip);
   return cached.briefing;
 }
 
