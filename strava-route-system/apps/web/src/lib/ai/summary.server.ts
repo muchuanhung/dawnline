@@ -8,13 +8,17 @@ import Anthropic from "@anthropic-ai/sdk";
 import { unstable_cache } from "next/cache";
 import type { RouteBriefing } from "@/lib/dashboard/briefing";
 import { briefingFacts, checkSummary, type BriefingSummary } from "@/lib/dashboard/briefing-summary";
-import { getRouteBriefing } from "@/lib/dashboard/get-briefing.server";
+import { briefLoadedRoute, getRouteBriefing } from "@/lib/dashboard/get-briefing.server";
+import type { Route } from "@/lib/routes/route-data";
 import { parseActivity, parseDeparture } from "@/lib/routes/trip";
 
 const MODEL = "claude-sonnet-5-5";
 const REQUEST_TIMEOUT_MS = 8000;
-/** 同一份事實 30 分鐘內不重複呼叫 */
-const CACHE_SECONDS = 1800;
+/**
+ * 句子快取一天：key 是事實 JSON 本身，事實（數字、示警、時段）一變就是新的 key，
+ * 所以拉長不會用到過期的句子，只是同一份事實不再重複付費。
+ */
+const CACHE_SECONDS = 86400;
 /** 公開路線的整份摘要（含判讀）快取；與 CWB 即時雨量、TDX 事件的快取時間相同 */
 const ROUTE_SUMMARY_SECONDS = 600;
 
@@ -72,16 +76,6 @@ async function phraseBriefing(briefing: RouteBriefing): Promise<BriefingSummary 
 const logFailure = (err: unknown) =>
   console.warn("[AI 摘要] 呼叫失敗:", err instanceof Anthropic.APIError ? `${err.status} ${err.message}` : err);
 
-export async function summarizeBriefing(briefing: RouteBriefing): Promise<BriefingSummary | null> {
-  try {
-    return await phraseBriefing(briefing);
-  } catch (err) {
-    // 錯誤不進快取，下次請求會重試
-    logFailure(err);
-    return null;
-  }
-}
-
 /**
  * 公開路線摘要，連同判讀一起快取 10 分鐘：同一條路線、同樣的出發時間參數與運動類型直接回快取，
  * 不必每次重新判讀（摘要慢主要慢在這裡）。判讀在這 10 分鐘內變了的話，前端 summaryApplies 會擋下改用規則句。
@@ -98,6 +92,34 @@ const cachedRouteSummary = unstable_cache(
   ["route-summary-v1"],
   { revalidate: ROUTE_SUMMARY_SECONDS }
 );
+
+/**
+ * 私人路線摘要：與公開路線相同，判讀連同句子快取 10 分鐘。
+ * 呼叫端必須先用 loadPrivateRoute 確認是使用者自己的路線；快取 key 只用 routeId（ULID，每條路線唯一）。
+ */
+export async function getPrivateRouteSummary(
+  route: Route,
+  depart: string | null,
+  activity: string | null
+): Promise<BriefingSummary | null> {
+  const cached = unstable_cache(
+    async () => {
+      const briefing = await briefLoadedRoute(route, {
+        departure: parseDeparture(depart, new Date()) ?? undefined,
+        activity: parseActivity(activity) ?? undefined,
+      });
+      return briefing ? await phraseBriefing(briefing) : null;
+    },
+    ["private-route-summary-v1", route.id, depart ?? "", activity ?? ""],
+    { revalidate: ROUTE_SUMMARY_SECONDS }
+  );
+  try {
+    return await cached();
+  } catch (err) {
+    logFailure(err);
+    return null;
+  }
+}
 
 /** found=false 代表沒有這條公開路線；API 錯誤不進快取，回 summary null */
 export async function getPublicRouteSummary(

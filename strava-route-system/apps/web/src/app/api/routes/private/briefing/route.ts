@@ -6,6 +6,7 @@
 import { NextResponse } from "next/server";
 import { briefLoadedRoute } from "@/lib/dashboard/get-briefing.server";
 import { loadPrivateRoute, PrivateRouteError } from "@/lib/routes/private-route.server";
+import { cachedParsedGpx } from "@/lib/routes/private-gpx-cache.server";
 import { parseActivity, parseDeparture, parseFromKm } from "@/lib/routes/trip";
 
 export async function GET(request: Request) {
@@ -13,7 +14,7 @@ export async function GET(request: Request) {
   const routeId = params.get("route");
   if (!routeId) return NextResponse.json({ error: "缺少 route 參數" }, { status: 400 });
   try {
-    const route = await loadPrivateRoute(routeId, request.headers.get("cookie") ?? "");
+    const route = await loadPrivateRoute(routeId, request.headers.get("cookie") ?? "", cachedParsedGpx);
     const briefing = await briefLoadedRoute(route, {
       departure: parseDeparture(params.get("depart"), new Date()) ?? undefined,
       activity: parseActivity(params.get("activity")) ?? undefined,
