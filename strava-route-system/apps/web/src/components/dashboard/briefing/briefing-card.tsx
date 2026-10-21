@@ -8,6 +8,7 @@ import { withTrip, type TripParams } from "@/lib/routes/trip";
 import { formatRouteAreas, routeAreas } from "@/lib/routes/route-areas";
 import { DepartureSuggestionRow } from "./departure-suggestion";
 import { DemoNotice } from "@/components/verdict/demo-notice";
+import { AiHeadline } from "@/components/verdict/ai-headline";
 
 /** 判定牌的顏色跟著狀態走：危險紅、注意琥珀；安全與未判定用中性底，絕不用品牌綠表示危險 */
 const LEVEL: Record<
@@ -98,7 +99,7 @@ export function BriefingCard({
           </h2>
           {hasHazard ? (
             <>
-              <p className="text-lg font-bold">{verdict.headline}</p>
+              <AiHeadline routeId={featured.id} trip={trip} verdict={verdict} className="text-lg font-bold" />
               <p className={cn("text-sm", s.muted)}>
                 {s.advice}
                 {verdict.note && `・${verdict.note}`}
@@ -106,7 +107,7 @@ export function BriefingCard({
             </>
           ) : verdict.level === "unknown" ? (
             <>
-              <p className="text-lg font-bold">{verdict.headline}</p>
+              <AiHeadline routeId={featured.id} trip={trip} verdict={verdict} className="text-lg font-bold" />
               <p className={cn("text-sm", s.muted)}>
                 {s.advice}
                 {verdict.note && `・${verdict.note}`}

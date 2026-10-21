@@ -25,6 +25,7 @@ import {
 } from "@/lib/routes/route-track";
 import { etaLabel, paceFor } from "@/lib/routes/trip";
 import { roadEventsOf, verdictOf, type RouteBriefingState } from "@/hooks/useRouteBriefing";
+import { summaryApplies, type BriefingSummary } from "@/lib/dashboard/briefing-summary";
 import { HazardList } from "./recon/hazard-list";
 import { ElevationScrubber } from "./recon/elevation-scrubber";
 import { ReconHero } from "./recon/recon-hero";
@@ -46,6 +47,8 @@ interface ReconViewProps {
   cctvOffline?: boolean;
   /** 伺服器端判讀（判定、示警、合併天氣的路段）；前端不自行判定 */
   briefing: RouteBriefingState;
+  /** AI 一句話摘要；只在依據的判定與目前判定相同時取代主視覺的 headline */
+  summary?: BriefingSummary | null;
   /** 緊接在主視覺下方的行程控制（途中定位、出發時間與運動類型），讓判定與影像留在第一眼 */
   afterHero?: ReactNode;
 }
@@ -63,6 +66,7 @@ export function ReconView({
   cctvError = false,
   cctvOffline = false,
   briefing,
+  summary = null,
   afterHero,
 }: ReconViewProps) {
   const routePolyline = useMemo(() => buildRoutePolylineKm(route), [route]);
@@ -83,6 +87,8 @@ export function ReconView({
   const segments = briefing.briefing?.segments;
   const stages = useMemo(() => deriveStages(segments ? { ...route, segments } : route), [route, segments]);
   const verdict = verdictOf(briefing);
+  // 判定等級、顏色與 note 不變，只換措辭；快照過期或判讀重抓後 headline 不同就退回規則句
+  const heroVerdict = summaryApplies(summary, verdict) ? { ...verdict, headline: summary.text } : verdict;
   const roadEvents = roadEventsOf(briefing);
   const trip = briefing.briefing;
   const snapshot = briefing.snapshot;
@@ -154,7 +160,7 @@ export function ReconView({
     <div className="w-full min-w-0 max-w-full space-y-6">
       {snapshot && <OfflineNotice snapshot={snapshot} />}
       <ReconHero
-        verdict={verdict}
+        verdict={heroVerdict}
         verdictLoading={briefing.loading && !briefing.briefing}
         markers={cctvMarkers}
         activeMarker={activeMarker}

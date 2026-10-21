@@ -6,6 +6,7 @@ import { buildRoutePolylineKm } from "@/lib/routes/recon-geo";
 import type { Activity } from "@/lib/routes/trip";
 import { useRouteCCTV } from "@/hooks/useRouteCCTV";
 import { useRouteBriefing, verdictOf } from "@/hooks/useRouteBriefing";
+import { useBriefingSummary } from "@/hooks/useBriefingSummary";
 import { statusOfVerdict } from "@/components/routes/route-header";
 
 /**
@@ -15,7 +16,7 @@ import { statusOfVerdict } from "@/components/routes/route-header";
 export function useRouteRecon(
   route: Route | null | undefined,
   trip: { depart: string | null; activity: Activity | null },
-  endpoint?: string
+  endpoint = "/api/routes/briefing"
 ) {
   // 途中模式的目前里程，綁定路線：換路線後自動失效，不會把 A 路線的里程套到 B 路線
   // at：套用時間，同一里程定時重新判讀時用來觸發重抓
@@ -35,8 +36,10 @@ export function useRouteRecon(
   const verdict = verdictOf(briefing);
   // 還沒有判讀（載入中、失敗）時為 null，懸浮列與路線卡顯示未判定，不當成安全
   const status = briefing.briefing ? statusOfVerdict(verdict.level) : null;
+  // AI 一句話摘要：判讀回來後才抓；離線快照與途中模式不抓，維持規則句
+  const summary = useBriefingSummary(routeId, trip, endpoint, briefing.briefing != null && !briefing.snapshot && aheadKm == null);
 
-  return { cctv, polyline, aheadKm, setAheadKm, briefing, status };
+  return { cctv, polyline, aheadKm, setAheadKm, briefing, status, summary };
 }
 
 export type RouteRecon = ReturnType<typeof useRouteRecon>;
