@@ -48,7 +48,7 @@ export async function Briefing({
       {/* 桌機左主卡、右沿途示警；手機依序往下 */}
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] lg:items-start">
         <BriefingCard featured={featured} trip={tripParams} />
-        <HazardSummary briefing={featured} trip={tripParams} />
+        <HazardSummary briefing={featured} />
       </div>
     </div>
   );
