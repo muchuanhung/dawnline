@@ -37,6 +37,16 @@ export function DepartureSuggestionRow({
   const target = s.nowIsBest ? null : s.from;
   const href = withTrip(`/dashboard?route=${encodeURIComponent(routeId)}`, { depart: target, activity: trip.activity });
 
+  // 各時段都危險：沒有可建議的出發時間，不寫「最佳出發」也不給改時間的連結
+  if (s.level === "risky") {
+    return (
+      <div className="flex items-center gap-3 rounded-lg bg-muted/50 px-3 py-2 text-sm">
+        <Clock className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+        <p className="min-w-0 flex-1 text-muted-foreground">{LEVEL_TEXT.risky}，沒有建議的出發時段</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-muted/50 px-3 py-2 text-sm">
       <Clock className="size-4 shrink-0 text-muted-foreground" aria-hidden />

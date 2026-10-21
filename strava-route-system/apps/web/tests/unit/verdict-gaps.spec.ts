@@ -177,10 +177,10 @@ test.describe("Dashboard 判讀納入路線 3 km 內即時雨量", () => {
     expect(brief(0.2).verdict.level).toBe("clear");
   });
 
-  test("附近沒有雨量站時不改判 unknown，但加註", () => {
+  test("附近沒有雨量站時不改判 unknown，也不加註", () => {
     const b = brief(null);
     expect(b.verdict.level).toBe("clear");
-    expect(b.verdict.note).toContain("附近無即時雨量站");
+    expect(b.verdict.note).toBe("");
   });
 
   test("沒有查詢即時雨量（undefined）時不加註，維持原判定", () => {
@@ -223,17 +223,17 @@ test.describe("Dashboard 判讀納入路線 3 km 內即時雨量", () => {
 
       const briefB = briefRoute(b, withRouteObservedRain(b, lookup, stations), { now });
       expect(briefB.verdict.level).toBe("clear");
-      expect(briefB.verdict.note).toContain("附近無即時雨量站");
+      expect(briefB.verdict.note).toBe("");
     } finally {
       restore();
     }
   });
 
-  test("縣市雨量站取不到時視為附近無測站，只加註", () => {
+  test("縣市雨量站取不到時視為附近無測站，維持預報判定、不加註", () => {
     const route = makeRoute({ segments: [segment("士林區", [0, 10, 20])] });
     const lookup = new Map([[districtKey("台北市", "士林區"), weather(10)]]);
     const b = briefRoute(route, withRouteObservedRain(route, lookup, new Map([["台北市", null]])));
     expect(b.verdict.level).toBe("clear");
-    expect(b.verdict.note).toContain("附近無即時雨量站");
+    expect(b.verdict.note).toBe("");
   });
 });

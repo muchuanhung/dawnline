@@ -28,7 +28,7 @@ export async function Briefing({
     );
   }
 
-  const { featured, alternative, routes } = data;
+  const { featured, routes } = data;
   /** 換路線、換頁時帶著的行程設定 */
   const tripParams: TripParams = { depart: trip.departure?.toISOString(), activity: trip.activity };
 
@@ -47,8 +47,8 @@ export async function Briefing({
       </div>
       {/* 桌機左主卡、右沿途示警；手機依序往下 */}
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] lg:items-start">
-        <BriefingCard featured={featured} alternative={alternative} trip={tripParams} />
-        <HazardSummary briefing={featured} trip={tripParams} />
+        <BriefingCard featured={featured} trip={tripParams} />
+        <HazardSummary briefing={featured} />
       </div>
     </div>
   );

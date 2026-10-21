@@ -4,11 +4,23 @@ import { ExternalLink, Maximize2, VideoOff, X } from "lucide-react";
 import { Dialog, DialogTrigger } from "@/components/ui/dialog";
 import Spinner from "@/components/ui/Spinner";
 import { UnknownReasons } from "@/components/verdict/unknown-reasons";
-import { HAZARD_ROW_GRID, HazardRowContent } from "@/components/verdict/hazard-row";
+import {
+  HAZARD_ROW_GRID,
+  HazardRowContent,
+} from "@/components/verdict/hazard-row";
 import { cn } from "@/lib/utils";
-import type { CctvMarker, ReconVerdict, VerdictLevel } from "@/lib/routes/recon-geo";
+import type {
+  CctvMarker,
+  ReconVerdict,
+  VerdictLevel,
+} from "@/lib/routes/recon-geo";
 import type { TrackZone } from "@/lib/routes/route-track";
-import { CCTV_FAR_KM, CctvFrame, CctvFullscreen, cctvTitle } from "./cctv-viewer";
+import {
+  CCTV_FAR_KM,
+  CctvFrame,
+  CctvFullscreen,
+  cctvTitle,
+} from "./cctv-viewer";
 import { RouteVerdictBar, VERDICT_LEVEL_STYLE } from "./route-verdict-bar";
 import { RouteTrack } from "./route-track";
 
@@ -21,15 +33,27 @@ const VERDICT_PILL: Record<VerdictLevel, string> = {
 };
 
 /** 影像上方的判定：一眼看到能不能走；影像只是佐證，判定仍以規則式結果為準 */
-function VerdictOverlay({ verdict, loading }: { verdict: ReconVerdict; loading: boolean }) {
+function VerdictOverlay({
+  verdict,
+  loading,
+  headlinePending,
+}: {
+  verdict: ReconVerdict;
+  loading: boolean;
+  headlinePending: boolean;
+}) {
   const word = VERDICT_LEVEL_STYLE[verdict.level].word;
   return (
-    <div role="status" aria-live="polite" className="absolute inset-x-0 top-0 bg-black/65 px-4 py-3 text-white">
+    <div
+      role="status"
+      aria-live="polite"
+      className="absolute inset-x-0 top-0 bg-black/65 px-4 py-3 text-white"
+    >
       <p>
         <span
           className={cn(
             "inline-flex items-center rounded-full px-3 py-1 text-lg font-bold leading-none",
-            VERDICT_PILL[loading ? "unknown" : verdict.level]
+            VERDICT_PILL[loading ? "unknown" : verdict.level],
           )}
         >
           {loading ? (
@@ -41,9 +65,30 @@ function VerdictOverlay({ verdict, loading }: { verdict: ReconVerdict; loading: 
           )}
         </span>
       </p>
-      {!loading && <p className="mt-1.5 text-sm font-medium leading-snug">{verdict.headline}</p>}
-      {!loading && verdict.note && <p className="mt-0.5 text-xs text-white/75">{verdict.note}</p>}
+      {!loading &&
+        (headlinePending ? (
+          <HeadlineSkeleton className="mt-2 h-4 bg-white/25" />
+        ) : (
+          <p className="mt-1.5 text-sm font-medium leading-snug">
+            {verdict.headline}
+          </p>
+        ))}
+      {!loading && verdict.note && (
+        <p className="mt-0.5 text-xs text-white/75">{verdict.note}</p>
+      )}
     </div>
+  );
+}
+
+/** 判定句等 AI 摘要時的骨架：只佔句子的位置，判定詞照常顯示 */
+export function HeadlineSkeleton({ className }: { className?: string }) {
+  return (
+    <span
+      role="status"
+      className={cn("block w-3/4 max-w-xs animate-pulse rounded", className)}
+    >
+      <span className="sr-only">判定說明載入中</span>
+    </span>
   );
 }
 
@@ -53,11 +98,13 @@ function CctvStage({
   positionKm,
   verdict,
   verdictLoading,
+  headlinePending,
 }: {
   marker: CctvMarker;
   positionKm: number;
   verdict: ReconVerdict;
   verdictLoading: boolean;
+  headlinePending: boolean;
 }) {
   const title = cctvTitle(marker);
   const isFar = Math.abs(marker.km - positionKm) > CCTV_FAR_KM;
@@ -66,7 +113,11 @@ function CctvStage({
     <Dialog>
       <div className="relative flex h-64 items-center justify-center overflow-hidden bg-black sm:h-80">
         <CctvFrame key={marker.id} marker={marker} large />
-        <VerdictOverlay verdict={verdict} loading={verdictLoading} />
+        <VerdictOverlay
+          verdict={verdict}
+          loading={verdictLoading}
+          headlinePending={headlinePending}
+        />
         <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-black/65 pl-4 text-white">
           <p className="min-w-0 truncate text-xs">
             {isFar && "最近一台："}
@@ -104,19 +155,24 @@ function CctvStage({
 /** 沒有鏡頭（載入中、載入失敗、沿途沒有、離線）：主視覺改成判定本身，不留空黑框 */
 function NoCctvStage({
   verdict,
+  headlinePending,
   cctvLoading,
   cctvError,
   cctvOffline,
 }: {
   verdict: ReconVerdict;
+  headlinePending: boolean;
   cctvLoading: boolean;
   cctvError: boolean;
   cctvOffline: boolean;
 }) {
   return (
     <div>
-      <RouteVerdictBar verdict={verdict} />
-      <p className="flex items-center gap-2 px-4 pt-3 text-sm text-muted-foreground" role={cctvLoading ? "status" : undefined}>
+      <RouteVerdictBar verdict={verdict} headlinePending={headlinePending} />
+      <p
+        className="flex items-center gap-2 px-4 pt-3 text-sm text-muted-foreground"
+        role={cctvLoading ? "status" : undefined}
+      >
         {cctvLoading ? (
           <>
             <Spinner size="sm" dotClassName="bg-muted-foreground" />
@@ -125,7 +181,11 @@ function NoCctvStage({
         ) : (
           <>
             <VideoOff className="size-4" aria-hidden />
-            {cctvOffline ? "離線中，無法看即時影像" : cctvError ? "監視器載入失敗" : "沿途沒有監視器"}
+            {cctvOffline
+              ? "離線中，無法看即時影像"
+              : cctvError
+                ? "監視器載入失敗"
+                : "沿途沒有監視器"}
           </>
         )}
       </p>
@@ -147,7 +207,8 @@ function ZoneCallout({
     <div className="mx-3 mb-3 rounded-lg border border-border bg-muted/40">
       <div className="flex items-center justify-between pl-3">
         <p className="text-sm font-semibold text-foreground">
-          {zone.startKm.toFixed(1)}–{zone.endKm.toFixed(1)} km 示警 {zone.hazards.length} 項
+          {zone.startKm.toFixed(1)}–{zone.endKm.toFixed(1)} km 示警{" "}
+          {zone.hazards.length} 項
         </p>
         <button
           type="button"
@@ -177,6 +238,7 @@ function ZoneCallout({
 export function ReconHero({
   verdict,
   verdictLoading,
+  headlinePending = false,
   markers,
   activeMarker,
   cctvLoading,
@@ -195,6 +257,8 @@ export function ReconHero({
   verdict: ReconVerdict;
   /** 判讀尚未回來 */
   verdictLoading: boolean;
+  /** 判定句還在等 AI 摘要：句子位置顯示骨架 */
+  headlinePending?: boolean;
   markers: CctvMarker[];
   activeMarker: CctvMarker | null;
   cctvLoading: boolean;
@@ -214,11 +278,26 @@ export function ReconHero({
   onCloseZone: () => void;
 }) {
   return (
-    <section aria-label="沿線影像與判定" className="overflow-hidden rounded-2xl border border-border bg-card">
+    <section
+      aria-label="沿線影像與判定"
+      className="overflow-hidden rounded-2xl border border-border bg-card"
+    >
       {activeMarker && !cctvOffline ? (
-        <CctvStage marker={activeMarker} positionKm={positionKm} verdict={verdict} verdictLoading={verdictLoading} />
+        <CctvStage
+          marker={activeMarker}
+          positionKm={positionKm}
+          verdict={verdict}
+          verdictLoading={verdictLoading}
+          headlinePending={headlinePending}
+        />
       ) : (
-        <NoCctvStage verdict={verdict} cctvLoading={cctvLoading} cctvError={cctvError} cctvOffline={cctvOffline} />
+        <NoCctvStage
+          verdict={verdict}
+          headlinePending={headlinePending}
+          cctvLoading={cctvLoading}
+          cctvError={cctvError}
+          cctvOffline={cctvOffline}
+        />
       )}
       <RouteTrack
         totalKm={totalKm}
@@ -231,7 +310,9 @@ export function ReconHero({
         onSelectMarker={onSelectMarker}
         onSelectZone={onSelectZone}
       />
-      {activeZone && <ZoneCallout zone={activeZone} etaOf={etaOf} onClose={onCloseZone} />}
+      {activeZone && (
+        <ZoneCallout zone={activeZone} etaOf={etaOf} onClose={onCloseZone} />
+      )}
     </section>
   );
 }

@@ -8,6 +8,8 @@ import { withTrip, type TripParams } from "@/lib/routes/trip";
 import { formatRouteAreas, routeAreas } from "@/lib/routes/route-areas";
 import { DepartureSuggestionRow } from "./departure-suggestion";
 import { DemoNotice } from "@/components/verdict/demo-notice";
+import { AiHeadline } from "@/components/verdict/ai-headline";
+import { riskyAdvice } from "@/lib/dashboard/advice";
 
 /** 判定牌的顏色跟著狀態走：危險紅、注意琥珀；安全與未判定用中性底，絕不用品牌綠表示危險 */
 const LEVEL: Record<
@@ -16,7 +18,8 @@ const LEVEL: Record<
 > = {
   risky: {
     word: "危險",
-    advice: "建議改期，或改走替代路線。",
+    // 實際文案由 riskyAdvice 依建議時段產生；這裡只是型別需要的預設
+    advice: "建議改期。",
     icon: ShieldAlert,
     sign: "bg-destructive text-destructive-foreground",
     muted: "text-destructive-foreground/85",
@@ -53,16 +56,14 @@ const LEVEL: Record<
 const tempRange = ({ min, max }: { min: number; max: number }) => (min === max ? `${min}°` : `${min}–${max}°`);
 
 /**
- * 今日判讀主卡：路線名 → 判定牌 → 天氣列 → 替代路線與詳情入口。
- * 做決定需要的資訊集中在同一張卡，替代路線緊接在判定下方。
+ * 今日判讀主卡：路線名 → 判定牌 → 天氣列 → 建議出發時段 → 詳情入口。
+ * 做決定需要的資訊集中在同一張卡。
  */
 export function BriefingCard({
   featured,
-  alternative,
   trip,
 }: {
   featured: RouteBriefing;
-  alternative: RouteBriefing | null;
   trip: TripParams;
 }) {
   const { verdict } = featured;
@@ -98,15 +99,15 @@ export function BriefingCard({
           </h2>
           {hasHazard ? (
             <>
-              <p className="text-lg font-bold">{verdict.headline}</p>
+              <AiHeadline routeId={featured.id} trip={trip} verdict={verdict} className="text-lg font-bold" />
               <p className={cn("text-sm", s.muted)}>
-                {s.advice}
+                {verdict.level === "risky" ? riskyAdvice(featured) : s.advice}
                 {verdict.note && `・${verdict.note}`}
               </p>
             </>
           ) : verdict.level === "unknown" ? (
             <>
-              <p className="text-lg font-bold">{verdict.headline}</p>
+              <AiHeadline routeId={featured.id} trip={trip} verdict={verdict} className="text-lg font-bold" />
               <p className={cn("text-sm", s.muted)}>
                 {s.advice}
                 {verdict.note && `・${verdict.note}`}
@@ -134,25 +135,6 @@ export function BriefingCard({
       )}
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3 border-t border-dashed border-border pt-4 text-sm">
-        {alternative && (
-          <Link
-            href={withTrip(`/dashboard?route=${encodeURIComponent(alternative.id)}`, trip)}
-            className="group flex min-w-0 items-center gap-2"
-          >
-            <span
-              className={cn(
-                "shrink-0 rounded-md px-2 py-0.5 text-xs font-black tracking-widest",
-                LEVEL[alternative.verdict.level].chip
-              )}
-            >
-              {LEVEL[alternative.verdict.level].word}
-            </span>
-            <span className="min-w-0">
-              替代路線：<b className="group-hover:underline">{alternative.name}</b>
-              <span className="font-mono text-muted-foreground">（{alternative.distanceKm.toFixed(1)} km）</span>
-            </span>
-          </Link>
-        )}
         <Link
           href={withTrip(`/routes?route=${encodeURIComponent(featured.id)}`, trip)}
           className="ml-auto inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg bg-primary px-4 font-bold text-primary-foreground transition-colors hover:bg-primary/90"

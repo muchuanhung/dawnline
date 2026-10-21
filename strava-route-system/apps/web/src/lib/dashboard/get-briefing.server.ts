@@ -12,7 +12,6 @@ import { getRoadEvents } from "@/lib/tdx/road-events.server";
 import {
   briefRoute,
   mapCwbCondition,
-  pickAlternative,
   routeDistrictKeys,
   withRouteObservedRain,
   type DistrictWeather,
@@ -24,7 +23,6 @@ export type DashboardBriefing =
   | {
       status: "ok";
       featured: RouteBriefing;
-      alternative: RouteBriefing | null;
       routes: { id: string; name: string }[];
       /** 有天氣資料的行政區數 / 總數 */
       weatherCoverage: { ok: number; total: number };
@@ -55,8 +53,6 @@ export async function getDashboardBriefing(routeId?: string, trip: TripOptions =
   return {
     status: "ok",
     featured,
-    // 示意路線的示警是假資料，不和真實路線互相比較、推薦
-    alternative: featured.demo ? null : pickAlternative(featured, briefings.filter((b) => !b.demo)),
     // 切換列維持原本路線順序（判讀時為了抓取優先順序重排過）
     routes: routes.flatMap((r) => briefings.filter((b) => b.id === r.id).map((b) => ({ id: b.id, name: b.name }))),
     weatherCoverage,

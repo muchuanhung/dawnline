@@ -40,7 +40,14 @@ export const VERDICT_LEVEL_STYLE: Record<
 };
 
 /** 第 1 層：全線判定，一行看懂危險等級與原因 */
-export function RouteVerdictBar({ verdict }: { verdict: ReconVerdict }) {
+export function RouteVerdictBar({
+  verdict,
+  headlinePending = false,
+}: {
+  verdict: ReconVerdict;
+  /** 判定句還在等 AI 摘要：句子位置顯示骨架，判定詞照常顯示 */
+  headlinePending?: boolean;
+}) {
   const style = VERDICT_LEVEL_STYLE[verdict.level];
   const Icon = style.icon;
 
@@ -60,7 +67,13 @@ export function RouteVerdictBar({ verdict }: { verdict: ReconVerdict }) {
           ) : (
             <span className={cn("mr-2 font-bold", style.wordClass)}>{style.word}</span>
           )}
-          {verdict.headline}
+          {headlinePending ? (
+            <span role="status" className="inline-block h-4 w-40 animate-pulse rounded bg-muted align-middle">
+              <span className="sr-only">判定說明載入中</span>
+            </span>
+          ) : (
+            verdict.headline
+          )}
         </p>
         {verdict.note && <p className="mt-0.5 text-sm text-muted-foreground">{verdict.note}</p>}
       </div>

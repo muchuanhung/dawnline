@@ -8,7 +8,8 @@ import { RideAhead } from "@/components/routes/ride-ahead";
 import { TripSettings } from "@/components/trip/trip-settings";
 import type { RouteRecon } from "@/hooks/useRouteRecon";
 import { routeTotalKm } from "@/lib/routes/recon-geo";
-import { formatClock, type Activity } from "@/lib/routes/trip";
+import type { Activity } from "@/lib/routes/trip";
+import { departureLabelOf } from "@/lib/dashboard/advice";
 
 /**
  * 路線詳情本體：路線卡＋偵察畫面（判定、示警、坡度、CCTV、途中模式、行程設定）。
@@ -27,7 +28,7 @@ export function RouteReconBody({
   /** 路線卡外層；手機往下捲過它後顯示懸浮路線列 */
   headerRef?: Ref<HTMLDivElement>;
 }) {
-  const { briefing, cctv, polyline, aheadKm, setAheadKm } = recon;
+  const { briefing, summary, cctv, polyline, aheadKm, setAheadKm } = recon;
   const suggestion = briefing.briefing?.departureSuggestion;
 
   return (
@@ -35,7 +36,7 @@ export function RouteReconBody({
       <div ref={headerRef}>
         <RouteHeader
           route={route}
-          departureLabel={suggestion ? (suggestion.nowIsBest ? "現在" : formatClock(new Date(suggestion.from), new Date())) : null}
+          departureLabel={departureLabelOf(suggestion ?? null, new Date())}
         />
       </div>
       <ReconView
@@ -45,6 +46,7 @@ export function RouteReconBody({
         cctvError={cctv.error}
         cctvOffline={cctv.offline}
         briefing={briefing}
+        summary={summary}
         afterHero={
           <div className="space-y-3">
             <RideAhead

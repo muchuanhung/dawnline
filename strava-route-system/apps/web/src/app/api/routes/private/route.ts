@@ -5,12 +5,13 @@
 
 import { NextResponse } from "next/server";
 import { loadPrivateRoute, PrivateRouteError } from "@/lib/routes/private-route.server";
+import { cachedParsedGpx } from "@/lib/routes/private-gpx-cache.server";
 
 export async function GET(request: Request) {
   const routeId = new URL(request.url).searchParams.get("route");
   if (!routeId) return NextResponse.json({ error: "缺少 route 參數" }, { status: 400 });
   try {
-    const route = await loadPrivateRoute(routeId, request.headers.get("cookie") ?? "");
+    const route = await loadPrivateRoute(routeId, request.headers.get("cookie") ?? "", cachedParsedGpx);
     // 私人資料：不讓瀏覽器或 CDN 快取
     return NextResponse.json(route, { headers: { "Cache-Control": "private, no-store" } });
   } catch (err) {

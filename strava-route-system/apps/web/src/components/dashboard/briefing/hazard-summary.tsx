@@ -1,10 +1,8 @@
-import Link from "next/link";
-import { ArrowRight } from "lucide-react";
 import { UNKNOWN_REASON_TEXT, type Hazard } from "@/lib/routes/recon-geo";
 import type { RouteBriefing } from "@/lib/dashboard/briefing";
 import { groupRouteEvents } from "@/lib/routes/road-events";
 import { HAZARD_ROW_GRID, HazardRowContent } from "@/components/verdict/hazard-row";
-import { etaLabel, paceFor, withTrip, type TripParams } from "@/lib/routes/trip";
+import { etaLabel, paceFor } from "@/lib/routes/trip";
 import { ProfileStrip } from "./profile-strip";
 
 /** 今日判讀只列最要緊的幾項，完整清單在路線頁 */
@@ -21,12 +19,11 @@ function topHazards(hazards: Hazard[]): Hazard[] {
  * 沿途示警摘要：今日判讀只回答「要不要出發」，這裡列出影響判定的前幾項與總數；
  * 逐段清單、點擊跳到該處、坡度與 CCTV 在路線頁。陡坡是路線固定特性，不列入。
  */
-export function HazardSummary({ briefing, trip }: { briefing: RouteBriefing; trip: TripParams }) {
+export function HazardSummary({ briefing }: { briefing: RouteBriefing }) {
   const { hazards } = briefing;
   const { notices, routine } = groupRouteEvents(briefing.roadEvents);
   const shown = topHazards(hazards);
   const roadNotices = notices.length + routine.length;
-  const routeHref = withTrip(`/routes?route=${encodeURIComponent(briefing.id)}`, trip);
   const now = new Date();
   const pace = paceFor(briefing.activity, briefing.elevationProfile);
 
@@ -73,11 +70,8 @@ export function HazardSummary({ briefing, trip }: { briefing: RouteBriefing; tri
           {hazards.length > shown.length && `還有 ${hazards.length - shown.length} 項示警`}
           {hazards.length > shown.length && roadNotices > 0 && "，"}
           {roadNotices > 0 && `沿線另有 ${roadNotices} 則施工、壅塞等路況（不影響判定）`}
-          。
-          <Link href={routeHref} className="ml-1 inline-flex items-center gap-0.5 font-medium text-primary hover:underline">
-            看完整清單
-            <ArrowRight className="size-3.5" aria-hidden />
-          </Link>
+          {/* 完整清單由判定卡的「看逐段示警與 CCTV」進入，同頁不重複放同一個入口 */}
+          ，完整清單在逐段示警頁。
         </p>
       )}
     </section>

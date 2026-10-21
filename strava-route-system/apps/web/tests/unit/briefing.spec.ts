@@ -6,6 +6,7 @@ import {
   mapCwbCondition,
   pickAlternative,
   type DistrictWeather,
+  type RouteBriefing,
 } from "@/lib/dashboard/briefing";
 import type { RainfallBucket } from "@/lib/cwb/forecast-eta";
 import { makeRoute, segment, slopeProfile } from "../fixtures/route";
@@ -280,6 +281,24 @@ test.describe("pickAlternative", () => {
 
   test("只有同級或更危險的路線時不推薦", () => {
     expect(pickAlternative(caution, [caution, risky])).toBeNull();
+  });
+
+  const inCounty = (b: RouteBriefing, id: string, county: string): RouteBriefing => ({
+    ...b,
+    id,
+    segments: b.segments.map((seg) => ({ ...seg, county })),
+  });
+
+  test("不跨縣市推薦：只考慮經過同一縣市的路線", () => {
+    const tainan = inCounty(clearShort, "tainan", "台南市");
+    expect(pickAlternative(risky, [risky, tainan])).toBeNull();
+    expect(pickAlternative(risky, [risky, tainan, caution])?.id).toBe("caution");
+  });
+
+  test("縣市舊名視為同一縣市（台北縣＝新北市）", () => {
+    const current = inCounty(risky, "ntpc", "新北市");
+    const oldName = inCounty(clearShort, "old-name", "台北縣");
+    expect(pickAlternative(current, [current, oldName])?.id).toBe("old-name");
   });
 
   test("目前路線已安全或未判定時不推薦", () => {

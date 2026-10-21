@@ -8,6 +8,12 @@ import { getSegmentsFromPoints } from "@/lib/routes/geocode-districts";
 import type { Route } from "@/lib/routes/route-data";
 import type { PrivateRoute, PrivateRouteList } from "@/lib/routes/private-routes";
 
+/**
+ * 解析後 GPX 的快取（private-gpx-cache.server.ts 提供）；未傳入時每次都重新讀取。
+ * 同一個 id 的 GPX 不會變（重新上傳會拿到新 id），名稱與類型每次仍以後端為準。
+ */
+export type ParsedGpxCache = (routeId: string, load: () => Promise<Route>) => Promise<Route>;
+
 /** 後端路線 id 是 ULID；先擋掉其他格式，避免拼進後端網址 */
 const ROUTE_ID_PATTERN = /^[0-9A-HJKMNP-TV-Z]{26}$/i;
 
@@ -46,13 +52,24 @@ async function backendJson<T>(path: string, cookie: string): Promise<T> {
  * 2. 拿短效下載網址，伺服器端直接從 S3 讀 GPX（不經瀏覽器，不需要 S3 GET 的 CORS）
  * 3. 與公開路線同一套解析與行政區取樣；名稱與類型以後端資料庫為準
  */
-export async function loadPrivateRoute(routeId: string, cookie: string): Promise<Route> {
+export async function loadPrivateRoute(
+  routeId: string,
+  cookie: string,
+  cache: ParsedGpxCache = (_id, load) => load()
+): Promise<Route> {
   if (!ROUTE_ID_PATTERN.test(routeId)) throw new PrivateRouteError(404, "找不到路線");
 
   const { routes } = await backendJson<PrivateRouteList>("", cookie);
   const meta: PrivateRoute | undefined = routes.find((r) => r.id === routeId);
   if (!meta || meta.status !== "ready") throw new PrivateRouteError(404, "找不到路線");
 
+  // 權限已由上面的列表確認；快取 key 只用 routeId，未命中時才拿下載網址、讀 S3、取樣行政區
+  const route = await cache(routeId, () => fetchParsedGpx(routeId, cookie));
+  return { ...route, name: meta.name, nameZh: meta.name, type: meta.type as Route["type"] };
+}
+
+/** 從 S3 讀 GPX 並解析（含行政區取樣，最花時間的一步） */
+async function fetchParsedGpx(routeId: string, cookie: string): Promise<Route> {
   const { url } = await backendJson<{ url: string }>(`/${routeId}/gpx`, cookie);
   let xml: string;
   try {
@@ -65,6 +82,5 @@ export async function loadPrivateRoute(routeId: string, cookie: string): Promise
   }
 
   const { points } = parseGpxPoints(xml);
-  const route = parseGpxToRoute(xml, routeId, getSegmentsFromPoints(points));
-  return { ...route, name: meta.name, nameZh: meta.name, type: meta.type as Route["type"] };
+  return parseGpxToRoute(xml, routeId, getSegmentsFromPoints(points));
 }
