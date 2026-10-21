@@ -6,7 +6,7 @@ import { summaryApplies } from "@/lib/dashboard/briefing-summary";
 import { useBriefingSummary } from "@/hooks/useBriefingSummary";
 
 /**
- * 判定短句：等 AI 一句話摘要（最多 SUMMARY_WAIT_MS），依據同一份判定才用 AI 句子，否則用規則產生的 verdict.headline；
+ * 判定短句：等 AI 一句話摘要回來，依據同一份判定就用 AI 句子；AI 失敗、驗證未通過或判定對不上時才用規則產生的 verdict.headline。
  * 顯示後不再換句。
  * 伺服器元件（Dashboard 判定牌）用；路線頁由 useRouteRecon 抓摘要。
  */
@@ -21,7 +21,7 @@ export function AiHeadline({
   verdict: Pick<ReconVerdict, "level" | "headline">;
   className?: string;
 }) {
-  // 判定牌是伺服器算好的，掛載時判讀已就緒：最多等 SUMMARY_WAIT_MS，期間句子位置顯示骨架
+  // 判定牌是伺服器算好的，掛載時判讀已就緒；等 AI 句子期間句子位置顯示骨架
   const { summary, pending } = useBriefingSummary(routeId, trip, "/api/routes/briefing", true);
   if (pending) {
     return (

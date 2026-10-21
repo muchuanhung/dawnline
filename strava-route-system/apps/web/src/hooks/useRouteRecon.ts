@@ -36,7 +36,7 @@ export function useRouteRecon(
   const verdict = verdictOf(briefing);
   // 還沒有判讀（載入中、失敗）時為 null，懸浮列與路線卡顯示未判定，不當成安全
   const status = briefing.briefing ? statusOfVerdict(verdict.level) : null;
-  // AI 一句話摘要：與判讀同時發出（摘要 API 自己判讀）；判讀回來（或失敗）後最多再等一下。離線快照與途中模式不用，維持規則句
+  // AI 一句話摘要：與判讀同時發出（摘要 API 自己判讀）；等到它回來才顯示句子，規則句只在 AI 失敗時用。離線快照與途中模式不用，維持規則句
   const summary = useBriefingSummary(
     routeId,
     trip,

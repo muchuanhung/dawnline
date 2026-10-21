@@ -13,7 +13,8 @@ import type { Route } from "@/lib/routes/route-data";
 import { parseActivity, parseDeparture } from "@/lib/routes/trip";
 
 const MODEL = "claude-sonnet-5-5";
-const REQUEST_TIMEOUT_MS = 8000;
+/** 不重試：前端一直等到這裡回應，重試會讓等待時間加倍；失敗就用規則句 */
+const REQUEST_TIMEOUT_MS = 10000;
 /**
  * 句子快取一天：key 是事實 JSON 本身，事實（數字、示警、時段）一變就是新的 key，
  * 所以拉長不會用到過期的句子，只是同一份事實不再重複付費。
@@ -35,7 +36,7 @@ Rules:
 - At most 50 characters, a single sentence, full-width Chinese punctuation, no quotes, emoji or markdown. Output only the sentence.`;
 
 let client: Anthropic | null = null;
-const getClient = () => (client ??= new Anthropic({ timeout: REQUEST_TIMEOUT_MS, maxRetries: 1 }));
+const getClient = () => (client ??= new Anthropic({ timeout: REQUEST_TIMEOUT_MS, maxRetries: 0 }));
 
 /** 呼叫 Claude 取得原始句子；不在這裡驗證，讓被擋下的結果也進快取，避免同一份事實重複花費 */
 async function phrase(factsJson: string): Promise<string | null> {
