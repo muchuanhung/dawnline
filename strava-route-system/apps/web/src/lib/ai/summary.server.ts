@@ -20,7 +20,7 @@ Rules:
 - Use only the facts in the user message. Never change, soften or upgrade the verdict level.
 - If level is "unknown", say the route is 未判定 because data is missing. Never say or imply it is safe.
 - If level is "caution" or "risky", never use words like 安全, 放心, 沒問題.
-- Every number you write must appear in the facts exactly as given, in Arabic digits.
+- Every number you write must appear in the facts exactly as given, in Arabic digits. Write distances as "12.4 km", never 公里.
 - Do not mention any weather or road condition that is not in the facts.
 - The verdict word (危險/注意/安全/未判定) and the number of other hazards are already shown next to your sentence. Do not repeat them, and do not add generic advice such as 審慎評估.
 - Describe the conditions only: the first hazard and where it starts, plus useful context from the facts. Do not give advice such as changing route or time; the app shows its own advice.
@@ -53,7 +53,7 @@ async function phrase(factsJson: string): Promise<string | null> {
 }
 
 // 快取 key 為函式參數（事實 JSON）；事實不變就沿用同一句
-const cachedPhrase = unstable_cache(phrase, ["briefing-summary-v3"], { revalidate: CACHE_SECONDS });
+const cachedPhrase = unstable_cache(phrase, ["briefing-summary-v4"], { revalidate: CACHE_SECONDS });
 
 export async function summarizeBriefing(briefing: RouteBriefing): Promise<BriefingSummary | null> {
   if (!process.env.ANTHROPIC_API_KEY) return null;

@@ -104,6 +104,10 @@ test.describe("checkSummary", () => {
     expect(checkSummary("12.4 km 起降雨機率 70%,風速最高 18 km/h。", caution)).toBe("12.4 km 起降雨機率 70%，風速最高 18 km/h。");
   });
 
+  test("距離單位統一寫 km", () => {
+    expect(checkSummary("從12.4公里處起降雨機率升至70%。", caution)).toBe("從12.4 km處起降雨機率升至70%。");
+  });
+
   test("擋下：重複畫面已有的判定等級與示警數", () => {
     expect(checkSummary("此路線屬注意等級，12.4 km 起降雨機率 70%。", caution)).toBeNull();
     expect(checkSummary("12.4 km 起降雨機率 70%，另有 1 項示警。", caution)).toBeNull();

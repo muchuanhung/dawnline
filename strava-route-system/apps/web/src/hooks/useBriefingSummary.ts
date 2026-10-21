@@ -5,8 +5,8 @@ import type { BriefingSummary } from "@/lib/dashboard/briefing-summary";
 import { withTrip, type TripParams } from "@/lib/routes/trip";
 
 /**
- * AI 一句話摘要：判讀回來後另外抓，抓到前與失敗時都是 null，畫面維持 verdict.headline。
- * enabled：只在有線上判讀、非途中模式時抓（快照或途中模式一律用規則句）。
+ * AI 一句話摘要：與判讀同時另外抓，抓到前與失敗時都是 null，畫面維持 verdict.headline。
+ * enabled：非離線快照、非途中模式時抓（快照或途中模式一律用規則句）。
  * endpoint：判讀 API；摘要 API 是它底下的 /summary（公開、私人路線各一支）。
  */
 export function useBriefingSummary(

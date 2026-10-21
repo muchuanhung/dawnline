@@ -36,8 +36,8 @@ export function useRouteRecon(
   const verdict = verdictOf(briefing);
   // 還沒有判讀（載入中、失敗）時為 null，懸浮列與路線卡顯示未判定，不當成安全
   const status = briefing.briefing ? statusOfVerdict(verdict.level) : null;
-  // AI 一句話摘要：判讀回來後才抓；離線快照與途中模式不抓，維持規則句
-  const summary = useBriefingSummary(routeId, trip, endpoint, briefing.briefing != null && !briefing.snapshot && aheadKm == null);
+  // AI 一句話摘要：與判讀同時發出（摘要 API 自己判讀），不等判讀回來；離線快照與途中模式不用，維持規則句
+  const summary = useBriefingSummary(routeId, trip, endpoint, !briefing.snapshot && aheadKm == null);
 
   return { cctv, polyline, aheadKm, setAheadKm, briefing, status, summary };
 }

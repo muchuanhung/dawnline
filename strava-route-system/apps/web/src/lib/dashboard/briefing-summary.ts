@@ -97,7 +97,9 @@ export function checkSummary(raw: string, facts: SummaryFacts): string | null {
     .replace(/^[「『"']+|[」』"']+$/g, "")
     .trim()
     // 半形逗號統一成全形，與畫面其他中文標點一致
-    .replace(/\s*,\s*/g, "，");
+    .replace(/\s*,\s*/g, "，")
+    // 距離單位與規則句一致寫 km（「6.3公里」→「6.3 km」）
+    .replace(/(\d)\s*公里/g, "$1 km");
   if (!text || /[\r\n]/.test(text)) return null;
   if (REPEATED_PHRASES.some((p) => text.includes(p))) return null;
   if (Array.from(text).length > SUMMARY_MAX_CHARS) return null;
