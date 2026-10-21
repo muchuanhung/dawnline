@@ -9,6 +9,7 @@ import { formatRouteAreas, routeAreas } from "@/lib/routes/route-areas";
 import { DepartureSuggestionRow } from "./departure-suggestion";
 import { DemoNotice } from "@/components/verdict/demo-notice";
 import { AiHeadline } from "@/components/verdict/ai-headline";
+import { riskyAdvice } from "@/lib/dashboard/advice";
 
 /** 判定牌的顏色跟著狀態走：危險紅、注意琥珀；安全與未判定用中性底，絕不用品牌綠表示危險 */
 const LEVEL: Record<
@@ -17,7 +18,8 @@ const LEVEL: Record<
 > = {
   risky: {
     word: "危險",
-    advice: "建議改期，或改走替代路線。",
+    // 實際文案由 riskyAdvice 依替代路線與建議時段產生；這裡只是型別需要的預設
+    advice: "建議改期。",
     icon: ShieldAlert,
     sign: "bg-destructive text-destructive-foreground",
     muted: "text-destructive-foreground/85",
@@ -101,7 +103,7 @@ export function BriefingCard({
             <>
               <AiHeadline routeId={featured.id} trip={trip} verdict={verdict} className="text-lg font-bold" />
               <p className={cn("text-sm", s.muted)}>
-                {s.advice}
+                {verdict.level === "risky" ? riskyAdvice(featured, alternative, new Date()) : s.advice}
                 {verdict.note && `・${verdict.note}`}
               </p>
             </>

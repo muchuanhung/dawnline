@@ -6,7 +6,6 @@
 
 import type { RouteBriefing } from "@/lib/dashboard/briefing";
 import type { VerdictLevel } from "@/lib/routes/recon-geo";
-import { formatClock } from "@/lib/routes/trip";
 
 /** 與 route-verdict-bar 的判定用詞一致 */
 const LEVEL_WORD: Record<VerdictLevel, string> = {
@@ -18,7 +17,8 @@ const LEVEL_WORD: Record<VerdictLevel, string> = {
 
 /**
  * 畫面上已另外顯示判定詞（危險／注意…）與 note（示警數、資料缺口），
- * 所以事實裡不放這兩項，避免句子重複。
+ * 行動建議（替代路線、出發時段）也由規則另外顯示（advice.ts），
+ * 所以事實裡不放這些，句子只描述路況，避免重複。
  */
 export interface SummaryFacts {
   route: string;
@@ -31,10 +31,6 @@ export interface SummaryFacts {
   /** 天氣統計寫成中文，模型引用的用詞與數字都能在這裡找到 */
   weather: string | null;
   period: string | null;
-  /** 天氣最佳出發時段（台灣時間），例：「06:00–08:00」 */
-  departureSuggestion: string | null;
-  /** pickAlternative 挑出、判定較安全的替代路線；沒有時為 null */
-  alternative: { route: string; level: string } | null;
 }
 
 /** 摘要結果；level／headline 記錄依據的判定，前端只在跟畫面上的判定相同時才替換 */
@@ -49,16 +45,12 @@ const MAX_HAZARDS = 3;
 export const SUMMARY_MAX_CHARS = 60;
 
 /** 從判讀結果挑出要講的事實；只放規則已算好的結果，不給原始資料 */
-export function briefingFacts(b: RouteBriefing, now: Date, alternative: RouteBriefing | null = null): SummaryFacts {
+export function briefingFacts(b: RouteBriefing): SummaryFacts {
   const { verdict } = b;
   const weatherParts: string[] = [];
   if (b.maxRain != null) weatherParts.push(`降雨機率最高 ${b.maxRain}%`);
   if (b.maxWindKmh != null) weatherParts.push(`風速最高 ${Math.round(b.maxWindKmh)} km/h`);
   if (b.temperature) weatherParts.push(`氣溫 ${Math.round(b.temperature.min)}–${Math.round(b.temperature.max)}°C`);
-
-  const s = b.departureSuggestion;
-  const clock = (iso: string) => formatClock(new Date(iso), now);
-  const departureSuggestion = s && !s.nowIsBest ? (s.from === s.to ? clock(s.from) : `${clock(s.from)}–${clock(s.to)}`) : null;
 
   return {
     route: b.name,
@@ -73,8 +65,6 @@ export function briefingFacts(b: RouteBriefing, now: Date, alternative: RouteBri
     })),
     weather: weatherParts.length ? weatherParts.join("、") : null,
     period: b.periodLabel,
-    departureSuggestion,
-    alternative: alternative ? { route: alternative.name, level: LEVEL_WORD[alternative.verdict.level] } : null,
   };
 }
 

@@ -59,27 +59,21 @@ const CLEAR = briefing({ level: "clear", headline: "沿途無示警", note: "" }
 
 test.describe("briefingFacts", () => {
   test("只帶規則算好的結果，里程四捨五入到 0.1 km", () => {
-    const f = briefingFacts(CAUTION, NOW);
+    const f = briefingFacts(CAUTION);
     expect(f.level).toBe("caution");
     expect(f.headline).toBe("12.4 km 起降雨 70%");
     expect(f.distanceKm).toBe(32.4);
     expect(f.hazards[0]).toEqual({ label: "降雨 70%", startKm: 12.4, endKm: 18, level: "注意" });
     expect(f.weather).toBe("降雨機率最高 70%、風速最高 18 km/h、氣溫 21–26°C");
-    expect(f.departureSuggestion).toBe("06:00–08:00");
-    expect(f.alternative).toBeNull();
-    // 判定詞與 note（示警數）畫面已顯示，不給模型
+    // 判定詞、note（示警數）與行動建議畫面已另外顯示，不給模型
     expect(f).not.toHaveProperty("note");
     expect(f).not.toHaveProperty("levelWord");
+    expect(f).not.toHaveProperty("departureSuggestion");
+    expect(f).not.toHaveProperty("alternative");
   });
 
-  test("帶入 pickAlternative 挑出的替代路線", () => {
-    const f = briefingFacts(CAUTION, NOW, { ...CLEAR, name: "河濱自行車道" });
-    expect(f.alternative).toEqual({ route: "河濱自行車道", level: "安全" });
-  });
-
-  test("現在出發就是最佳時段時不帶建議；沒有天氣資料時 weather 為 null", () => {
-    const f = briefingFacts(UNKNOWN, NOW);
-    expect(f.departureSuggestion).toBeNull();
+  test("沒有天氣資料時 weather 為 null", () => {
+    const f = briefingFacts(UNKNOWN);
     expect(f.weather).toBeNull();
   });
 
@@ -92,24 +86,22 @@ test.describe("briefingFacts", () => {
       endKm: i + 1,
       label: "降雨 50%",
     }));
-    const f = briefingFacts(briefing(CAUTION.verdict, { hazards }), NOW);
+    const f = briefingFacts(briefing(CAUTION.verdict, { hazards }));
     expect(f.hazards).toHaveLength(3);
   });
 });
 
 test.describe("checkSummary", () => {
-  const caution: SummaryFacts = briefingFacts(CAUTION, NOW);
-  const unknown: SummaryFacts = briefingFacts(UNKNOWN, NOW);
-  const clear: SummaryFacts = briefingFacts(CLEAR, NOW);
+  const caution: SummaryFacts = briefingFacts(CAUTION);
+  const unknown: SummaryFacts = briefingFacts(UNKNOWN);
+  const clear: SummaryFacts = briefingFacts(CLEAR);
 
   test("通過：引用事實裡的數字與用詞，去掉引號", () => {
-    expect(checkSummary("「建議 06:00–08:00 出發，12.4 km 起降雨機率 70%。」", caution)).toBe(
-      "建議 06:00–08:00 出發，12.4 km 起降雨機率 70%。"
-    );
+    expect(checkSummary("「12.4 km 起降雨機率 70%，氣溫 21–26°C。」", caution)).toBe("12.4 km 起降雨機率 70%，氣溫 21–26°C。");
   });
 
   test("半形逗號換成全形", () => {
-    expect(checkSummary("12.4 km 起降雨機率 70%,建議 06:00 出發。", caution)).toBe("12.4 km 起降雨機率 70%，建議 06:00 出發。");
+    expect(checkSummary("12.4 km 起降雨機率 70%,風速最高 18 km/h。", caution)).toBe("12.4 km 起降雨機率 70%，風速最高 18 km/h。");
   });
 
   test("擋下：重複畫面已有的判定等級與示警數", () => {
@@ -146,8 +138,8 @@ test.describe("checkSummary", () => {
   });
 
   test("擋下：多句、換行、過長、空字串", () => {
-    expect(checkSummary("12.4 km 起降雨。建議 06:00 出發。", caution)).toBeNull();
-    expect(checkSummary("12.4 km 起降雨\n建議 06:00 出發", caution)).toBeNull();
+    expect(checkSummary("12.4 km 起降雨。氣溫 21–26°C。", caution)).toBeNull();
+    expect(checkSummary("12.4 km 起降雨\n氣溫 21–26°C", caution)).toBeNull();
     expect(checkSummary("降雨".repeat(31), caution)).toBeNull();
     expect(checkSummary("   ", caution)).toBeNull();
   });

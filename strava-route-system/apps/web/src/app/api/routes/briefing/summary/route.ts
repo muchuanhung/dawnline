@@ -1,5 +1,5 @@
 /**
- * 單一路線的 AI 一句話摘要：用與 Dashboard 相同的判讀流程（含 pickAlternative 挑替代路線）算出判定，再交給 Claude 措辭。
+ * 單一路線的 AI 一句話摘要：用與 Dashboard 相同的判讀流程算出判定（headline 與判定牌一致），再交給 Claude 措辭。
  * 摘要失敗或未設定時回 { summary: null }，前端維持顯示 verdict.headline。
  * 途中模式（from）不提供摘要：里程每次變動都會是新的事實，改用規則句即可。
  */
@@ -23,7 +23,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "找不到路線" }, { status: 404 });
     }
     return NextResponse.json(
-      { summary: await summarizeBriefing(data.featured, data.alternative) },
+      { summary: await summarizeBriefing(data.featured) },
       { headers: { "Cache-Control": "no-store" } }
     );
   } catch (err) {
