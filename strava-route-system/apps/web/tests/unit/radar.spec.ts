@@ -49,19 +49,22 @@ test.describe("雷達歷史檔清單", () => {
       return t.toISOString().slice(0, 16).replace(/\D/g, "");
     });
 
-  test("只挑合成回波：最新一張往前每小時一張，共 7 張、舊到新", () => {
-    const ids = every10("202610221600", 44); // 16:00–23:10
+  test("只挑合成回波：最新一張往前 1 小時每 10 分鐘一張，共 7 張、舊到新", () => {
+    const ids = every10("202610222000", 20); // 20:00–23:10
     const keys = [...ids.map((id) => key(id)), key("202610222310"), key("202610222320", ".QPESUMS_GAUGE.10M.xml")];
     const frames = latestRadarFrames(keys);
     expect(frames).toHaveLength(RADAR_FRAME_COUNT);
-    expect(frames.map((f) => f.id)).toEqual([
-      "202610221710", "202610221810", "202610221910", "202610222010", "202610222110", "202610222210", "202610222310",
-    ]);
+    expect(frames.map((f) => f.id)).toEqual(ids.slice(-RADAR_FRAME_COUNT));
     expect(frames.at(-1)!.observedAt).toBe("2026-10-22T23:10:00+08:00");
   });
 
-  test("整點缺圖用前後 10 分鐘內的代替，再遠就少一張，不拿更舊的補", () => {
-    const frames = latestRadarFrames([key("202610221500"), key("202610222150"), key("202610222300")]);
+  test("缺圖就少一張，不拿更舊的補", () => {
+    const frames = latestRadarFrames([key("202610221500"), key("202610222250"), key("202610222300")]);
+    expect(frames.map((f) => f.id)).toEqual(["202610222250", "202610222300"]);
+  });
+
+  test("間隔改大時，缺圖可用半個間隔內最近的一張代替", () => {
+    const frames = latestRadarFrames([key("202610222150"), key("202610222300")], 3, 60);
     expect(frames.map((f) => f.id)).toEqual(["202610222150", "202610222300"]);
   });
 

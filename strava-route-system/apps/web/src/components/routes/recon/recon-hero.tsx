@@ -25,7 +25,7 @@ import type {
 } from "@/lib/routes/recon-geo";
 import type { RoutePolylineKm } from "@/lib/routes/recon-geo";
 import type { TrackZone } from "@/lib/routes/route-track";
-import type { RouteRadar, RouteRadarState } from "@/hooks/useRouteRadar";
+import { latestObserved, type RouteRadar, type RouteRadarState } from "@/hooks/useRouteRadar";
 import type { RadarZoom, ViewInsets } from "@/lib/cwb/radar";
 import {
   CCTV_FAR_KM,
@@ -107,7 +107,7 @@ function RadarPanel({
         <div className="flex items-end justify-between gap-3">
           <p className="min-w-0 text-xs leading-snug text-white">
             {here && <span className="block font-medium">{here}</span>}
-            不影響判定
+            {frame.nowcast ? <span className="text-sky-200">預報（雷達外推）・不影響判定</span> : "不影響判定"}
           </p>
           <RadarLegend className="w-36 shrink-0 sm:w-56" />
         </div>
@@ -157,7 +157,7 @@ function RadarSheet({
         <DialogHeader className="flex-row items-center justify-between gap-2 space-y-0 py-1 pl-4 text-left">
           <div className="min-w-0">
             <DialogTitle className="text-base">雷達回波</DialogTitle>
-            <DialogDescription className="text-xs text-white/60">過去 6 小時回放，每小時一張</DialogDescription>
+            <DialogDescription className="text-xs text-white/60">過去 1 小時實況，每 10 分鐘一張，加未來 1 小時預報</DialogDescription>
           </div>
           <DialogClose asChild>
             <button
@@ -244,7 +244,8 @@ function RadarPip({
   onOpen,
 }: RadarProps & { onOpen: () => void }) {
   const data = radar.status === "ready" ? radar.data : null;
-  const here = useRadarHere(data?.frames.at(-1) ?? null, polyline, positionKm);
+  const observed = data ? latestObserved(data.frames) : null;
+  const here = useRadarHere(observed, polyline, positionKm);
   if (radar.status === "loading") return null;
   const corner = "absolute bottom-14 right-3 lg:hidden";
   if (!data) {
@@ -259,7 +260,7 @@ function RadarPip({
     >
       <RadarMap radar={data} polyline={polyline} positionKm={positionKm} compact insets={PIP_INSETS} className="h-full w-full" />
       <span className="absolute inset-x-0 bottom-0 truncate bg-black/70 px-1.5 py-0.5 text-left text-[10px] text-white">
-        {here ?? `雷達 ${radarTimeLabel(data.frames.at(-1)!.observedAt)}`}
+        {here ?? `雷達 ${radarTimeLabel(observed!.observedAt)}`}
       </span>
     </button>
   );

@@ -65,7 +65,7 @@ test.describe("/routes 路線偵察", () => {
     await expect(readout).toContainText("5.0 km");
   });
 
-  test("雷達回波：手機點縮圖開全螢幕、桌機用底部切換；可回放過去 6 小時，判定照舊", async ({ page, isMobile }) => {
+  test("雷達回波：手機點縮圖開全螢幕、桌機用底部切換；可回放過去 1 小時並看未來 1 小時預報，判定照舊", async ({ page, isMobile }) => {
     await stubWeather(page, { 大安區: 10, 士林區: 70 });
     await stubCctv(page, [CCTV_FEED]);
     await stubRadar(page, new Date(Date.now() - 5 * 60 * 1000).toISOString());
@@ -77,12 +77,16 @@ test.describe("/routes 路線偵察", () => {
     await expect(radar.getByRole("img", { name: /雷達回波/ })).toBeVisible();
     await expect(radar.getByText(/不影響判定/)).toBeVisible();
 
-    // 6 小時 7 張；點最舊一張就停在那張
+    // 過去 1 小時 7 張；點最舊一張就停在那張
     const ticks = radar.getByRole("button", { name: /的雷達圖$/ });
     await expect(ticks).toHaveCount(7);
     await ticks.first().click();
     await expect(ticks.first()).toHaveAttribute("aria-pressed", "true");
-    await expect(radar.getByRole("button", { name: "播放過去 6 小時" })).toBeVisible();
+    await expect(radar.getByRole("button", { name: "播放過去 1 小時與預報" })).toBeVisible();
+    // 最後一格是預報，標明是預報
+    await radar.getByRole("button", { name: "未來 1 小時預報" }).click();
+    await expect(radar.getByRole("img", { name: /未來 1 小時降雨預報/ })).toBeVisible();
+    await expect(radar.getByText(/預報（雷達外推）/)).toBeVisible();
     await radar.getByRole("button", { name: "全台" }).click();
     await expect(radar.getByRole("button", { name: "全台" })).toHaveAttribute("aria-pressed", "true");
 

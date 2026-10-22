@@ -3,7 +3,7 @@
  * 只用來「顯示」，不參與判定（判定仍只看規則式的預報、雨量站與路況）。
  *
  * 來源是 CWA 公開 S3 的歷史檔 history/Observation/<YYYYMMDDHHmm>compref_mosaic.xml（台灣時間，
- * 內容即 O-A0059-001）：每 10 分鐘一筆、保留約兩週、不需金鑰，所以能回放過去 6 小時。
+ * 內容即 O-A0059-001）：每 10 分鐘一筆、保留約兩週、不需金鑰，所以能回放過去的回波。
  * 格點 921×881、0.0125°（約 1.3 km），左下角東經 115、北緯 18，先西向東再南向北；
  * 值為 dBZ，-99 沒有回波，-999 雷達範圍外或品管移除。座標系是 TWD67，與路線（WGS84）差約 800 m。
  */
@@ -23,11 +23,9 @@ export const RADAR_IMAGE_SIZE = {
 
 /** 觀測時間超過此值就不顯示（未判定 ≠ 安全：寧可說「暫無」也不放舊圖） */
 export const RADAR_STALE_MS = 30 * 60 * 1000;
-/** 回放：最新一張往前 6 小時，每小時一張（與出發選單同樣以小時為刻度） */
+/** 回放：最新一張往前 1 小時，每 10 分鐘一張（與落雨小幫手相同），後面再接未來 1 小時預報 */
 export const RADAR_FRAME_COUNT = 7;
-export const RADAR_FRAME_STEP_MIN = 60;
-/** 整點附近缺圖時，前後這麼多分鐘內的圖可以代替 */
-const FRAME_SLACK_MIN = 10;
+export const RADAR_FRAME_STEP_MIN = 10;
 
 /**
  * TWD67 → WGS84（TWD97）在臺灣本島的近似平移：E +828 m、N −207 m。
@@ -70,8 +68,10 @@ export function projectToView(lat: number, lon: number): [x: number, y: number] 
 export interface RadarFrame {
   /** 歷史檔的時間戳 YYYYMMDDHHmm（台灣時間），也是 /api/radar/frame?id= 的 id */
   id: string;
-  /** 觀測時間（ISO，+08:00） */
+  /** 觀測時間（ISO，+08:00）；預報為預報起點 */
   observedAt: string;
+  /** 未來 1 小時降雨預報（雷達外推），不是觀測 */
+  nowcast?: true;
 }
 
 /** 未來 1 小時降雨預報（F-B0046-001）的一張圖 */
@@ -120,7 +120,7 @@ export function historyDatePrefixes(now: number): string[] {
 
 /**
  * 由 S3 物件名稱挑出回放的圖（舊到新）：最新一張，再往前每 step 分鐘取一張，共 count 張。
- * 該時間沒有圖時取前後 10 分鐘內最近的一張；都沒有就少一張，不拿更舊的圖補。
+ * 該時間沒有圖時取前後半個間隔內最近的一張；都沒有就少一張，不拿更舊的圖補。
  */
 export function latestRadarFrames(keys: string[], count = RADAR_FRAME_COUNT, stepMin = RADAR_FRAME_STEP_MIN): RadarFrame[] {
   const ids = [...new Set(keys.map((k) => HISTORY_KEY.exec(k)?.[1]).filter((id): id is string => !!id && isRadarFrameId(id)))].sort();
@@ -134,7 +134,7 @@ export function latestRadarFrames(keys: string[], count = RADAR_FRAME_COUNT, ste
     let best: string | null = null;
     for (const id of ids) {
       const d = Math.abs(timeOf(id) - target);
-      if (d <= FRAME_SLACK_MIN * 60_000 && (best == null || d < Math.abs(timeOf(best) - target))) best = id;
+      if (d <= (stepMin / 2) * 60_000 && (best == null || d < Math.abs(timeOf(best) - target))) best = id;
     }
     if (best && !picked.includes(best)) picked.push(best);
   }

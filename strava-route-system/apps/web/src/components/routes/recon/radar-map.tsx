@@ -4,7 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Pause, Play } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { RoutePolylineKm } from "@/lib/routes/recon-geo";
-import { radarFrameUrl, type RouteRadar } from "@/hooks/useRouteRadar";
+import { latestObserved, radarFrameUrl, type RouteRadar } from "@/hooks/useRouteRadar";
 import {
   DBZ_COLORS,
   RADAR_EXTENT,
@@ -79,9 +79,11 @@ export function RadarMap({
   );
   const start = polyline?.points[0];
   const here = polyline ? pointAtKm(polyline.points, polyline.cumulativeKm, positionKm) : null;
-  const latest = radar.frames.length - 1;
-  const shown = compact ? latest : Math.min(frameIndex ?? latest, latest);
-  const frames = compact ? radar.frames.slice(-1) : radar.frames;
+  const last = radar.frames.length - 1;
+  // 子母畫面只畫最新觀測，不放預報
+  const observed = latestObserved(radar.frames)!;
+  const shownFrame = compact ? observed : radar.frames[Math.min(frameIndex ?? last, last)]!;
+  const frames = compact ? [observed] : radar.frames;
   const line = (compact ? 3 : 2.5) * px;
 
   return (
@@ -91,7 +93,11 @@ export function RadarMap({
       preserveAspectRatio="xMidYMid slice"
       className={cn("block bg-[#0b1220]", className)}
       role="img"
-      aria-label={`雷達回波 ${radarTimeLabel(radar.frames[shown]!.observedAt)} 觀測`}
+      aria-label={
+        shownFrame.nowcast
+          ? `未來 1 小時降雨預報（${radarTimeLabel(shownFrame.observedAt)} 起）`
+          : `雷達回波 ${radarTimeLabel(shownFrame.observedAt)} 觀測`
+      }
     >
       {/* 柔化約 1.3 km 的格點方塊 */}
       <filter id={filterId}>
@@ -107,7 +113,7 @@ export function RadarMap({
             width={W}
             height={H}
             preserveAspectRatio="none"
-            opacity={f === radar.frames[shown] ? 0.7 : 0}
+            opacity={f === shownFrame ? 0.7 : 0}
           />
         ))}
       </g>
@@ -248,21 +254,22 @@ export function RadarControls({
   className?: string;
 }) {
   const current = frames[index]!;
-  const isLatest = index === frames.length - 1;
+  const isLatest = current === latestObserved(frames);
   return (
     <div className={cn("flex items-center gap-2 text-white", className)}>
       <button
         type="button"
         onClick={onToggle}
         disabled={frames.length < 2 || loaded.size < frames.length}
-        aria-label={playing ? "暫停回放" : "播放過去 6 小時"}
+        aria-label={playing ? "暫停回放" : "播放過去 1 小時與預報"}
         className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full bg-white/15 hover:bg-white/25 disabled:opacity-40"
       >
         {playing ? <Pause className="size-4" aria-hidden /> : <Play className="size-4" aria-hidden />}
       </button>
       <p className="w-[4.5rem] shrink-0 text-sm font-semibold tabular-nums" aria-live="off">
-        {radarTimeLabel(current.observedAt)}
+        {current.nowcast ? "+1 小時" : radarTimeLabel(current.observedAt)}
         {isLatest && <span className="ml-1 text-[10px] font-normal text-white/70">最新</span>}
+        {current.nowcast && <span className="ml-1 text-[10px] font-normal text-sky-300">預報</span>}
       </p>
       <div role="group" aria-label="雷達觀測時間" className="flex h-9 min-w-0 flex-1 items-center gap-0.5">
         {frames.map((f, i) => (
@@ -271,11 +278,23 @@ export function RadarControls({
             type="button"
             onClick={() => onSeek(i)}
             disabled={!loaded.has(f.id)}
-            aria-label={`${radarTimeLabel(f.observedAt)} 的雷達圖`}
+            aria-label={f.nowcast ? "未來 1 小時預報" : `${radarTimeLabel(f.observedAt)} 的雷達圖`}
             aria-pressed={i === index}
             className="flex h-full flex-1 cursor-pointer items-center disabled:cursor-wait disabled:opacity-40"
           >
-            <span className={cn("h-1.5 w-full rounded-full", i === index ? "bg-white" : i < index ? "bg-white/50" : "bg-white/20")} />
+            {/* 預報那格用虛線框，與觀測分開 */}
+            <span
+              className={cn(
+                "h-1.5 w-full rounded-full",
+                f.nowcast
+                  ? cn("border border-dashed border-sky-300", i === index ? "bg-sky-300" : "bg-transparent")
+                  : i === index
+                    ? "bg-white"
+                    : i < index
+                      ? "bg-white/50"
+                      : "bg-white/20"
+              )}
+            />
           </button>
         ))}
       </div>
@@ -387,6 +406,11 @@ export function useRadarHere(
   const i = (y * data.width + x) * 4;
   const d = data.data;
   const { echo, dbz } = dbzFromColor(d[i]!, d[i + 1]!, d[i + 2]!, d[i + 3]!);
+  // 預報圖的顏色是未來 1 小時累積雨量換算，文字要說是預報
+  if (frame!.nowcast) {
+    if (!echo) return "預報此處未來 1 小時無雨";
+    return dbz == null ? "預報此處雨勢很大" : `預報此處未來 1 小時${rainRateLabel(dbz).replace("/h", "")}`;
+  }
   if (!echo) return "此處無回波";
   return dbz == null ? "此處回波很強" : `此處${rainRateLabel(dbz)}`;
 }

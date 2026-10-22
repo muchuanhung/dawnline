@@ -16,7 +16,7 @@ import {
 const REFRESH_MS = 5 * 60 * 1000;
 
 export interface RouteRadar {
-  /** 可回放的圖，舊到新；最後一張是最新觀測 */
+  /** 可回放的圖，舊到新：過去 1 小時觀測，最後可能接一張未來 1 小時預報（nowcast） */
   frames: RadarFrame[];
   /** 鄉鎮界（RADAR_VIEW 座標） */
   towns: string;
@@ -32,6 +32,12 @@ export type RouteRadarState =
 
 export function radarFrameUrl(frame: RadarFrame): string {
   return `/api/radar/frame?id=${frame.id}`;
+}
+
+/** 最新一張觀測（預報之前那張） */
+export function latestObserved(frames: RadarFrame[]): RadarFrame | null {
+  for (let i = frames.length - 1; i >= 0; i--) if (!frames[i]!.nowcast) return frames[i]!;
+  return null;
 }
 
 /** 鄉鎮界內容固定，整個頁面只抓一次；失敗就不畫底圖，雷達照常顯示 */
@@ -73,7 +79,15 @@ export function useRouteRadar(route: Route | null, polyline: RoutePolylineKm | n
         .then(([manifest, towns]) => {
           if (cancelled) return;
           const latest = manifest?.frames.at(-1);
-          setState(manifest && latest && !isRadarStale(latest.observedAt) ? { frames: manifest.frames, towns } : "unavailable");
+          if (!manifest || !latest || isRadarStale(latest.observedAt)) return setState("unavailable");
+          // 預報過期就不接，只放觀測
+          const nowcast = manifest.nowcast && !isRadarStale(manifest.nowcast.issuedAt) ? manifest.nowcast : null;
+          setState({
+            frames: nowcast
+              ? [...manifest.frames, { id: nowcast.id, observedAt: nowcast.issuedAt, nowcast: true }]
+              : manifest.frames,
+            towns,
+          });
         })
         .catch(() => {
           if (!cancelled) setState("unavailable");

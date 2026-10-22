@@ -79,7 +79,7 @@ const BLANK_PNG = Buffer.from(
 );
 
 /**
- * 雷達回波：最新一張的觀測時間（ISO）或 "error"；清單會往前補到 6 小時（每小時一張）。
+ * 雷達回波：最新一張的觀測時間（ISO）或 "error"；清單會往前補到 1 小時（每 10 分鐘一張），再接一張未來 1 小時預報。
  * 後註冊的攔截優先，可覆蓋 stubRoutes 的預設。
  */
 export async function stubRadar(page: Page, latestObservedAt: string | "error") {
@@ -87,11 +87,12 @@ export async function stubRadar(page: Page, latestObservedAt: string | "error") 
     if (latestObservedAt === "error") return r.fulfill({ status: 502, json: { error: "雷達資料暫時取不到" } });
     const latest = Date.parse(latestObservedAt);
     const frames = Array.from({ length: 7 }, (_, i) => {
-      const t = new Date(latest - (6 - i) * 3600 * 1000 + 8 * 3600 * 1000).toISOString();
+      const t = new Date(latest - (6 - i) * 10 * 60 * 1000 + 8 * 3600 * 1000).toISOString();
       const id = t.slice(0, 16).replace(/\D/g, "");
       return { id, observedAt: `${t.slice(0, 16)}:00+08:00` };
     });
-    return r.fulfill({ json: { frames, nowcast: null } });
+    const issued = frames.at(-2)!;
+    return r.fulfill({ json: { frames, nowcast: { id: `n${issued.id}`, issuedAt: issued.observedAt } } });
   });
   await page.route("**/api/radar/frame?**", (r) => r.fulfill({ contentType: "image/png", body: BLANK_PNG }));
   await page.route("**/api/radar/basemap", (r) => r.fulfill({ json: { towns: "" } }));
