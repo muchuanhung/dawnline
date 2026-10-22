@@ -105,10 +105,8 @@ function RadarPanel({
       )}
       <div className="absolute inset-x-0 bottom-0 space-y-2 bg-gradient-to-t from-black/90 via-black/70 to-transparent px-3 pb-2 pt-8">
         <div className="flex items-end justify-between gap-3">
-          <p className="min-w-0 text-xs leading-snug text-white">
-            {here && <span className="block font-medium">{here}</span>}
-            {frame.nowcast ? <span className="text-sky-200">預報（雷達外推）・不影響判定</span> : "不影響判定"}
-          </p>
+          {/* 預報與否看播放列的「預報」標籤 */}
+          <p className="min-w-0 text-xs font-medium leading-snug text-white">{here}</p>
           <RadarLegend className="w-36 shrink-0 sm:w-56" />
         </div>
         <div className="flex items-center gap-1">

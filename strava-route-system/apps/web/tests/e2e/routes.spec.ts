@@ -75,7 +75,6 @@ test.describe("/routes 路線偵察", () => {
     else await page.getByRole("button", { name: "雷達", exact: true }).click();
     const radar = isMobile ? page.getByRole("dialog", { name: "雷達回波" }) : page;
     await expect(radar.getByRole("img", { name: /雷達回波/ })).toBeVisible();
-    await expect(radar.getByText(/不影響判定/)).toBeVisible();
 
     // 過去 1 小時 7 張；點最舊一張就停在那張
     const ticks = radar.getByRole("button", { name: /的雷達圖$/ });
@@ -86,7 +85,7 @@ test.describe("/routes 路線偵察", () => {
     // 最後一格是預報，標明是預報
     await radar.getByRole("button", { name: "未來 1 小時預報" }).click();
     await expect(radar.getByRole("img", { name: /未來 1 小時降雨預報/ })).toBeVisible();
-    await expect(radar.getByText(/預報（雷達外推）/)).toBeVisible();
+    await expect(radar.getByText("預報", { exact: true })).toBeVisible();
     await radar.getByRole("button", { name: "全台" }).click();
     await expect(radar.getByRole("button", { name: "全台" })).toHaveAttribute("aria-pressed", "true");
 
