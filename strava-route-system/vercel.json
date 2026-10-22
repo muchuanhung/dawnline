@@ -2,8 +2,5 @@
   "framework": "nextjs",
   "installCommand": "pnpm install",
   "buildCommand": "pnpm turbo run build --filter=./apps/web",
-  "outputDirectory": "apps/web/.next",
-  "regions": [
-    "hkg1"
-  ]
+  "outputDirectory": "apps/web/.next"
 }
