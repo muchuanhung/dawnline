@@ -1,21 +1,34 @@
 import { test, expect } from "@playwright/test";
 import {
   DBZ_COLORS,
-  RADAR_ASPECT,
-  RADAR_IMAGE,
+  RADAR_EXTENT,
+  RADAR_FRAME_COUNT,
+  RADAR_GRID,
+  RADAR_IMAGE_SIZE,
+  RADAR_REGION,
+  RADAR_VIEW,
+  STRONG_ECHO_COLOR,
   TWD67_SHIFT,
   bboxOfPoints,
-  fitViewBox,
-  RADAR_VIEW,
+  colorForDbz,
   dbzFromColor,
   dbzFromRainRate,
+  fitViewBox,
+  historyDatePrefixes,
+  isInRadarExtent,
+  isRadarFrameId,
   isRadarStale,
+  latestRadarFrames,
   legendTicks,
+  parseCompositeReflectivity,
   pointAtKm,
   projectToExtent,
-  radarCropFor,
+  projectToView,
+  radarViewBox,
   rainRateFromDbz,
   rainRateLabel,
+  renderRadarRegion,
+  viewRectOf,
   type Extent,
 } from "@/lib/cwb/radar";
 
@@ -23,42 +36,129 @@ import {
 const YANGMINGSHAN: Extent = [121.529, 25.101, 121.637, 25.222];
 const NOW = Date.parse("2026-10-22T22:50:00+08:00");
 
-test.describe("radarCropFor", () => {
-  test("裁切範圍包住路線並外擴", () => {
-    const crop = radarCropFor(YANGMINGSHAN)!;
-    const [minLon, minLat, maxLon, maxLat] = crop.extent;
-    expect(minLon).toBeLessThan(YANGMINGSHAN[0]);
-    expect(minLat).toBeLessThan(YANGMINGSHAN[1]);
-    expect(maxLon).toBeGreaterThan(YANGMINGSHAN[2]);
-    expect(maxLat).toBeGreaterThan(YANGMINGSHAN[3]);
+test.describe("雷達歷史檔清單", () => {
+  const key = (id: string, kind = "compref_mosaic.xml") => `history/Observation/${id}${kind}`;
+
+  test("只挑合成回波，取最新 7 張、舊到新、不重複", () => {
+    const ids = ["202610222200", "202610222210", "202610222220", "202610222230", "202610222240", "202610222250", "202610222300", "202610222310"];
+    const keys = [...ids.map((id) => key(id)), key("202610222310"), key("202610222320", ".QPESUMS_GAUGE.10M.xml")];
+    const frames = latestRadarFrames(keys);
+    expect(frames.map((f) => f.id)).toEqual(ids.slice(-RADAR_FRAME_COUNT));
+    expect(frames.at(-1)!.observedAt).toBe("2026-10-22T23:10:00+08:00");
   });
 
-  test("以公里計為 RADAR_ASPECT 的寬圖", () => {
-    const { extent } = radarCropFor(YANGMINGSHAN)!;
-    const cos = Math.cos((((extent[1] + extent[3]) / 2) * Math.PI) / 180);
-    const ratio = ((extent[2] - extent[0]) * cos) / (extent[3] - extent[1]);
-    expect(ratio).toBeCloseTo(RADAR_ASPECT, 1);
+  test("與最新一張相差超過一小時的不放進回放", () => {
+    const frames = latestRadarFrames([key("202610221500"), key("202610222250"), key("202610222300")]);
+    expect(frames.map((f) => f.id)).toEqual(["202610222250", "202610222300"]);
   });
 
-  test("很短的路線也至少涵蓋約 22 km 南北", () => {
-    const { extent } = radarCropFor([121.55, 25.1, 121.551, 25.101])!;
-    expect(extent[3] - extent[1]).toBeGreaterThanOrEqual(0.2);
+  test("沒有任何合成回波時回空陣列", () => {
+    expect(latestRadarFrames([key("202610222300", ".QPESUMS_GAUGE.10M.xml")])).toEqual([]);
   });
 
-  test("像素範圍是整數，且反推的範圍與像素一一對應（含 TWD67 平移）", () => {
-    const { extent, pixel } = radarCropFor(YANGMINGSHAN)!;
-    for (const v of Object.values(pixel)) expect(Number.isInteger(v)).toBe(true);
-    const degPerPx = (RADAR_IMAGE.maxLon - RADAR_IMAGE.minLon) / RADAR_IMAGE.size;
-    expect(extent[0] - TWD67_SHIFT.lon).toBeCloseTo(RADAR_IMAGE.minLon + pixel.left * degPerPx, 9);
-    expect(extent[3] - TWD67_SHIFT.lat).toBeCloseTo(RADAR_IMAGE.maxLat - pixel.top * degPerPx, 9);
-    expect((extent[2] - extent[0]) / degPerPx).toBeCloseTo(pixel.width, 6);
+  test("時間戳格式", () => {
+    expect(isRadarFrameId("202610222350")).toBe(true);
+    expect(isRadarFrameId("2026102223")).toBe(false);
+    expect(isRadarFrameId("../../etc/pas")).toBe(false);
+    expect(isRadarFrameId("202613452399")).toBe(false);
   });
 
-  test("超出圖層範圍或座標不合法時回 null", () => {
-    expect(radarCropFor([139.7, 35.6, 139.8, 35.7])).toBeNull();
-    expect(radarCropFor([118.0, 24.4, 118.05, 24.45])).toBeNull();
-    expect(radarCropFor([NaN, 25, 121, 25.1])).toBeNull();
-    expect(radarCropFor([121.6, 25.2, 121.5, 25.1])).toBeNull();
+  test("查詢日期是台灣時間的昨天與今天", () => {
+    // 台灣 10/23 00:05 = UTC 10/22 16:05
+    expect(historyDatePrefixes(Date.parse("2026-10-22T16:05:00Z"))).toEqual(["20261022", "20261023"]);
+  });
+});
+
+/** 921×881 的合成回波 XML；cells 指定 [列, 欄, dBZ]，其餘 -99 */
+function compositeXml(
+  cells: [row: number, col: number, dbz: number][],
+  dims: { lon0: number; lat0: number; res: number; nx: number; ny: number } = RADAR_GRID
+) {
+  const values = new Array(dims.nx * dims.ny).fill("-9.900E+01");
+  for (const [r, c, v] of cells) values[r * dims.nx + c] = v.toExponential(3);
+  return `<cwaopendata><dataset><datasetInfo><parameterSet>
+       <StartPointLongitude>${dims.lon0.toFixed(1)}</StartPointLongitude>
+       <StartPointLatitude>${dims.lat0.toFixed(1)}</StartPointLatitude>
+       <GridResolution>${dims.res}</GridResolution>
+       <DateTime>2026-10-22T23:50:00+08:00</DateTime>
+       <GridDimensionX>${dims.nx}</GridDimensionX>
+       <GridDimensionY>${dims.ny}</GridDimensionY>
+  </parameterSet></datasetInfo><contents><content>${values.join(",")}</content></contents></dataset></cwaopendata>`;
+}
+
+test.describe("合成回波格點", () => {
+  test("解析時間與數值", () => {
+    const grid = parseCompositeReflectivity(compositeXml([[0, 0, 12.5], [880, 920, -999]]));
+    expect(grid.observedAt).toBe("2026-10-22T23:50:00+08:00");
+    expect(grid.values[0]).toBeCloseTo(12.5, 3);
+    expect(grid.values[1]).toBe(-99);
+    expect(grid.values.at(-1)).toBe(-999);
+  });
+
+  test("格點規格不符就丟錯，不畫錯位的圖", () => {
+    expect(() => parseCompositeReflectivity(compositeXml([], { ...RADAR_GRID, lon0: 118 }))).toThrow();
+    expect(() => parseCompositeReflectivity(compositeXml([]).replace("-9.900E+01,", ""))).toThrow();
+  });
+
+  test("畫圖：左上是範圍最北、最西的格點；無回波透明", () => {
+    const { col0, row1 } = RADAR_REGION;
+    const { values } = parseCompositeReflectivity(compositeXml([[row1 - 1, col0, 30], [row1 - 2, col0 + 1, 60]]));
+    const rgba = renderRadarRegion(values);
+    expect(rgba.length).toBe(RADAR_IMAGE_SIZE.width * RADAR_IMAGE_SIZE.height * 4);
+    expect([...rgba.slice(0, 4)]).toEqual([...DBZ_COLORS[30]!, 255]);
+    const second = (RADAR_IMAGE_SIZE.width + 1) * 4;
+    expect([...rgba.slice(second, second + 4)]).toEqual([...STRONG_ECHO_COLOR, 255]);
+    expect(rgba[7]).toBe(0);
+  });
+
+  test("顏色往返：色階內反查回 dBZ，超過色階只說有回波", () => {
+    for (let dbz = 0; dbz < DBZ_COLORS.length; dbz++) {
+      const [r, g, b, a] = colorForDbz(dbz + 0.4);
+      expect(dbzFromColor(r, g, b, a)).toEqual({ echo: true, dbz });
+    }
+    const [r, g, b, a] = colorForDbz(58);
+    expect(dbzFromColor(r, g, b, a)).toEqual({ echo: true, dbz: null });
+    for (const v of [-99, -999, -3, NaN]) expect(colorForDbz(v)[3]).toBe(0);
+  });
+
+  test("圖的範圍含 TWD67 平移，涵蓋本島與離島", () => {
+    const { lon0, res } = RADAR_GRID;
+    expect(RADAR_EXTENT[0]).toBeCloseTo(lon0 + (RADAR_REGION.col0 - 0.5) * res + TWD67_SHIFT.lon, 9);
+    expect(isInRadarExtent(YANGMINGSHAN)).toBe(true);
+    expect(isInRadarExtent([118.3, 24.4, 118.45, 24.5])).toBe(true); // 金門
+    expect(isInRadarExtent([139.7, 35.6, 139.8, 35.7])).toBe(false);
+    expect(isInRadarExtent([NaN, 25, 121, 25.1])).toBe(false);
+  });
+});
+
+test.describe("取景", () => {
+  test("投影：範圍四角落在地圖四角，東西南北等比例", () => {
+    const [x0, y0] = projectToView(RADAR_EXTENT[3], RADAR_EXTENT[0]);
+    const [x1, y1] = projectToView(RADAR_EXTENT[1], RADAR_EXTENT[2]);
+    expect(x0).toBeCloseTo(0, 9);
+    expect(y0).toBeCloseTo(0, 9);
+    expect(x1).toBeCloseTo(RADAR_VIEW.width, 9);
+    expect(y1).toBeCloseTo(RADAR_VIEW.height, 9);
+    expect(RADAR_VIEW.width / RADAR_VIEW.height).toBeCloseTo(Math.cos((24 * Math.PI) / 180), 2);
+  });
+
+  test("周邊：包住路線，南北至少約 77 km", () => {
+    const r = viewRectOf(YANGMINGSHAN);
+    const [x, y, w, h] = radarViewBox(YANGMINGSHAN, "near", 0.5, { top: 0, bottom: 0.25 });
+    expect(w / h).toBeCloseTo(0.5, 6);
+    expect(h).toBeGreaterThanOrEqual(70 - 1e-9);
+    expect(x).toBeLessThanOrEqual(r.minX);
+    expect(x + w).toBeGreaterThanOrEqual(r.maxX);
+    expect(y).toBeLessThanOrEqual(r.minY);
+    expect(y + h).toBeGreaterThanOrEqual(r.maxY);
+  });
+
+  test("全台：寬螢幕看得到整個本島", () => {
+    const north = projectToView(25.3, 121.5)[1];
+    const south = projectToView(21.9, 120.85)[1];
+    const [, y, , h] = radarViewBox(YANGMINGSHAN, "taiwan", 0.6, { top: 0, bottom: 0 });
+    expect(y).toBeLessThanOrEqual(north);
+    expect(y + h).toBeGreaterThanOrEqual(south);
   });
 });
 
@@ -116,7 +216,7 @@ test.describe("fitViewBox", () => {
   });
 
   test("路線比圖還大時取整張圖的範圍內", () => {
-    inside(fitViewBox({ minX: 0, minY: 0, maxX: 480, maxY: 200 }, 4 / 3, { top: 0.35, bottom: 0.25 }));
+    inside(fitViewBox({ minX: 0, minY: 0, maxX: RADAR_VIEW.width, maxY: RADAR_VIEW.height }, 4 / 3, { top: 0.35, bottom: 0.25 }));
   });
 });
 

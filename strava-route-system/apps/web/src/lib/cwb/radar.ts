@@ -1,23 +1,30 @@
 /**
- * CWA 雷達整合回波（O-A0058-006 鄰近地區透明圖層）：純函式
+ * CWA 雷達合成回波：純函式
  * 只用來「顯示」，不參與判定（判定仍只看規則式的預報、雨量站與路況）。
  *
- * O-A0058-006：3600×3600 PNG，東經 118–124、北緯 20.5–26.5，等經緯度投影，每 10 分鐘更新。
- * 每個像素是 O-A0059-001 格點（0.0125°）dBZ 依 CWA 色階上色，沒有回波為透明。
- * 座標系是 TWD67，與路線（WGS84）差約 800 m，裁切時先平移。
+ * 來源是 CWA 公開 S3 的歷史檔 history/Observation/<YYYYMMDDHHmm>compref_mosaic.xml（台灣時間，
+ * 內容即 O-A0059-001）：每 10 分鐘一筆、保留約兩週、不需金鑰，所以能回放過去一小時。
+ * 格點 921×881、0.0125°（約 1.3 km），左下角東經 115、北緯 18，先西向東再南向北；
+ * 值為 dBZ，-99 沒有回波，-999 雷達範圍外或品管移除。座標系是 TWD67，與路線（WGS84）差約 800 m。
  */
 
-/** 透明圖層的涵蓋範圍與尺寸（取自資料集說明 LongitudeRange／LatitudeRange／ImageDimension） */
-export const RADAR_IMAGE = {
-  minLon: 118,
-  maxLon: 124,
-  minLat: 20.5,
-  maxLat: 26.5,
-  size: 3600,
+/** 格點規格（取自資料說明，伺服器解析時逐項核對） */
+export const RADAR_GRID = { lon0: 115, lat0: 18, res: 0.0125, nx: 921, ny: 881 } as const;
+
+/**
+ * 畫成圖的範圍（格點索引，含頭不含尾）：東經約 118–123、北緯約 21.5–26.5，
+ * 涵蓋本島、澎湖、金門、馬祖，圖為 400×400，左上為北、西。
+ */
+export const RADAR_REGION = { col0: 240, col1: 640, row0: 280, row1: 680 } as const;
+export const RADAR_IMAGE_SIZE = {
+  width: RADAR_REGION.col1 - RADAR_REGION.col0,
+  height: RADAR_REGION.row1 - RADAR_REGION.row0,
 } as const;
 
 /** 觀測時間超過此值就不顯示（未判定 ≠ 安全：寧可說「暫無」也不放舊圖） */
 export const RADAR_STALE_MS = 30 * 60 * 1000;
+/** 回放張數：最新一張往前一小時（每 10 分鐘一張） */
+export const RADAR_FRAME_COUNT = 7;
 
 /**
  * TWD67 → WGS84（TWD97）在臺灣本島的近似平移：E +828 m、N −207 m。
@@ -25,30 +32,141 @@ export const RADAR_STALE_MS = 30 * 60 * 1000;
  */
 export const TWD67_SHIFT = { lon: 0.0082, lat: -0.0019 } as const;
 
-/**
- * 裁切圖固定寬 2.4:1（以公里計），比桌機主視覺還寬；手機與子母畫面再由 fitViewBox 依容器比例取景，
- * 所有裝置共用同一張圖（同一個 CDN 快取）。
- */
-export const RADAR_ASPECT = 2.4;
-/** 地圖 SVG 的座標尺寸（與 RADAR_ASPECT 同比例）；雷達圖、鄉鎮界、路線都投影到這個座標 */
-export const RADAR_VIEW = { width: 480, height: 200 } as const;
-/** 南北留路線高度的倍數（判定與底部列會蓋住上下），東西的倍數，與最小涵蓋範圍（緯度約 22 km） */
-const LAT_PAD = 3.2;
-const LON_PAD = 1.6;
-const MIN_LAT_SPAN = 0.2;
-
 export type Extent = [minLon: number, minLat: number, maxLon: number, maxLat: number];
 
-/** GET /api/radar 的回應 */
-export interface RadarResponse {
+/** 雷達圖的範圍（WGS84）：每個像素以格點為中心，四周各多半格 */
+export const RADAR_EXTENT: Extent = (() => {
+  const { lon0, lat0, res } = RADAR_GRID;
+  const { col0, col1, row0, row1 } = RADAR_REGION;
+  return [
+    lon0 + (col0 - 0.5) * res + TWD67_SHIFT.lon,
+    lat0 + (row0 - 0.5) * res + TWD67_SHIFT.lat,
+    lon0 + (col1 - 0.5) * res + TWD67_SHIFT.lon,
+    lat0 + (row1 - 0.5) * res + TWD67_SHIFT.lat,
+  ];
+})();
+
+/**
+ * 地圖 SVG 座標：0.01° 緯度為 1 單位（約 1.1 km），經度乘上 cos(24°) 讓東西南北等比例。
+ * 雷達圖、鄉鎮界、路線都投影到這個座標，取景（縮放）只改 viewBox。
+ */
+const VIEW_COS = Math.cos((24 * Math.PI) / 180);
+const VIEW_UNITS_PER_DEG = 100;
+export const RADAR_VIEW = {
+  width: (RADAR_EXTENT[2] - RADAR_EXTENT[0]) * VIEW_UNITS_PER_DEG * VIEW_COS,
+  height: (RADAR_EXTENT[3] - RADAR_EXTENT[1]) * VIEW_UNITS_PER_DEG,
+} as const;
+
+/** WGS84 經緯度 → 地圖 SVG 座標 */
+export function projectToView(lat: number, lon: number): [x: number, y: number] {
+  const [x, y] = projectToExtent(RADAR_EXTENT, lat, lon);
+  return [x * RADAR_VIEW.width, y * RADAR_VIEW.height];
+}
+
+/** 一張雷達圖 */
+export interface RadarFrame {
+  /** 歷史檔的時間戳 YYYYMMDDHHmm（台灣時間），也是 /api/radar/frames/[id] 的 id */
+  id: string;
   /** 觀測時間（ISO，+08:00） */
   observedAt: string;
-  /** 圖的範圍（WGS84） */
-  extent: Extent;
-  /** 裁切後的透明 PNG（data URL，客戶端可在同源 canvas 取色） */
-  image: string;
-  /** 鄉鎮界，座標為 RADAR_VIEW 寬高 */
-  towns: string;
+}
+
+/** GET /api/radar 的回應：可回放的圖，舊到新 */
+export interface RadarManifest {
+  frames: RadarFrame[];
+}
+
+const FRAME_ID = /^\d{12}$/;
+const HISTORY_KEY = /(\d{12})compref_mosaic\.xml$/;
+
+export function isRadarFrameId(id: string): boolean {
+  return FRAME_ID.test(id) && Number.isFinite(Date.parse(observedAtOfFrameId(id)));
+}
+
+/** 202610222350 → 2026-10-22T23:50:00+08:00 */
+export function observedAtOfFrameId(id: string): string {
+  return `${id.slice(0, 4)}-${id.slice(4, 6)}-${id.slice(6, 8)}T${id.slice(8, 10)}:${id.slice(10, 12)}:00+08:00`;
+}
+
+/** 列出歷史檔要查的前綴：台灣時間的今天與昨天（剛過午夜時，前一小時在昨天） */
+export function historyDatePrefixes(now: number): string[] {
+  const day = (t: number) => new Date(t + 8 * 3600 * 1000).toISOString().slice(0, 10).replaceAll("-", "");
+  return [...new Set([day(now - 24 * 3600 * 1000), day(now)])];
+}
+
+/**
+ * 由 S3 物件名稱挑出最新 count 張雷達圖（舊到新）；
+ * 只取與最新一張相差一小時內的，中間缺圖就少幾張，不補舊圖。
+ */
+export function latestRadarFrames(keys: string[], count = RADAR_FRAME_COUNT): RadarFrame[] {
+  const ids = [...new Set(keys.map((k) => HISTORY_KEY.exec(k)?.[1]).filter((id): id is string => !!id && isRadarFrameId(id)))].sort();
+  const latest = ids.at(-1);
+  if (!latest) return [];
+  const latestMs = Date.parse(observedAtOfFrameId(latest));
+  return ids
+    .slice(-count)
+    .filter((id) => latestMs - Date.parse(observedAtOfFrameId(id)) <= (count - 1) * 10 * 60 * 1000)
+    .map((id) => ({ id, observedAt: observedAtOfFrameId(id) }));
+}
+
+/** 解析後的合成回波格點：values 依原檔順序（列由南到北） */
+export interface CompositeGrid {
+  observedAt: string;
+  values: Float32Array;
+}
+
+function tagValue(xml: string, tag: string): string | null {
+  const m = new RegExp(`<${tag}>\\s*([^<]*?)\\s*</${tag}>`).exec(xml);
+  return m ? m[1]! : null;
+}
+
+/**
+ * 解析 compref_mosaic.xml。格點起點、解析度、尺寸任何一項與 RADAR_GRID 不同就丟錯：
+ * 對不上位置的圖寧可不顯示。
+ */
+export function parseCompositeReflectivity(xml: string): CompositeGrid {
+  const { lon0, lat0, res, nx, ny } = RADAR_GRID;
+  const ok =
+    Number(tagValue(xml, "StartPointLongitude")) === lon0 &&
+    Number(tagValue(xml, "StartPointLatitude")) === lat0 &&
+    Number(tagValue(xml, "GridResolution")) === res &&
+    Number(tagValue(xml, "GridDimensionX")) === nx &&
+    Number(tagValue(xml, "GridDimensionY")) === ny;
+  const observedAt = tagValue(xml, "DateTime");
+  if (!ok || !observedAt || !Number.isFinite(Date.parse(observedAt))) throw new Error("雷達格點格式與預期不符");
+  const start = xml.indexOf("<content>");
+  const end = xml.indexOf("</content>", start);
+  if (start < 0 || end < 0) throw new Error("雷達格點沒有內容");
+  const parts = xml.slice(start + "<content>".length, end).split(",");
+  if (parts.length !== nx * ny) throw new Error(`雷達格點數量不符：${parts.length}`);
+  const values = new Float32Array(parts.length);
+  for (let i = 0; i < parts.length; i++) values[i] = parseFloat(parts[i]!);
+  return { observedAt, values };
+}
+
+/** 超過色階（52 dBZ 以上）的顏色；dbzFromColor 對不上色階，只說「回波很強」不猜數值 */
+export const STRONG_ECHO_COLOR: readonly [number, number, number] = [171, 0, 255];
+
+/** dBZ → RGBA；沒有回波、雷達範圍外（負值、-99、-999、NaN）為透明 */
+export function colorForDbz(dbz: number): [number, number, number, number] {
+  if (!(dbz >= 0)) return [0, 0, 0, 0];
+  const c = dbz >= DBZ_COLORS.length ? STRONG_ECHO_COLOR : DBZ_COLORS[Math.floor(dbz)]!;
+  return [c[0], c[1], c[2], 255];
+}
+
+/** 把 RADAR_REGION 畫成 RGBA（上北下南），伺服器再編成 PNG */
+export function renderRadarRegion(values: Float32Array): Uint8Array {
+  const { nx } = RADAR_GRID;
+  const { col0, row1 } = RADAR_REGION;
+  const { width, height } = RADAR_IMAGE_SIZE;
+  const out = new Uint8Array(width * height * 4);
+  for (let py = 0; py < height; py++) {
+    const row = row1 - 1 - py;
+    for (let px = 0; px < width; px++) {
+      out.set(colorForDbz(values[row * nx + col0 + px]!), (py * width + px) * 4);
+    }
+  }
+  return out;
 }
 
 /** 路線點（[lat, lon]）的範圍；沒有點回 null */
@@ -64,85 +182,74 @@ export function bboxOfPoints(points: [number, number][]): Extent | null {
   return [minLon, minLat, maxLon, maxLat];
 }
 
-export interface RadarCrop {
-  /** 裁切範圍（WGS84），路線與鄉鎮界以此投影 */
-  extent: Extent;
-  /** 在 O-A0058-006 原圖上的像素範圍 */
-  pixel: { left: number; top: number; width: number; height: number };
-}
-
-const toPxX = (lon67: number) =>
-  ((lon67 - RADAR_IMAGE.minLon) / (RADAR_IMAGE.maxLon - RADAR_IMAGE.minLon)) * RADAR_IMAGE.size;
-const toPxY = (lat67: number) =>
-  ((RADAR_IMAGE.maxLat - lat67) / (RADAR_IMAGE.maxLat - RADAR_IMAGE.minLat)) * RADAR_IMAGE.size;
-const fromPxX = (px: number) =>
-  RADAR_IMAGE.minLon + (px / RADAR_IMAGE.size) * (RADAR_IMAGE.maxLon - RADAR_IMAGE.minLon);
-const fromPxY = (py: number) =>
-  RADAR_IMAGE.maxLat - (py / RADAR_IMAGE.size) * (RADAR_IMAGE.maxLat - RADAR_IMAGE.minLat);
-
-/**
- * 依路線範圍（WGS84）算出雷達圖裁切：外擴、補到 4:3、換成 TWD67 像素並取整，
- * 再以整數像素反推回 WGS84 範圍，確保路線與圖完全對齊。超出圖層範圍回 null。
- */
-export function radarCropFor(bbox: Extent): RadarCrop | null {
+/** 路線整條都在雷達圖範圍內 */
+export function isInRadarExtent(bbox: Extent): boolean {
   const [minLon, minLat, maxLon, maxLat] = bbox;
-  if (![minLon, minLat, maxLon, maxLat].every(Number.isFinite) || minLon > maxLon || minLat > maxLat) {
-    return null;
-  }
-  const cLon = (minLon + maxLon) / 2;
-  const cLat = (minLat + maxLat) / 2;
-  const cos = Math.cos((cLat * Math.PI) / 180);
-  // 先以公里比例（經度乘 cos）外擴，再補成 RADAR_ASPECT
-  let latSpan = Math.max((maxLat - minLat) * LAT_PAD, MIN_LAT_SPAN);
-  let lonSpanKm = Math.max((maxLon - minLon) * cos * LON_PAD, latSpan * RADAR_ASPECT);
-  latSpan = Math.max(latSpan, lonSpanKm / RADAR_ASPECT);
-  lonSpanKm = latSpan * RADAR_ASPECT;
-  const lonSpan = lonSpanKm / cos;
-
-  // WGS84 → TWD67 後換成原圖像素，向外取整
-  const left = Math.floor(toPxX(cLon - lonSpan / 2 - TWD67_SHIFT.lon));
-  const right = Math.ceil(toPxX(cLon + lonSpan / 2 - TWD67_SHIFT.lon));
-  const top = Math.floor(toPxY(cLat + latSpan / 2 - TWD67_SHIFT.lat));
-  const bottom = Math.ceil(toPxY(cLat - latSpan / 2 - TWD67_SHIFT.lat));
-  if (left < 0 || top < 0 || right > RADAR_IMAGE.size || bottom > RADAR_IMAGE.size) return null;
-
-  return {
-    extent: [
-      fromPxX(left) + TWD67_SHIFT.lon,
-      fromPxY(bottom) + TWD67_SHIFT.lat,
-      fromPxX(right) + TWD67_SHIFT.lon,
-      fromPxY(top) + TWD67_SHIFT.lat,
-    ],
-    pixel: { left, top, width: right - left, height: bottom - top },
-  };
+  const [eMinLon, eMinLat, eMaxLon, eMaxLat] = RADAR_EXTENT;
+  return (
+    [minLon, minLat, maxLon, maxLat].every(Number.isFinite) &&
+    minLon >= eMinLon && maxLon <= eMaxLon && minLat >= eMinLat && maxLat <= eMaxLat
+  );
 }
 
-/** WGS84 經緯度 → 裁切圖上的相對位置（0–1，左上為原點）；地圖、鄉鎮界、取色共用 */
+/** WGS84 經緯度 → 範圍內的相對位置（0–1，左上為原點）；地圖、鄉鎮界、取色共用 */
 export function projectToExtent(extent: Extent, lat: number, lon: number): [x: number, y: number] {
   const [minLon, minLat, maxLon, maxLat] = extent;
   return [(lon - minLon) / (maxLon - minLon), (maxLat - lat) / (maxLat - minLat)];
 }
 
-/** 取景時上下被蓋住的比例（0–1）：主視覺上方是判定，下方是圖例與說明列 */
+/** 取景時上下被蓋住的比例（0–1）：主視覺上方是判定，下方是播放列 */
 export interface ViewInsets {
   top: number;
   bottom: number;
 }
 
+export type ViewBox = [x: number, y: number, w: number, h: number];
+type ViewRect = { minX: number; minY: number; maxX: number; maxY: number };
+
+/** 取景範圍：「周邊」看路線附近約 70 km，「全台」看整個本島與澎湖 */
+export type RadarZoom = "near" | "taiwan";
+/** 周邊至少涵蓋的南北範圍（地圖單位，約 0.7° ≈ 77 km），雨帶一小時移動的距離看得到 */
+const NEAR_MIN_HEIGHT = 70;
+/** 本島＋澎湖（WGS84） */
+const TAIWAN_BOX: Extent = [119.3, 21.85, 122.05, 25.35];
+
+/** 經緯度範圍 → 地圖座標的矩形 */
+export function viewRectOf(bbox: Extent): ViewRect {
+  const [x0, y1] = projectToView(bbox[1], bbox[0]);
+  const [x1, y0] = projectToView(bbox[3], bbox[2]);
+  return { minX: x0, minY: y0, maxX: x1, maxY: y1 };
+}
+
+/** 依取景範圍算 viewBox：周邊以路線為中心，全台則包住本島與路線 */
+export function radarViewBox(routeBox: Extent | null, zoom: RadarZoom, aspect: number, insets: ViewInsets): ViewBox {
+  if (zoom === "taiwan" || !routeBox) {
+    const r = viewRectOf(TAIWAN_BOX);
+    const route = routeBox ? viewRectOf(routeBox) : r;
+    return fitViewBox(
+      {
+        minX: Math.min(r.minX, route.minX),
+        minY: Math.min(r.minY, route.minY),
+        maxX: Math.max(r.maxX, route.maxX),
+        maxY: Math.max(r.maxY, route.maxY),
+      },
+      aspect,
+      insets
+    );
+  }
+  return fitViewBox(viewRectOf(routeBox), aspect, insets, NEAR_MIN_HEIGHT);
+}
+
 /**
- * 依容器長寬比在 RADAR_VIEW 裡取景：路線放在上下沒被蓋住的那一段正中間，
+ * 依容器長寬比在 RADAR_VIEW 裡取景：目標放在上下沒被蓋住的那一段正中間，
  * 並盡量完整入鏡（左右留 10%）；超出圖的部分貼齊邊界。回傳 SVG viewBox 的 [x, y, w, h]。
  */
-export function fitViewBox(
-  route: { minX: number; minY: number; maxX: number; maxY: number },
-  aspect: number,
-  insets: ViewInsets
-): [x: number, y: number, w: number, h: number] {
+export function fitViewBox(target: ViewRect, aspect: number, insets: ViewInsets, minHeight = 0): ViewBox {
   const { width: W, height: H } = RADAR_VIEW;
   const band = Math.max(0.2, 1 - insets.top - insets.bottom);
-  const routeW = Math.max(route.maxX - route.minX, 1);
-  const routeH = Math.max(route.maxY - route.minY, 1);
-  let h = Math.max(routeH / band, routeW / 0.8 / aspect);
+  const targetW = Math.max(target.maxX - target.minX, 1);
+  const targetH = Math.max(target.maxY - target.minY, 1);
+  let h = Math.max(targetH / band, targetW / 0.8 / aspect, minHeight);
   let w = h * aspect;
   // 圖不夠大時縮回圖內，維持比例
   if (w > W) {
@@ -153,8 +260,8 @@ export function fitViewBox(
     h = H;
     w = h * aspect;
   }
-  const cx = (route.minX + route.maxX) / 2;
-  const cy = (route.minY + route.maxY) / 2;
+  const cx = (target.minX + target.maxX) / 2;
+  const cy = (target.minY + target.maxY) / 2;
   const clamp = (v: number, max: number) => Math.min(Math.max(v, 0), Math.max(max, 0));
   const x = clamp(cx - w / 2, W - w);
   const y = clamp(cy - h * (insets.top + band / 2), H - h);

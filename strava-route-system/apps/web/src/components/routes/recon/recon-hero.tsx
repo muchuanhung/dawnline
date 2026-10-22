@@ -1,8 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { ExternalLink, Maximize2, Video, VideoOff, X } from "lucide-react";
-import { Dialog, DialogTrigger } from "@/components/ui/dialog";
+import { ExternalLink, Maximize2, VideoOff, X } from "lucide-react";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import Spinner from "@/components/ui/Spinner";
 import { UnknownReasons } from "@/components/verdict/unknown-reasons";
 import {
@@ -17,7 +25,8 @@ import type {
 } from "@/lib/routes/recon-geo";
 import type { RoutePolylineKm } from "@/lib/routes/recon-geo";
 import type { TrackZone } from "@/lib/routes/route-track";
-import type { RouteRadarState } from "@/hooks/useRouteRadar";
+import type { RouteRadar, RouteRadarState } from "@/hooks/useRouteRadar";
+import type { RadarZoom, ViewInsets } from "@/lib/cwb/radar";
 import {
   CCTV_FAR_KM,
   CctvFrame,
@@ -26,12 +35,22 @@ import {
 } from "./cctv-viewer";
 import { RouteVerdictBar, VERDICT_LEVEL_STYLE } from "./route-verdict-bar";
 import { RouteTrack } from "./route-track";
-import { RadarLegend, RadarMap, radarTimeLabel, useRadarHere } from "./radar-map";
+import {
+  RadarControls,
+  RadarLegend,
+  RadarMap,
+  radarTimeLabel,
+  useRadarHere,
+  useRadarPlayback,
+} from "./radar-map";
 
 type HeroView = "cctv" | "radar";
 
-/** 主視覺上方的判定約佔 35%、下方圖例與說明列約 25%；子母畫面只有底部一行字 */
-const HERO_INSETS = { top: 0.35, bottom: 0.25 };
+/** 桌機主視覺切到雷達時：上方一行判定約 15%、下方播放列約 35% */
+const HERO_INSETS = { top: 0.15, bottom: 0.35 };
+/** 沒有判定疊在上面的雷達（無鏡頭路線、全螢幕）：只有下方播放列 */
+const PANEL_INSETS = { top: 0, bottom: 0.35 };
+const SHEET_INSETS = { top: 0, bottom: 0.25 };
 const PIP_INSETS = { top: 0, bottom: 0.2 };
 
 /** 雷達相關的共用 props：資料、路線折線與目前里程 */
@@ -41,31 +60,132 @@ type RadarProps = {
   positionKm: number;
 };
 
-/** 主視覺切到雷達時的底部說明：觀測時間、目前位置回波、聲明不影響判定 */
-function radarCaption(observedAt: string, here: string | null): string {
-  return [`雷達回波 ${radarTimeLabel(observedAt)}`, here, "不影響判定"].filter(Boolean).join("・");
-}
-
-/** 雷達圖鋪滿主視覺，底部留圖例 */
-function RadarStage({ radar, polyline, positionKm }: RadarProps) {
-  if (radar.status !== "ready") return null;
+/**
+ * 雷達回放：地圖鋪滿容器，底部漸層上放目前位置回波、圖例與播放列。
+ * actions 放在播放列最右邊（桌機的「影像｜雷達」切換、放大鈕）。
+ */
+function RadarPanel({
+  radar,
+  polyline,
+  positionKm,
+  insets,
+  className,
+  actions,
+}: {
+  radar: RouteRadar;
+  polyline: RoutePolylineKm | null;
+  positionKm: number;
+  insets: ViewInsets;
+  className?: string;
+  actions?: React.ReactNode;
+}) {
+  const playback = useRadarPlayback(radar.frames, true);
+  const [zoom, setZoom] = useState<RadarZoom>("near");
+  const frame = radar.frames[playback.index]!;
+  const here = useRadarHere(frame, polyline, positionKm);
   return (
-    <>
+    <div className={cn("relative overflow-hidden bg-[#0b1220]", className)}>
       <RadarMap
-        radar={radar.data}
+        radar={radar}
+        frameIndex={playback.index}
         polyline={polyline}
         positionKm={positionKm}
-        insets={HERO_INSETS}
+        zoom={zoom}
+        insets={insets}
         className="absolute inset-0 h-full w-full"
       />
-      {/* 手機右下角留給「影像」鈕 */}
-      <RadarLegend className="absolute bottom-14 left-4 right-28 lg:right-4" />
-    </>
+      <div className="absolute inset-x-0 bottom-0 space-y-2 bg-gradient-to-t from-black/90 via-black/70 to-transparent px-3 pb-2 pt-8">
+        <div className="flex items-end justify-between gap-3">
+          <p className="min-w-0 truncate text-xs text-white">
+            {[here, "只供參考，不影響判定"].filter(Boolean).join("・")}
+          </p>
+          <RadarLegend className="w-40 shrink-0 sm:w-56" />
+        </div>
+        <div className="flex items-center gap-1">
+          <RadarControls
+            frames={radar.frames}
+            index={playback.index}
+            playing={playback.playing}
+            onToggle={playback.toggle}
+            onSeek={playback.seek}
+            zoom={zoom}
+            onZoom={setZoom}
+            className="min-w-0 flex-1"
+          />
+          {actions}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** 全螢幕雷達：手機點子母畫面、桌機點放大鈕開啟；不疊判定，整張圖都看得到 */
+function RadarSheet({
+  open,
+  onOpenChange,
+  radar,
+  polyline,
+  positionKm,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  radar: RouteRadar;
+  polyline: RoutePolylineKm | null;
+  positionKm: number;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className={cn(
+          "grid h-[85vh] max-w-5xl grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden border-0 bg-[#0b1220] p-0 text-white",
+          "max-lg:inset-0 max-lg:left-0 max-lg:top-0 max-lg:h-[100dvh] max-lg:max-w-none max-lg:translate-x-0 max-lg:translate-y-0 max-lg:rounded-none!",
+          "max-lg:data-[state=open]:slide-in-from-left-0 max-lg:data-[state=open]:slide-in-from-top-0",
+          "max-lg:data-[state=closed]:slide-out-to-left-0 max-lg:data-[state=closed]:slide-out-to-top-0"
+        )}
+      >
+        <DialogHeader className="flex-row items-center justify-between gap-2 space-y-0 py-1 pl-4 text-left">
+          <div className="min-w-0">
+            <DialogTitle className="text-base">雷達回波</DialogTitle>
+            <DialogDescription className="text-xs text-white/60">過去一小時回放，每 10 分鐘一張</DialogDescription>
+          </div>
+          <DialogClose asChild>
+            <button
+              type="button"
+              aria-label="關閉雷達"
+              className="flex size-11 shrink-0 cursor-pointer items-center justify-center hover:bg-white/10"
+            >
+              <X className="size-5" aria-hidden />
+            </button>
+          </DialogClose>
+        </DialogHeader>
+        <RadarPanel
+          radar={radar}
+          polyline={polyline}
+          positionKm={positionKm}
+          insets={SHEET_INSETS}
+          className="h-full pb-[env(safe-area-inset-bottom)]"
+        />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** 放大雷達（開全螢幕） */
+function RadarExpandButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="全螢幕看雷達"
+      className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-white hover:bg-white/15"
+    >
+      <Maximize2 className="size-4" aria-hidden />
+    </button>
   );
 }
 
 /**
- * 桌機（lg 以上）：底部列的「影像｜雷達」切換。雷達暫無時雷達鈕停用並說明。
+ * 桌機（lg 以上）：「影像｜雷達」切換。雷達暫無時雷達鈕停用並說明。
  */
 function HeroViewToggle({
   view,
@@ -77,7 +197,7 @@ function HeroViewToggle({
   radarReady: boolean;
 }) {
   return (
-    <div role="group" aria-label="主視覺" className="mr-1 hidden rounded-full bg-white/15 p-0.5 text-xs font-medium lg:flex">
+    <div role="group" aria-label="主視覺" className="mr-1 hidden shrink-0 rounded-full bg-white/15 p-0.5 text-xs font-medium lg:flex">
       {(
         [
           ["cctv", "影像"],
@@ -103,51 +223,32 @@ function HeroViewToggle({
 }
 
 /**
- * 手機（lg 以下）：影像右下角的雷達子母畫面，點了與影像交換；
- * 切到雷達後只留「影像」小鈕，不擋地圖。雷達暫無時只顯示一行說明，不能點。
+ * 手機（lg 以下）：影像右下角的雷達子母畫面（最新一張），點了開全螢幕回放。
+ * 雷達暫無時只顯示一行說明，不能點。
  */
 function RadarPip({
-  view,
-  onView,
-  here,
   radar,
   polyline,
   positionKm,
-}: RadarProps & { view: HeroView; onView: (v: HeroView) => void; here: string | null }) {
+  onOpen,
+}: RadarProps & { onOpen: () => void }) {
+  const data = radar.status === "ready" ? radar.data : null;
+  const here = useRadarHere(data?.frames.at(-1) ?? null, polyline, positionKm);
   if (radar.status === "loading") return null;
   const corner = "absolute bottom-14 right-3 lg:hidden";
-  if (radar.status === "unavailable") {
+  if (!data) {
     return <p className={cn(corner, "rounded bg-black/70 px-2 py-1 text-[11px] text-white/80")}>雷達資料暫無</p>;
-  }
-  if (view === "radar") {
-    return (
-      <button
-        type="button"
-        onClick={() => onView("cctv")}
-        className={cn(corner, "flex h-9 cursor-pointer items-center gap-1.5 rounded-full bg-black/75 px-3 text-xs font-medium text-white")}
-      >
-        <Video className="size-3.5" aria-hidden />
-        影像
-      </button>
-    );
   }
   return (
     <button
       type="button"
-      onClick={() => onView("radar")}
+      onClick={onOpen}
       aria-label={`放大雷達回波圖（${here ?? "載入中"}）`}
       className={cn(corner, "h-24 w-32 cursor-pointer overflow-hidden rounded-lg border-2 border-white/80 shadow-lg")}
     >
-      <RadarMap
-        radar={radar.data}
-        polyline={polyline}
-        positionKm={positionKm}
-        compact
-        insets={PIP_INSETS}
-        className="h-full w-full"
-      />
+      <RadarMap radar={data} polyline={polyline} positionKm={positionKm} compact insets={PIP_INSETS} className="h-full w-full" />
       <span className="absolute inset-x-0 bottom-0 truncate bg-black/70 px-1.5 py-0.5 text-left text-[10px] text-white">
-        {here ?? `雷達 ${radarTimeLabel(radar.data.observedAt)}`}
+        {here ?? `雷達 ${radarTimeLabel(data.frames.at(-1)!.observedAt)}`}
       </span>
     </button>
   );
@@ -161,39 +262,54 @@ const VERDICT_PILL: Record<VerdictLevel, string> = {
   unknown: "bg-muted text-muted-foreground",
 };
 
-/** 影像上方的判定：一眼看到能不能走；影像只是佐證，判定仍以規則式結果為準 */
+/**
+ * 影像上方的判定：一眼看到能不能走；影像只是佐證，判定仍以規則式結果為準。
+ * compact：桌機主視覺切到雷達時縮成一行，讓出地圖。
+ */
 function VerdictOverlay({
   verdict,
   loading,
   headlinePending,
+  compact = false,
 }: {
   verdict: ReconVerdict;
   loading: boolean;
   headlinePending: boolean;
+  compact?: boolean;
 }) {
   const word = VERDICT_LEVEL_STYLE[verdict.level].word;
+  const pill = (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center rounded-full font-bold leading-none",
+        compact ? "px-2.5 py-1 text-sm" : "px-3 py-1 text-lg",
+        VERDICT_PILL[loading ? "unknown" : verdict.level],
+      )}
+    >
+      {loading ? (
+        "判讀中"
+      ) : verdict.level === "unknown" ? (
+        <UnknownReasons reasons={verdict.reasons}>{word}</UnknownReasons>
+      ) : (
+        word
+      )}
+    </span>
+  );
+  if (compact) {
+    return (
+      <div role="status" aria-live="polite" className="absolute inset-x-0 top-0 flex items-center gap-2 bg-black/65 px-4 py-2 text-white">
+        {pill}
+        {!loading && !headlinePending && <p className="min-w-0 truncate text-sm font-medium">{verdict.headline}</p>}
+      </div>
+    );
+  }
   return (
     <div
       role="status"
       aria-live="polite"
       className="absolute inset-x-0 top-0 bg-black/65 px-4 py-3 text-white"
     >
-      <p>
-        <span
-          className={cn(
-            "inline-flex items-center rounded-full px-3 py-1 text-lg font-bold leading-none",
-            VERDICT_PILL[loading ? "unknown" : verdict.level],
-          )}
-        >
-          {loading ? (
-            "判讀中"
-          ) : verdict.level === "unknown" ? (
-            <UnknownReasons reasons={verdict.reasons}>{word}</UnknownReasons>
-          ) : (
-            word
-          )}
-        </span>
-      </p>
+      <p>{pill}</p>
       {!loading &&
         (headlinePending ? (
           <HeadlineSkeleton className="mt-2 h-4 bg-white/25" />
@@ -221,7 +337,7 @@ export function HeadlineSkeleton({ className }: { className?: string }) {
   );
 }
 
-/** 有鏡頭：影像當背景，上疊判定，下方是鏡頭名與外連、放大 */
+/** 有鏡頭：影像當背景，上疊判定，下方是鏡頭名與外連、放大；桌機可切到雷達回放 */
 function CctvStage({
   marker,
   positionKm,
@@ -232,6 +348,7 @@ function CctvStage({
   polyline,
   view,
   onView,
+  onOpenRadar,
 }: RadarProps & {
   marker: CctvMarker;
   verdict: ReconVerdict;
@@ -239,51 +356,60 @@ function CctvStage({
   headlinePending: boolean;
   view: HeroView;
   onView: (v: HeroView) => void;
+  onOpenRadar: () => void;
 }) {
   const title = cctvTitle(marker);
   const isFar = Math.abs(marker.km - positionKm) > CCTV_FAR_KM;
   const radarData = radar.status === "ready" ? radar.data : null;
-  const here = useRadarHere(radarData, polyline, positionKm);
-  // 雷達暫無時一律回到影像
+  // 雷達暫無時一律回到影像；切換鈕只在桌機出現，手機由子母畫面開全螢幕
   const showRadar = view === "radar" && radarData != null;
+  const toggle =
+    radar.status !== "loading" ? (
+      <HeroViewToggle view={showRadar ? "radar" : "cctv"} onView={onView} radarReady={radarData != null} />
+    ) : null;
 
   return (
     <Dialog>
       <div className="relative flex h-64 items-center justify-center overflow-hidden bg-black sm:h-80">
         {showRadar ? (
-          <RadarStage radar={radar} polyline={polyline} positionKm={positionKm} />
+          <RadarPanel
+            radar={radarData}
+            polyline={polyline}
+            positionKm={positionKm}
+            insets={HERO_INSETS}
+            className="absolute inset-0"
+            actions={
+              <>
+                <RadarExpandButton onClick={onOpenRadar} />
+                {toggle}
+              </>
+            }
+          />
         ) : (
-          <CctvFrame key={marker.id} marker={marker} large />
+          <>
+            <CctvFrame key={marker.id} marker={marker} large />
+            <RadarPip radar={radar} polyline={polyline} positionKm={positionKm} onOpen={onOpenRadar} />
+          </>
         )}
-        <RadarPip
-          view={showRadar ? "radar" : "cctv"}
-          onView={onView}
-          here={here}
-          radar={radar}
-          polyline={polyline}
-          positionKm={positionKm}
-        />
         <VerdictOverlay
           verdict={verdict}
           loading={verdictLoading}
           headlinePending={headlinePending}
+          compact={showRadar}
         />
-        <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-black/65 pl-4 text-white">
+        <div
+          className={cn(
+            "absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-black/65 pl-4 text-white",
+            showRadar && "hidden"
+          )}
+        >
           <p className="min-w-0 truncate text-xs">
-            {showRadar ? (
-              radarCaption(radarData.observedAt, here)
-            ) : (
-              <>
-                {isFar && "最近一台："}
-                {title}・{marker.km.toFixed(1)} km
-              </>
-            )}
+            {isFar && "最近一台："}
+            {title}・{marker.km.toFixed(1)} km
           </p>
           <div className="flex shrink-0 items-center">
-            {radar.status !== "loading" && (
-              <HeroViewToggle view={showRadar ? "radar" : "cctv"} onView={onView} radarReady={radarData != null} />
-            )}
-            {!showRadar && marker.videoUrl && (
+            {toggle}
+            {marker.videoUrl && (
               <a
                 href={marker.videoUrl}
                 target="_blank"
@@ -297,7 +423,6 @@ function CctvStage({
             <DialogTrigger asChild>
               <button
                 type="button"
-                hidden={showRadar}
                 aria-label="放大監視器畫面"
                 className="flex size-11 cursor-pointer items-center justify-center hover:bg-white/10"
               >
@@ -323,6 +448,7 @@ function NoCctvStage({
   radar,
   polyline,
   positionKm,
+  onOpenRadar,
 }: RadarProps & {
   verdict: ReconVerdict;
   verdictLoading: boolean;
@@ -330,24 +456,10 @@ function NoCctvStage({
   cctvLoading: boolean;
   cctvError: boolean;
   cctvOffline: boolean;
+  onOpenRadar: () => void;
 }) {
   const radarData = radar.status === "ready" ? radar.data : null;
-  const here = useRadarHere(radarData, polyline, positionKm);
-  // 沿途沒有可看的影像但有雷達：雷達圖當主視覺，判定照樣疊在最上層
-  if (radarData && !cctvLoading) {
-    return (
-      <div className="relative h-64 overflow-hidden bg-black sm:h-80">
-        <RadarStage radar={radar} polyline={polyline} positionKm={positionKm} />
-        <VerdictOverlay verdict={verdict} loading={verdictLoading} headlinePending={headlinePending} />
-        <p className="absolute inset-x-0 bottom-0 flex h-11 items-center gap-2 truncate bg-black/65 px-4 text-xs text-white">
-          <VideoOff className="size-4 shrink-0" aria-hidden />
-          <span className="truncate">
-            {cctvError ? "監視器載入失敗" : "沿途沒有監視器"}・{radarCaption(radarData.observedAt, here)}
-          </span>
-        </p>
-      </div>
-    );
-  }
+  const cctvNote = cctvLoading ? null : cctvOffline ? "離線中，無法看即時影像" : cctvError ? "監視器載入失敗" : "沿途沒有監視器";
   return (
     <div>
       <RouteVerdictBar verdict={verdict} headlinePending={headlinePending} />
@@ -363,14 +475,21 @@ function NoCctvStage({
         ) : (
           <>
             <VideoOff className="size-4" aria-hidden />
-            {cctvOffline
-              ? "離線中，無法看即時影像"
-              : cctvError
-                ? "監視器載入失敗"
-                : "沿途沒有監視器"}
+            {cctvNote}
           </>
         )}
       </p>
+      {/* 沿途沒有影像但有雷達：判定在上、雷達回放在下，互不遮蓋 */}
+      {radarData && !cctvLoading && (
+        <RadarPanel
+          radar={radarData}
+          polyline={polyline}
+          positionKm={positionKm}
+          insets={PANEL_INSETS}
+          className="mt-3 h-64 sm:h-80"
+          actions={<RadarExpandButton onClick={onOpenRadar} />}
+        />
+      )}
     </div>
   );
 }
@@ -460,12 +579,14 @@ export function ReconHero({
   onSelectMarker: (marker: CctvMarker) => void;
   onSelectZone: (zone: TrackZone) => void;
   onCloseZone: () => void;
-  /** 路線附近的雷達回波：手機在影像右下角子母畫面，桌機在底部列切換；只供顯示，不影響判定 */
+  /** 雷達回波回放：手機點影像右下角子母畫面開全螢幕，桌機在底部列切換；只供顯示，不影響判定 */
   radar: RouteRadarState;
   /** 路線折線，雷達圖上畫路線與目前位置 */
   polyline: RoutePolylineKm | null;
 }) {
   const [view, setView] = useState<HeroView>("cctv");
+  const [radarOpen, setRadarOpen] = useState(false);
+  const openRadar = () => setRadarOpen(true);
   return (
     <section
       aria-label="沿線影像與判定"
@@ -482,6 +603,7 @@ export function ReconHero({
           polyline={polyline}
           view={view}
           onView={setView}
+          onOpenRadar={openRadar}
         />
       ) : (
         <NoCctvStage
@@ -494,6 +616,16 @@ export function ReconHero({
           cctvLoading={cctvLoading}
           cctvError={cctvError}
           cctvOffline={cctvOffline}
+          onOpenRadar={openRadar}
+        />
+      )}
+      {radar.status === "ready" && (
+        <RadarSheet
+          open={radarOpen}
+          onOpenChange={setRadarOpen}
+          radar={radar.data}
+          polyline={polyline}
+          positionKm={positionKm}
         />
       )}
       <RouteTrack
