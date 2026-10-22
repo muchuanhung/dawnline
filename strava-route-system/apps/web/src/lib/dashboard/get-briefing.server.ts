@@ -176,7 +176,12 @@ async function loadBriefingInputs(routes: Route[], { force = false } = {}) {
     console.warn("判讀輸入寫回失敗:", errorMessage(e));
   }
   // 暫時的計時紀錄（Vercel Logs 搜尋「判讀計時」）；確認變快後移除
-  console.info(`[判讀計時] 輸入 ${ids.length} 項，重抓 ${missing.length} 項 ${Date.now() - started}ms`);
+  const unsaved = missing.filter((id) => !toWrite.some((w) => w.id === id));
+  console.info(
+    `[判讀計時] 輸入 ${ids.length} 項，重抓 ${missing.length} 項 ${Date.now() - started}ms` +
+      (missing.length ? ` 重抓=${missing.join(",")}` : "") +
+      (unsaved.length ? ` 未存=${unsaved.join(",")}` : "")
+  );
   return { lookup, eventsResult, stationsByCounty, refetched: missing.length, total: ids.length };
 }
 
