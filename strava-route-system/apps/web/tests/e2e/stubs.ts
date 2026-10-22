@@ -91,7 +91,7 @@ export async function stubRadar(page: Page, latestObservedAt: string | "error") 
       const id = t.slice(0, 16).replace(/\D/g, "");
       return { id, observedAt: `${t.slice(0, 16)}:00+08:00` };
     });
-    return r.fulfill({ json: { frames } });
+    return r.fulfill({ json: { frames, nowcast: null } });
   });
   await page.route("**/api/radar/frame?**", (r) => r.fulfill({ contentType: "image/png", body: BLANK_PNG }));
   await page.route("**/api/radar/basemap", (r) => r.fulfill({ json: { towns: "" } }));

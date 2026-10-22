@@ -68,19 +68,40 @@ export function projectToView(lat: number, lon: number): [x: number, y: number] 
 
 /** 一張雷達圖 */
 export interface RadarFrame {
-  /** 歷史檔的時間戳 YYYYMMDDHHmm（台灣時間），也是 /api/radar/frames/[id] 的 id */
+  /** 歷史檔的時間戳 YYYYMMDDHHmm（台灣時間），也是 /api/radar/frame?id= 的 id */
   id: string;
   /** 觀測時間（ISO，+08:00） */
   observedAt: string;
 }
 
-/** GET /api/radar 的回應：可回放的圖，舊到新 */
+/** 未來 1 小時降雨預報（F-B0046-001）的一張圖 */
+export interface NowcastFrame {
+  /** NOWCAST_PREFIX + 預報起點 YYYYMMDDHHmm，也是 /api/radar/frame?id= 的 id */
+  id: string;
+  /** 預報起點（ISO，+08:00），涵蓋之後 1 小時 */
+  issuedAt: string;
+}
+
+/** GET /api/radar 的回應：可回放的圖（舊到新），以及未來 1 小時預報（取不到或過期時為 null） */
 export interface RadarManifest {
   frames: RadarFrame[];
+  nowcast: NowcastFrame | null;
+}
+
+export const NOWCAST_PREFIX = "n";
+
+export function nowcastFrameId(issuedAt: string): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(issuedAt);
+  return m && issuedAt.endsWith("+08:00") ? `${NOWCAST_PREFIX}${m.slice(1).join("")}` : null;
 }
 
 const FRAME_ID = /^\d{12}$/;
 const HISTORY_KEY = /(\d{12})compref_mosaic\.xml$/;
+
+/** 預報 id（n＋時間戳）的時間戳；不是預報 id 回 null */
+export function nowcastStamp(id: string): string | null {
+  return id.startsWith(NOWCAST_PREFIX) && isRadarFrameId(id.slice(NOWCAST_PREFIX.length)) ? id.slice(NOWCAST_PREFIX.length) : null;
+}
 
 export function isRadarFrameId(id: string): boolean {
   return FRAME_ID.test(id) && Number.isFinite(Date.parse(observedAtOfFrameId(id)));
