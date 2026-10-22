@@ -157,7 +157,7 @@ function RadarSheet({
         <DialogHeader className="flex-row items-center justify-between gap-2 space-y-0 py-1 pl-4 text-left">
           <div className="min-w-0">
             <DialogTitle className="text-base">雷達回波</DialogTitle>
-            <DialogDescription className="text-xs text-white/60">過去一小時回放，每 10 分鐘一張</DialogDescription>
+            <DialogDescription className="text-xs text-white/60">過去 6 小時回放，每小時一張</DialogDescription>
           </div>
           <DialogClose asChild>
             <button

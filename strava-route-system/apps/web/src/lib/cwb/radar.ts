@@ -3,7 +3,7 @@
  * 只用來「顯示」，不參與判定（判定仍只看規則式的預報、雨量站與路況）。
  *
  * 來源是 CWA 公開 S3 的歷史檔 history/Observation/<YYYYMMDDHHmm>compref_mosaic.xml（台灣時間，
- * 內容即 O-A0059-001）：每 10 分鐘一筆、保留約兩週、不需金鑰，所以能回放過去一小時。
+ * 內容即 O-A0059-001）：每 10 分鐘一筆、保留約兩週、不需金鑰，所以能回放過去 6 小時。
  * 格點 921×881、0.0125°（約 1.3 km），左下角東經 115、北緯 18，先西向東再南向北；
  * 值為 dBZ，-99 沒有回波，-999 雷達範圍外或品管移除。座標系是 TWD67，與路線（WGS84）差約 800 m。
  */
@@ -23,8 +23,11 @@ export const RADAR_IMAGE_SIZE = {
 
 /** 觀測時間超過此值就不顯示（未判定 ≠ 安全：寧可說「暫無」也不放舊圖） */
 export const RADAR_STALE_MS = 30 * 60 * 1000;
-/** 回放張數：最新一張往前一小時（每 10 分鐘一張） */
+/** 回放：最新一張往前 6 小時，每小時一張（與出發選單同樣以小時為刻度） */
 export const RADAR_FRAME_COUNT = 7;
+export const RADAR_FRAME_STEP_MIN = 60;
+/** 整點附近缺圖時，前後這麼多分鐘內的圖可以代替 */
+const FRAME_SLACK_MIN = 10;
 
 /**
  * TWD67 → WGS84（TWD97）在臺灣本島的近似平移：E +828 m、N −207 m。
@@ -88,25 +91,33 @@ export function observedAtOfFrameId(id: string): string {
   return `${id.slice(0, 4)}-${id.slice(4, 6)}-${id.slice(6, 8)}T${id.slice(8, 10)}:${id.slice(10, 12)}:00+08:00`;
 }
 
-/** 列出歷史檔要查的前綴：台灣時間的今天與昨天（剛過午夜時，前一小時在昨天） */
+/** 列出歷史檔要查的前綴：台灣時間的今天與昨天（剛過午夜時，前幾小時在昨天） */
 export function historyDatePrefixes(now: number): string[] {
   const day = (t: number) => new Date(t + 8 * 3600 * 1000).toISOString().slice(0, 10).replaceAll("-", "");
   return [...new Set([day(now - 24 * 3600 * 1000), day(now)])];
 }
 
 /**
- * 由 S3 物件名稱挑出最新 count 張雷達圖（舊到新）；
- * 只取與最新一張相差一小時內的，中間缺圖就少幾張，不補舊圖。
+ * 由 S3 物件名稱挑出回放的圖（舊到新）：最新一張，再往前每 step 分鐘取一張，共 count 張。
+ * 該時間沒有圖時取前後 10 分鐘內最近的一張；都沒有就少一張，不拿更舊的圖補。
  */
-export function latestRadarFrames(keys: string[], count = RADAR_FRAME_COUNT): RadarFrame[] {
+export function latestRadarFrames(keys: string[], count = RADAR_FRAME_COUNT, stepMin = RADAR_FRAME_STEP_MIN): RadarFrame[] {
   const ids = [...new Set(keys.map((k) => HISTORY_KEY.exec(k)?.[1]).filter((id): id is string => !!id && isRadarFrameId(id)))].sort();
   const latest = ids.at(-1);
   if (!latest) return [];
-  const latestMs = Date.parse(observedAtOfFrameId(latest));
-  return ids
-    .slice(-count)
-    .filter((id) => latestMs - Date.parse(observedAtOfFrameId(id)) <= (count - 1) * 10 * 60 * 1000)
-    .map((id) => ({ id, observedAt: observedAtOfFrameId(id) }));
+  const timeOf = (id: string) => Date.parse(observedAtOfFrameId(id));
+  const latestMs = timeOf(latest);
+  const picked: string[] = [];
+  for (let k = count - 1; k >= 0; k--) {
+    const target = latestMs - k * stepMin * 60_000;
+    let best: string | null = null;
+    for (const id of ids) {
+      const d = Math.abs(timeOf(id) - target);
+      if (d <= FRAME_SLACK_MIN * 60_000 && (best == null || d < Math.abs(timeOf(best) - target))) best = id;
+    }
+    if (best && !picked.includes(best)) picked.push(best);
+  }
+  return picked.map((id) => ({ id, observedAt: observedAtOfFrameId(id) }));
 }
 
 /** 解析後的合成回波格點：values 依原檔順序（列由南到北） */

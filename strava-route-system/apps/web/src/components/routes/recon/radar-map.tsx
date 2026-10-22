@@ -255,7 +255,7 @@ export function RadarControls({
         type="button"
         onClick={onToggle}
         disabled={frames.length < 2 || loaded.size < frames.length}
-        aria-label={playing ? "暫停回放" : "播放過去一小時"}
+        aria-label={playing ? "暫停回放" : "播放過去 6 小時"}
         className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full bg-white/15 hover:bg-white/25 disabled:opacity-40"
       >
         {playing ? <Pause className="size-4" aria-hidden /> : <Play className="size-4" aria-hidden />}
