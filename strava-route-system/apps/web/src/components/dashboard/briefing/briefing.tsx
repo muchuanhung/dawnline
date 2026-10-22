@@ -22,9 +22,7 @@ export async function Briefing({
   /** 網址上的行程設定；null 為未指定（現在出發、依路線類型） */
   trip: Trip;
 }) {
-  const started = Date.now();
   const routes = await loadRoutes();
-  console.info(`[判讀計時] dashboard loadRoutes ${Date.now() - started}ms`);
   if (routes.length === 0) {
     return (
       <section className="rounded-2xl border border-dashed border-border bg-card p-8 text-center">

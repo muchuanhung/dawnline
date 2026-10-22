@@ -54,11 +54,7 @@ async function briefPublicRoute(routeId: string, trip: TripOptions): Promise<Rou
  * 判讀本身是純計算，外部資料由 loadBriefingInputs 從 Firestore 取得。
  */
 export async function getRouteBriefing(routeId: string, trip: TripOptions = {}): Promise<RouteBriefing | null> {
-  const started = Date.now();
-  const briefing = await briefPublicRoute(routeId, trip);
-  // 暫時的計時紀錄（Vercel Logs 搜尋「判讀計時」）；確認變快後移除
-  console.info(`[判讀計時] route=${routeId} ${Date.now() - started}ms`);
-  return briefing;
+  return briefPublicRoute(routeId, trip);
 }
 
 /**
@@ -102,7 +98,6 @@ async function loadBriefingInputs(routes: Route[], { force = false } = {}) {
     ...tdxCounties.map((c) => inputId("tdx", c)),
   ];
 
-  const started = Date.now();
   let stored = new Map<string, StoredInput>();
   if (!force) {
     try {
@@ -175,13 +170,9 @@ async function loadBriefingInputs(routes: Route[], { force = false } = {}) {
     // 寫回失敗只影響下次速度，不影響這次判讀
     console.warn("判讀輸入寫回失敗:", errorMessage(e));
   }
-  // 暫時的計時紀錄（Vercel Logs 搜尋「判讀計時」）；確認變快後移除
+  // 取不到的輸入不存（不可當成「沒事」），每次請求都會重抓；留紀錄才看得出哪個來源一直失敗
   const unsaved = missing.filter((id) => !toWrite.some((w) => w.id === id));
-  console.info(
-    `[判讀計時] 輸入 ${ids.length} 項，重抓 ${missing.length} 項 ${Date.now() - started}ms` +
-      (missing.length ? ` 重抓=${missing.join(",")}` : "") +
-      (unsaved.length ? ` 未存=${unsaved.join(",")}` : "")
-  );
+  if (unsaved.length) console.warn(`判讀輸入取不到，下次請求會再重抓: ${unsaved.join(",")}`);
   return { lookup, eventsResult, stationsByCounty, refetched: missing.length, total: ids.length };
 }
 

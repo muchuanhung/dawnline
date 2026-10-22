@@ -15,9 +15,7 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<{ route?: string; depart?: string; activity?: string }>;
 }) {
-  const started = Date.now();
   const userId = await getCurrentUserId();
-  console.info(`[判讀計時] dashboard auth ${Date.now() - started}ms`);
   if (!userId) redirect("/login");
 
   const { route, depart, activity } = await searchParams;

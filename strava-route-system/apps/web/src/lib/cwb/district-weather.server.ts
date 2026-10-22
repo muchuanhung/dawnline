@@ -175,13 +175,13 @@ export async function getCountyRainfallStations(county: string): Promise<Station
       next: { revalidate: 600 },
     });
     if (!res.ok) {
-      // 暫時的診斷紀錄（Vercel Logs 搜尋「判讀計時」）；查明雨量站一直取不到的原因後移除
-      console.warn(`[判讀計時] 雨量站 ${cwbCounty} HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+      // 失敗時呼叫端只會看到「附近無測站」，留紀錄才查得到原因
+      console.warn(`[CWB] 雨量站 ${cwbCounty} HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
       return null;
     }
     return parseRainfallStations(await res.json(), cwbCounty);
   } catch (e) {
-    console.warn(`[判讀計時] 雨量站 ${cwbCounty} 失敗: ${e instanceof Error ? e.message : String(e)}`);
+    console.warn(`[CWB] 雨量站 ${cwbCounty} 失敗: ${e instanceof Error ? e.message : String(e)}`);
     return null;
   }
 }
