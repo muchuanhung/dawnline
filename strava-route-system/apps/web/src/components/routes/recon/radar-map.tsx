@@ -9,7 +9,6 @@ import {
   dbzFromColor,
   fitViewBox,
   legendTicks,
-  LEGEND_TICKS_MM,
   pointAtKm,
   projectToExtent,
   rainRateLabel,
@@ -155,11 +154,12 @@ export function RadarLegend({ className }: { className?: string }) {
       <div className="h-1.5 rounded-full opacity-80" style={{ backgroundImage: gradient }} />
       <div className="relative mt-1 h-2.5">
         {legendTicks().map((t) => (
-          <span key={t.mm} className="absolute -translate-x-1/2 whitespace-nowrap tabular-nums" style={{ left: `${t.pct}%` }}>
+          <span key={t.mm} className="absolute -translate-x-1/2 tabular-nums" style={{ left: `${t.pct}%` }}>
             {t.mm}
-            {t.mm === LEGEND_TICKS_MM.at(-1) && " mm/h"}
           </span>
         ))}
+        {/* 最弱的一段沒有刻度，單位放在左端，窄螢幕也不會和刻度擠在一起 */}
+        <span className="absolute left-0">mm/h</span>
       </div>
     </div>
   );
