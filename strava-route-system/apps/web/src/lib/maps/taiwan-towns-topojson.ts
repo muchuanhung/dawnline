@@ -321,3 +321,37 @@ export function getTaiwanTownshipsFromTopojson(
 
   return results;
 }
+
+/**
+ * 指定經緯度範圍內的鄉鎮界，投影成 width×height 座標的單一 SVG path（雷達圖底圖用）。
+ * 與範圍不相交的多邊形略過；範圍外的點照畫，交給 SVG 裁掉。
+ */
+export function townOutlinesInExtent(
+  extent: [minLon: number, minLat: number, maxLon: number, maxLat: number],
+  width: number,
+  height: number
+): string {
+  const [minLon, minLat, maxLon, maxLat] = extent;
+  const topo = townTopology as unknown as Topology;
+  const project = (lng: number, lat: number) =>
+    `${(((lng - minLon) / (maxLon - minLon)) * width).toFixed(1)} ${(((maxLat - lat) / (maxLat - minLat)) * height).toFixed(1)}`;
+  const parts: string[] = [];
+  for (const geom of topo.objects?.layer1?.geometries ?? []) {
+    if (!geom.arcs || (geom.type !== "Polygon" && geom.type !== "MultiPolygon")) continue;
+    const polys = geom.type === "Polygon" ? [geom.arcs as number[][]] : (geom.arcs as number[][][]);
+    for (const poly of polys) {
+      for (const ring of resolvePolygonRings(topo, poly)) {
+        let rMinLon = Infinity, rMaxLon = -Infinity, rMinLat = Infinity, rMaxLat = -Infinity;
+        for (const [lng = 0, lat = 0] of ring) {
+          rMinLon = Math.min(rMinLon, lng);
+          rMaxLon = Math.max(rMaxLon, lng);
+          rMinLat = Math.min(rMinLat, lat);
+          rMaxLat = Math.max(rMaxLat, lat);
+        }
+        if (rMaxLon < minLon || rMinLon > maxLon || rMaxLat < minLat || rMinLat > maxLat) continue;
+        parts.push(`M${ring.map(([lng = 0, lat = 0]) => project(lng, lat)).join("L")}Z`);
+      }
+    }
+  }
+  return parts.join("");
+}

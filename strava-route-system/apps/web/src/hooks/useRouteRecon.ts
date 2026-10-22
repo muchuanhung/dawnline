@@ -5,12 +5,13 @@ import type { Route } from "@/lib/routes/route-data";
 import { buildRoutePolylineKm } from "@/lib/routes/recon-geo";
 import type { Activity } from "@/lib/routes/trip";
 import { useRouteCCTV } from "@/hooks/useRouteCCTV";
+import { useRouteRadar } from "@/hooks/useRouteRadar";
 import { useRouteBriefing, verdictOf } from "@/hooks/useRouteBriefing";
 import { useBriefingSummary } from "@/hooks/useBriefingSummary";
 import { statusOfVerdict } from "@/components/routes/route-header";
 
 /**
- * 路線偵察畫面的資料：CCTV、里程折線、途中模式里程、判讀與判定狀態。
+ * 路線偵察畫面的資料：CCTV、雷達回波、里程折線、途中模式里程、判讀與判定狀態。
  * 公開路線頁與私人路線詳情共用；私人路線只換判讀 API（endpoint）。
  */
 export function useRouteRecon(
@@ -31,6 +32,8 @@ export function useRouteRecon(
 
   const cctv = useRouteCCTV(route ?? null);
   const polyline = useMemo(() => (route ? buildRoutePolylineKm(route) : null), [route]);
+  // 雷達回波只供顯示，不進判讀
+  const radar = useRouteRadar(route ?? null, polyline);
   // 判定、示警、建議時段全由伺服器算，前端只顯示
   const briefing = useRouteBriefing(routeId, trip, aheadKm, aheadOfRoute?.at ?? null, endpoint);
   const verdict = verdictOf(briefing);
@@ -45,7 +48,7 @@ export function useRouteRecon(
     briefing.briefing != null || !briefing.loading
   );
 
-  return { cctv, polyline, aheadKm, setAheadKm, briefing, status, summary };
+  return { cctv, radar, polyline, aheadKm, setAheadKm, briefing, status, summary };
 }
 
 export type RouteRecon = ReturnType<typeof useRouteRecon>;
