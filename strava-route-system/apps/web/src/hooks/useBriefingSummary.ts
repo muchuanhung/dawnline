@@ -18,9 +18,9 @@ export interface BriefingSummaryState {
 }
 
 /**
- * AI 一句話摘要：與判讀同時另外抓。
+ * AI 一句話摘要：判讀回來後另外抓。
  * enabled：非離線快照、非途中模式時抓（快照或途中模式一律用規則句）。
- * ready：判讀已回來（或已確定失敗），從這時起才開始計算 SUMMARY_WAIT_MS 上限。
+ * ready：判讀已回來（或已確定失敗），從這時起才抓摘要並開始計算 SUMMARY_WAIT_MS 上限。
  * endpoint：判讀 API；摘要 API 是它底下的 /summary（公開、私人路線各一支）。
  */
 export function useBriefingSummary(
@@ -36,7 +36,9 @@ export function useBriefingSummary(
   const [state, setState] = useState<{ key: string; summary: BriefingSummary | null } | null>(null);
 
   useEffect(() => {
-    if (!routeId || !enabled) return;
+    // 等判讀回來才抓：摘要 API 也要判讀同一條路線，判讀完 CWB、TDX 都已進快取，摘要只剩 Claude 的時間。
+    // 兩支同時發出時會各自向 TDX 抓同一縣市，容易被限流（429 要等 5 秒重試）
+    if (!routeId || !enabled || !ready) return;
     let cancelled = false;
     const settle = (summary: BriefingSummary | null) => {
       if (!cancelled) setState((s) => (s?.key === key ? s : { key, summary }));
@@ -49,7 +51,7 @@ export function useBriefingSummary(
     return () => {
       cancelled = true;
     };
-  }, [key, routeId, depart, activity, endpoint, enabled]);
+  }, [key, routeId, depart, activity, endpoint, enabled, ready]);
 
   useEffect(() => {
     if (!routeId || !enabled || !ready) return;
