@@ -54,13 +54,14 @@ async function briefPublicRoute(routeId: string, trip: TripOptions): Promise<Rou
  * 連同計算時間一起存，讓 getRouteBriefing 擋下太舊的結果。
  */
 const cachedRouteBriefing = unstable_cache(
-  async (routeId: string, departureIso: string | null, activity: Activity | null) => ({
-    computedAt: Date.now(),
-    briefing: await briefPublicRoute(routeId, {
+  async (routeId: string, departureIso: string | null, activity: Activity | null) => {
+    const briefing = await briefPublicRoute(routeId, {
       departure: departureIso ? new Date(departureIso) : undefined,
       activity: activity ?? undefined,
-    }),
-  }),
+    });
+    // Stamp after computing, so cacheAge≈0 on a miss and >0 only on a real cache hit
+    return { computedAt: Date.now(), briefing };
+  },
   ["route-briefing-v1"],
   { revalidate: BRIEFING_CACHE_SECONDS }
 );
@@ -95,14 +96,22 @@ async function briefRoutes(routes: Route[], trip: TripOptions = {}, suggestFor?:
   const keys = routeDistrictKeys(routes);
   const counties = [...new Set(routes.flatMap((r) => r.segments.map((s) => s.county).filter((c): c is string => !!c)))];
   // 天氣與路況事件平行取得；事件失敗不影響天氣判讀
-  const eventsPromise = getRoadEvents(counties).catch((e) => {
+  const t0 = Date.now();
+  // 暫時的分段計時（從開始到各資料回來的時間）；查完就移除
+  const lap = (label: string) => <T,>(v: T): T => {
+    console.info(`[判讀計時] ${label} ${Date.now() - t0}ms`);
+    return v;
+  };
+  const eventsPromise = getRoadEvents(counties).then(lap(`TDX 事件 ${counties.length} 縣市`)).catch((e) => {
     console.warn("路況事件取得失敗:", e instanceof Error ? e.message : e);
     return null;
   });
   // 即時雨量站每縣市抓一次，再依各路線自己的座標篩 3 km 內測站
   const stationsPromise = Promise.all(
     counties.map(async (c) => [c, await getCountyRainfallStations(c)] as const)
-  ).then((entries) => new Map(entries));
+  )
+    .then(lap("雨量站"))
+    .then((entries) => new Map(entries));
   const results = await Promise.allSettled(
     keys.map(async (key) => {
       const [county, district] = key.split("|") as [string, string];
@@ -122,6 +131,7 @@ async function briefRoutes(routes: Route[], trip: TripOptions = {}, suggestFor?:
     })
   );
 
+  lap(`CWB 天氣 ${keys.length} 行政區`)(null);
   const lookup = new Map<string, DistrictWeather>();
   for (const r of results) {
     if (r.status === "fulfilled") lookup.set(r.value[0], r.value[1]);
