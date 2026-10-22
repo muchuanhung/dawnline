@@ -84,7 +84,7 @@ test.describe("/routes 路線偵察", () => {
     await stubRadar(page, new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString());
     await page.goto("/routes");
 
-    if (isMobile) await expect(page.getByText("雷達資料暫無")).toBeVisible();
+    if (isMobile) await expect(page.getByRole("paragraph").filter({ hasText: "雷達資料暫無" })).toBeVisible();
     else await expect(page.getByRole("button", { name: "雷達資料暫無" })).toBeDisabled();
     await expect(page.getByRole("img", { name: /雷達回波/ })).toHaveCount(0);
   });
