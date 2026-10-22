@@ -131,12 +131,11 @@ function tagValue(xml: string, tag: string): string | null {
   return m ? m[1]! : null;
 }
 
-/**
- * 解析 compref_mosaic.xml。格點起點、解析度、尺寸任何一項與 RADAR_GRID 不同就丟錯：
- * 對不上位置的圖寧可不顯示。
- */
-export function parseCompositeReflectivity(xml: string): CompositeGrid {
-  const { lon0, lat0, res, nx, ny } = RADAR_GRID;
+type GridSpec = { lon0: number; lat0: number; res: number; nx: number; ny: number };
+
+/** 解析 CWA 格點 XML；格點起點、解析度、尺寸任何一項與 spec 不同就丟錯：對不上位置的圖寧可不顯示 */
+function parseCwaGrid(xml: string, spec: GridSpec, label: string): CompositeGrid {
+  const { lon0, lat0, res, nx, ny } = spec;
   const ok =
     Number(tagValue(xml, "StartPointLongitude")) === lon0 &&
     Number(tagValue(xml, "StartPointLatitude")) === lat0 &&
@@ -144,15 +143,31 @@ export function parseCompositeReflectivity(xml: string): CompositeGrid {
     Number(tagValue(xml, "GridDimensionX")) === nx &&
     Number(tagValue(xml, "GridDimensionY")) === ny;
   const observedAt = tagValue(xml, "DateTime");
-  if (!ok || !observedAt || !Number.isFinite(Date.parse(observedAt))) throw new Error("雷達格點格式與預期不符");
+  if (!ok || !observedAt || !Number.isFinite(Date.parse(observedAt))) throw new Error(`${label}格式與預期不符`);
   const start = xml.indexOf("<content>");
   const end = xml.indexOf("</content>", start);
-  if (start < 0 || end < 0) throw new Error("雷達格點沒有內容");
+  if (start < 0 || end < 0) throw new Error(`${label}沒有內容`);
   const parts = xml.slice(start + "<content>".length, end).split(",");
-  if (parts.length !== nx * ny) throw new Error(`雷達格點數量不符：${parts.length}`);
+  if (parts.length !== nx * ny) throw new Error(`${label}數量不符：${parts.length}`);
   const values = new Float32Array(parts.length);
   for (let i = 0; i < parts.length; i++) values[i] = parseFloat(parts[i]!);
   return { observedAt, values };
+}
+
+/** 解析 compref_mosaic.xml（合成回波，dBZ） */
+export function parseCompositeReflectivity(xml: string): CompositeGrid {
+  return parseCwaGrid(xml, RADAR_GRID, "雷達格點");
+}
+
+/**
+ * F-B0046-001「未來 1 小時雷達定量降雨預報」：雷達回波外延，估未來 1 小時累積雨量（mm），
+ * 每 10 分鐘更新、只有最新一筆。格點與雷達同為 0.0125°、TWD67，中心點由東經 118、北緯 20 起算，
+ * 所以與 RADAR_REGION 的像素一一對齊。DateTime 是預報起點，涵蓋之後 1 小時。
+ */
+export const QPF_GRID = { lon0: 118, lat0: 20, res: 0.0125, nx: 441, ny: 561 } as const;
+
+export function parseRainNowcast(xml: string): CompositeGrid {
+  return parseCwaGrid(xml, QPF_GRID, "降雨預報格點");
 }
 
 /** 超過色階（52 dBZ 以上）的顏色；dbzFromColor 對不上色階，只說「回波很強」不猜數值 */
@@ -175,6 +190,30 @@ export function renderRadarRegion(values: Float32Array): Uint8Array {
     const row = row1 - 1 - py;
     for (let px = 0; px < width; px++) {
       out.set(colorForDbz(values[row * nx + col0 + px]!), (py * width + px) * 4);
+    }
+  }
+  return out;
+}
+
+/**
+ * 把未來 1 小時雨量畫成與雷達同範圍、同色階的 RGBA：1 小時累積 mm 即平均 mm/h，
+ * 換回 dBZ 上色，圖例共用。沒有雨（0）、無效值（-99）、超出格點範圍為透明。
+ */
+export function renderNowcastRegion(values: Float32Array): Uint8Array {
+  const { lon0, lat0, res, nx, ny } = QPF_GRID;
+  const { width, height } = RADAR_IMAGE_SIZE;
+  // 雷達圖像素中心 → 降雨預報格點索引（兩者同解析度，只差起點）
+  const colOffset = Math.round((RADAR_GRID.lon0 + RADAR_REGION.col0 * RADAR_GRID.res - lon0) / res);
+  const topRow = Math.round((RADAR_GRID.lat0 + (RADAR_REGION.row1 - 1) * RADAR_GRID.res - lat0) / res);
+  const out = new Uint8Array(width * height * 4);
+  for (let py = 0; py < height; py++) {
+    const row = topRow - py;
+    if (row < 0 || row >= ny) continue;
+    for (let px = 0; px < width; px++) {
+      const col = colOffset + px;
+      if (col < 0 || col >= nx) continue;
+      const mm = values[row * nx + col]!;
+      if (mm > 0) out.set(colorForDbz(dbzFromRainRate(mm)), (py * width + px) * 4);
     }
   }
   return out;

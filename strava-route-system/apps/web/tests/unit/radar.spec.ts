@@ -21,6 +21,9 @@ import {
   latestRadarFrames,
   legendTicks,
   parseCompositeReflectivity,
+  parseRainNowcast,
+  QPF_GRID,
+  renderNowcastRegion,
   pointAtKm,
   projectToExtent,
   projectToView,
@@ -138,6 +141,27 @@ test.describe("合成回波格點", () => {
     expect(isInRadarExtent([118.3, 24.4, 118.45, 24.5])).toBe(true); // 金門
     expect(isInRadarExtent([139.7, 35.6, 139.8, 35.7])).toBe(false);
     expect(isInRadarExtent([NaN, 25, 121, 25.1])).toBe(false);
+  });
+});
+
+test.describe("未來 1 小時降雨預報", () => {
+  test("解析並與雷達圖像素對齊：左上像素是第 519 列第 0 欄", () => {
+    const xml = compositeXml([[519, 0, 3], [519, 1, 0], [518, 2, 30]], QPF_GRID).replace(
+      `<StartPointLongitude>${QPF_GRID.lon0.toFixed(1)}`,
+      `<StartPointLongitude>${QPF_GRID.lon0}`
+    );
+    const { values } = parseRainNowcast(xml);
+    const rgba = renderNowcastRegion(values);
+    // 3 mm/h 的顏色與 dBZ 色階一致，圖例共用
+    const [r, g, b, a] = [...rgba.slice(0, 4)];
+    expect(dbzFromColor(r!, g!, b!, a!).dbz).toBe(Math.floor(dbzFromRainRate(3)));
+    expect(rgba[7]).toBe(0); // 0 mm 透明
+    const below = (RADAR_IMAGE_SIZE.width + 2) * 4;
+    expect(dbzFromColor(...([...rgba.slice(below, below + 4)] as [number, number, number, number])).echo).toBe(true);
+  });
+
+  test("格點規格不符就丟錯", () => {
+    expect(() => parseRainNowcast(compositeXml([], RADAR_GRID))).toThrow();
   });
 });
 
