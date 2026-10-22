@@ -73,18 +73,28 @@ export async function stubRoutes(page: Page, routes: Route[]) {
 }
 
 /** 1×1 透明 PNG：雷達圖內容不重要，只測入口與文字 */
-const BLANK_PNG =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+const BLANK_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+  "base64"
+);
 
-/** 雷達回波：觀測時間（ISO）或 "error"；後註冊的攔截優先，可覆蓋 stubRoutes 的預設 */
-export async function stubRadar(page: Page, observedAt: string | "error") {
-  await page.route("**/api/radar?**", (r) =>
-    observedAt === "error"
-      ? r.fulfill({ status: 502, json: { error: "雷達資料暫時取不到" } })
-      : r.fulfill({
-          json: { observedAt, extent: [121.4, 24.9, 121.7, 25.4], image: BLANK_PNG, towns: "" },
-        })
-  );
+/**
+ * 雷達回波：最新一張的觀測時間（ISO）或 "error"；清單會往前補到一小時（每 10 分鐘一張）。
+ * 後註冊的攔截優先，可覆蓋 stubRoutes 的預設。
+ */
+export async function stubRadar(page: Page, latestObservedAt: string | "error") {
+  await page.route("**/api/radar", (r) => {
+    if (latestObservedAt === "error") return r.fulfill({ status: 502, json: { error: "雷達資料暫時取不到" } });
+    const latest = Date.parse(latestObservedAt);
+    const frames = Array.from({ length: 7 }, (_, i) => {
+      const t = new Date(latest - (6 - i) * 10 * 60 * 1000 + 8 * 3600 * 1000).toISOString();
+      const id = t.slice(0, 16).replace(/\D/g, "");
+      return { id, observedAt: `${t.slice(0, 16)}:00+08:00` };
+    });
+    return r.fulfill({ json: { frames } });
+  });
+  await page.route("**/api/radar/frame?**", (r) => r.fulfill({ contentType: "image/png", body: BLANK_PNG }));
+  await page.route("**/api/radar/basemap", (r) => r.fulfill({ json: { towns: "" } }));
 }
 
 /** 路況事件；"error" 模擬 TDX 失敗（判讀端 eventsFailed 為 null） */
