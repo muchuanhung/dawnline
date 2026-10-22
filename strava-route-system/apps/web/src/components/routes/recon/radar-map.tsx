@@ -160,26 +160,52 @@ function useSize(ref: React.RefObject<Element | null>): { width: number; height:
 }
 
 /**
- * 回放：自動由舊到新循環，最新一張多停一下；使用者點時間軸就停在那張。
+ * 預先下載每張圖，回傳已載入的 id。圖還沒到的那張不能顯示：
+ * 空白的地圖看起來像「沒有雨」，未載入 ≠ 沒有回波。
+ */
+export function useRadarFramesLoaded(frames: RadarFrame[]): Set<string> {
+  const [loaded, setLoaded] = useState<Set<string>>(() => new Set());
+  const key = frames.map((f) => f.id).join(",");
+  useEffect(() => {
+    let cancelled = false;
+    for (const f of frames) {
+      const img = new Image();
+      img.onload = () => {
+        if (!cancelled) setLoaded((prev) => (prev.has(f.id) ? prev : new Set(prev).add(f.id)));
+      };
+      img.src = radarFrameUrl(f);
+    }
+    return () => {
+      cancelled = true;
+    };
+    // frames 以 id 串比對，同一輪圖不重抓
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return loaded;
+}
+
+/**
+ * 回放：全部載入後自動由舊到新循環，最新一張多停一下；使用者點時間軸就停在那張。
  * 系統設定「減少動態」時不自動播放，停在最新一張。
  */
-export function useRadarPlayback(frames: RadarFrame[], autoPlay: boolean) {
+export function useRadarPlayback(frames: RadarFrame[], ready: boolean) {
   const count = frames.length;
   const latestId = frames.at(-1)?.id;
   const [index, setIndex] = useState(count - 1);
   const [playing, setPlaying] = useState(false);
 
-  // 換了一輪圖（新觀測進來）就回到最新一張
+  // 換了一輪圖（新觀測進來）就回到最新一張，載入完再播
   useEffect(() => {
     setIndex(count - 1);
+    setPlaying(false);
   }, [latestId, count]);
 
   useEffect(() => {
-    if (!autoPlay || count < 2) return;
+    if (!ready || count < 2) return;
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
     setIndex(0);
     setPlaying(true);
-  }, [autoPlay, count]);
+  }, [ready, count, latestId]);
 
   useEffect(() => {
     if (!playing || count < 2) return;
@@ -201,6 +227,7 @@ export function useRadarPlayback(frames: RadarFrame[], autoPlay: boolean) {
 /** 播放列：播放／暫停、每張一格的時間軸（可點）、周邊／全台 */
 export function RadarControls({
   frames,
+  loaded,
   index,
   playing,
   onToggle,
@@ -210,6 +237,8 @@ export function RadarControls({
   className,
 }: {
   frames: RadarFrame[];
+  /** 已載入的圖；沒載入的格子不能點 */
+  loaded: Set<string>;
   index: number;
   playing: boolean;
   onToggle: () => void;
@@ -225,7 +254,7 @@ export function RadarControls({
       <button
         type="button"
         onClick={onToggle}
-        disabled={frames.length < 2}
+        disabled={frames.length < 2 || loaded.size < frames.length}
         aria-label={playing ? "暫停回放" : "播放過去一小時"}
         className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full bg-white/15 hover:bg-white/25 disabled:opacity-40"
       >
@@ -241,9 +270,10 @@ export function RadarControls({
             key={f.id}
             type="button"
             onClick={() => onSeek(i)}
+            disabled={!loaded.has(f.id)}
             aria-label={`${radarTimeLabel(f.observedAt)} 的雷達圖`}
             aria-pressed={i === index}
-            className="flex h-full flex-1 cursor-pointer items-center"
+            className="flex h-full flex-1 cursor-pointer items-center disabled:cursor-wait disabled:opacity-40"
           >
             <span className={cn("h-1.5 w-full rounded-full", i === index ? "bg-white" : i < index ? "bg-white/50" : "bg-white/20")} />
           </button>

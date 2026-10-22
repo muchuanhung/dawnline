@@ -209,8 +209,8 @@ type ViewRect = { minX: number; minY: number; maxX: number; maxY: number };
 
 /** 取景範圍：「周邊」看路線附近約 70 km，「全台」看整個本島與澎湖 */
 export type RadarZoom = "near" | "taiwan";
-/** 周邊至少涵蓋的南北範圍（地圖單位，約 0.7° ≈ 77 km），雨帶一小時移動的距離看得到 */
-const NEAR_MIN_HEIGHT = 70;
+/** 周邊取景的短邊至少這麼長（地圖單位，約 60 km），雨帶一小時移動的距離看得到 */
+const NEAR_MIN_SHORT_SIDE = 55;
 /** 本島＋澎湖（WGS84） */
 const TAIWAN_BOX: Extent = [119.3, 21.85, 122.05, 25.35];
 
@@ -237,7 +237,9 @@ export function radarViewBox(routeBox: Extent | null, zoom: RadarZoom, aspect: n
       insets
     );
   }
-  return fitViewBox(viewRectOf(routeBox), aspect, insets, NEAR_MIN_HEIGHT);
+  // 直式螢幕短邊是寬，橫式是高
+  const minHeight = aspect < 1 ? NEAR_MIN_SHORT_SIDE / aspect : NEAR_MIN_SHORT_SIDE;
+  return fitViewBox(viewRectOf(routeBox), aspect, insets, minHeight);
 }
 
 /**

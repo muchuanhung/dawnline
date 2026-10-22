@@ -40,6 +40,7 @@ import {
   RadarLegend,
   RadarMap,
   radarTimeLabel,
+  useRadarFramesLoaded,
   useRadarHere,
   useRadarPlayback,
 } from "./radar-map";
@@ -79,9 +80,11 @@ function RadarPanel({
   className?: string;
   actions?: React.ReactNode;
 }) {
-  const playback = useRadarPlayback(radar.frames, true);
+  const loaded = useRadarFramesLoaded(radar.frames);
+  const playback = useRadarPlayback(radar.frames, loaded.size === radar.frames.length);
   const [zoom, setZoom] = useState<RadarZoom>("near");
   const frame = radar.frames[playback.index]!;
+  const frameLoaded = loaded.has(frame.id);
   const here = useRadarHere(frame, polyline, positionKm);
   return (
     <div className={cn("relative overflow-hidden bg-[#0b1220]", className)}>
@@ -94,16 +97,24 @@ function RadarPanel({
         insets={insets}
         className="absolute inset-0 h-full w-full"
       />
+      {!frameLoaded && (
+        <p role="status" className="absolute inset-0 flex items-center justify-center gap-2 bg-[#0b1220]/70 text-sm text-white">
+          <Spinner size="sm" dotClassName="bg-white" />
+          雷達圖載入中
+        </p>
+      )}
       <div className="absolute inset-x-0 bottom-0 space-y-2 bg-gradient-to-t from-black/90 via-black/70 to-transparent px-3 pb-2 pt-8">
         <div className="flex items-end justify-between gap-3">
-          <p className="min-w-0 truncate text-xs text-white">
-            {[here, "只供參考，不影響判定"].filter(Boolean).join("・")}
+          <p className="min-w-0 text-xs leading-snug text-white">
+            {here && <span className="block font-medium">{here}</span>}
+            不影響判定
           </p>
-          <RadarLegend className="w-40 shrink-0 sm:w-56" />
+          <RadarLegend className="w-36 shrink-0 sm:w-56" />
         </div>
         <div className="flex items-center gap-1">
           <RadarControls
             frames={radar.frames}
+            loaded={loaded}
             index={playback.index}
             playing={playback.playing}
             onToggle={playback.toggle}
@@ -440,7 +451,6 @@ function CctvStage({
 /** 沒有鏡頭（載入中、載入失敗、沿途沒有、離線）：主視覺改成判定本身，不留空黑框 */
 function NoCctvStage({
   verdict,
-  verdictLoading,
   headlinePending,
   cctvLoading,
   cctvError,
@@ -451,7 +461,6 @@ function NoCctvStage({
   onOpenRadar,
 }: RadarProps & {
   verdict: ReconVerdict;
-  verdictLoading: boolean;
   headlinePending: boolean;
   cctvLoading: boolean;
   cctvError: boolean;
@@ -608,7 +617,6 @@ export function ReconHero({
       ) : (
         <NoCctvStage
           verdict={verdict}
-          verdictLoading={verdictLoading}
           radar={radar}
           polyline={polyline}
           positionKm={positionKm}

@@ -142,11 +142,14 @@ test.describe("取景", () => {
     expect(RADAR_VIEW.width / RADAR_VIEW.height).toBeCloseTo(Math.cos((24 * Math.PI) / 180), 2);
   });
 
-  test("周邊：包住路線，南北至少約 77 km", () => {
+  test("周邊：包住路線，直式橫式的短邊都至少約 60 km", () => {
+    const [, , wide, low] = radarViewBox(YANGMINGSHAN, "near", 2.3, { top: 0.15, bottom: 0.35 });
+    expect(low).toBeGreaterThanOrEqual(55 - 1e-9);
+    expect(wide).toBeGreaterThan(low);
     const r = viewRectOf(YANGMINGSHAN);
     const [x, y, w, h] = radarViewBox(YANGMINGSHAN, "near", 0.5, { top: 0, bottom: 0.25 });
     expect(w / h).toBeCloseTo(0.5, 6);
-    expect(h).toBeGreaterThanOrEqual(70 - 1e-9);
+    expect(w).toBeGreaterThanOrEqual(55 - 1e-9);
     expect(x).toBeLessThanOrEqual(r.minX);
     expect(x + w).toBeGreaterThanOrEqual(r.maxX);
     expect(y).toBeLessThanOrEqual(r.minY);
