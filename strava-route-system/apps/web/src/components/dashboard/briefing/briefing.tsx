@@ -67,7 +67,7 @@ export async function Briefing({
   );
 }
 
-/** 判讀卡與沿途示警：只判讀目前這一條路線（快取 10 分鐘，與 AI 摘要、預熱共用） */
+/** 判讀卡與沿途示警：只判讀目前這一條路線（判讀輸入讀 Firestore，由排程每 10 分鐘更新） */
 async function BriefingResult({ routeId, trip, tripParams }: { routeId: string; trip: Trip; tripParams: TripParams }) {
   const featured = await getRouteBriefing(routeId, {
     departure: trip.departure ?? undefined,

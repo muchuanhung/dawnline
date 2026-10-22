@@ -36,11 +36,9 @@ const VERDICT_PILL: Record<VerdictLevel, string> = {
 function VerdictOverlay({
   verdict,
   loading,
-  headlinePending,
 }: {
   verdict: ReconVerdict;
   loading: boolean;
-  headlinePending: boolean;
 }) {
   const word = VERDICT_LEVEL_STYLE[verdict.level].word;
   return (
@@ -65,30 +63,15 @@ function VerdictOverlay({
           )}
         </span>
       </p>
-      {!loading &&
-        (headlinePending ? (
-          <HeadlineSkeleton className="mt-2 h-4 bg-white/25" />
-        ) : (
-          <p className="mt-1.5 text-sm font-medium leading-snug">
-            {verdict.headline}
-          </p>
-        ))}
+      {!loading && (
+        <p className="mt-1.5 text-sm font-medium leading-snug">
+          {verdict.headline}
+        </p>
+      )}
       {!loading && verdict.note && (
         <p className="mt-0.5 text-xs text-white/75">{verdict.note}</p>
       )}
     </div>
-  );
-}
-
-/** 判定句等 AI 摘要時的骨架：只佔句子的位置，判定詞照常顯示 */
-export function HeadlineSkeleton({ className }: { className?: string }) {
-  return (
-    <span
-      role="status"
-      className={cn("block w-3/4 max-w-xs animate-pulse rounded", className)}
-    >
-      <span className="sr-only">判定說明載入中</span>
-    </span>
   );
 }
 
@@ -98,13 +81,11 @@ function CctvStage({
   positionKm,
   verdict,
   verdictLoading,
-  headlinePending,
 }: {
   marker: CctvMarker;
   positionKm: number;
   verdict: ReconVerdict;
   verdictLoading: boolean;
-  headlinePending: boolean;
 }) {
   const title = cctvTitle(marker);
   const isFar = Math.abs(marker.km - positionKm) > CCTV_FAR_KM;
@@ -113,11 +94,7 @@ function CctvStage({
     <Dialog>
       <div className="relative flex h-64 items-center justify-center overflow-hidden bg-black sm:h-80">
         <CctvFrame key={marker.id} marker={marker} large />
-        <VerdictOverlay
-          verdict={verdict}
-          loading={verdictLoading}
-          headlinePending={headlinePending}
-        />
+        <VerdictOverlay verdict={verdict} loading={verdictLoading} />
         <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-black/65 pl-4 text-white">
           <p className="min-w-0 truncate text-xs">
             {isFar && "最近一台："}
@@ -155,20 +132,18 @@ function CctvStage({
 /** 沒有鏡頭（載入中、載入失敗、沿途沒有、離線）：主視覺改成判定本身，不留空黑框 */
 function NoCctvStage({
   verdict,
-  headlinePending,
   cctvLoading,
   cctvError,
   cctvOffline,
 }: {
   verdict: ReconVerdict;
-  headlinePending: boolean;
   cctvLoading: boolean;
   cctvError: boolean;
   cctvOffline: boolean;
 }) {
   return (
     <div>
-      <RouteVerdictBar verdict={verdict} headlinePending={headlinePending} />
+      <RouteVerdictBar verdict={verdict} />
       <p
         className="flex items-center gap-2 px-4 pt-3 text-sm text-muted-foreground"
         role={cctvLoading ? "status" : undefined}
@@ -238,7 +213,6 @@ function ZoneCallout({
 export function ReconHero({
   verdict,
   verdictLoading,
-  headlinePending = false,
   markers,
   activeMarker,
   cctvLoading,
@@ -257,8 +231,6 @@ export function ReconHero({
   verdict: ReconVerdict;
   /** 判讀尚未回來 */
   verdictLoading: boolean;
-  /** 判定句還在等 AI 摘要：句子位置顯示骨架 */
-  headlinePending?: boolean;
   markers: CctvMarker[];
   activeMarker: CctvMarker | null;
   cctvLoading: boolean;
@@ -288,12 +260,10 @@ export function ReconHero({
           positionKm={positionKm}
           verdict={verdict}
           verdictLoading={verdictLoading}
-          headlinePending={headlinePending}
         />
       ) : (
         <NoCctvStage
           verdict={verdict}
-          headlinePending={headlinePending}
           cctvLoading={cctvLoading}
           cctvError={cctvError}
           cctvOffline={cctvOffline}

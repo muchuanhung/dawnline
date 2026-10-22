@@ -49,7 +49,7 @@ async function briefPublicRoute(routeId: string, trip: TripOptions): Promise<Rou
 }
 
 /**
- * 單一路線判讀（Dashboard、/routes、AI 摘要、預熱排程共用）；與 Dashboard 同一條流程，前端不再自行判定。
+ * 單一路線判讀（Dashboard、/routes 共用）；與 Dashboard 同一條流程，前端不再自行判定。
  * 不把整份判讀包進 unstable_cache：包在裡面時，裡面的快取與 fetch 快取全部會被略過（Next 對巢狀快取一律不讀不寫）。
  * 判讀本身是純計算，外部資料由 loadBriefingInputs 從 Firestore 取得。
  */
