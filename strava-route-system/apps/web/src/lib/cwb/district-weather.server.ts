@@ -172,8 +172,14 @@ export async function getCountyRainfallStations(county: string): Promise<Station
     const res = await fetch(rainfallUrl(`Authorization=${encodeURIComponent(key)}`, cwbCounty), {
       next: { revalidate: 600 },
     });
-    return res.ok ? parseRainfallStations(await res.json(), cwbCounty) : null;
-  } catch {
+    if (!res.ok) {
+      // 暫時的診斷紀錄（Vercel Logs 搜尋「判讀計時」）；查明雨量站一直取不到的原因後移除
+      console.warn(`[判讀計時] 雨量站 ${cwbCounty} HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+      return null;
+    }
+    return parseRainfallStations(await res.json(), cwbCounty);
+  } catch (e) {
+    console.warn(`[判讀計時] 雨量站 ${cwbCounty} 失敗: ${e instanceof Error ? e.message : String(e)}`);
     return null;
   }
 }
