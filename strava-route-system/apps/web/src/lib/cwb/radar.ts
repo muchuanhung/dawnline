@@ -27,6 +27,8 @@ export const TWD67_SHIFT = { lon: 0.0082, lat: -0.0019 } as const;
 
 /** 地圖固定 4:3（以公里計），手機子母畫面與桌機主視覺共用同一張裁切圖 */
 export const RADAR_ASPECT = 4 / 3;
+/** 地圖 SVG 的座標尺寸（4:3）；雷達圖、鄉鎮界、路線都投影到這個座標 */
+export const RADAR_VIEW = { width: 400, height: 300 } as const;
 /** 路線外圍至少留的距離比例，與最小涵蓋範圍（緯度約 22 km），讓接近中的雨帶看得到 */
 const PAD_RATIO = 0.25;
 const MIN_LAT_SPAN = 0.2;
