@@ -1,16 +1,22 @@
 /**
  * 今日判讀的資料組裝（伺服器端專用）
- * 路線與各行政區天氣平行抓取；路線清單、行政區天氣、TDX 事件各自快取 10 分鐘。
+ * 外部資料（CWB 行政區天氣、縣市雨量站、TDX 事件）先讀 Firestore 裡的判讀輸入，
+ * 缺或過期才當場抓並寫回；Inngest 每 10 分鐘把公開路線用到的輸入全部更新一次。
  * Dashboard 只判讀畫面上那一條路線。
  */
 
-import { unstable_cache } from "next/cache";
 import { loadRoutes } from "@/lib/routes/load-routes.server";
 import type { Route } from "@/lib/routes/route-data";
 import { demoRoadEvents } from "@/lib/routes/demo-route";
+import type { RoadEvent } from "@/lib/routes/road-events";
 import type { Activity } from "@/lib/routes/trip";
+import type { StationRain } from "@/lib/cwb/rainfall-stations";
+import { normalizeCountyForCWB } from "@/lib/cwb/county-map";
 import { getCountyRainfallStations, getDistrictWeather } from "@/lib/cwb/district-weather.server";
-import { getRoadEvents } from "@/lib/tdx/road-events.server";
+import { tdxCityCode } from "@/lib/tdx/client";
+import { getRoadEventsByCounty, type RoadEventsResult } from "@/lib/tdx/road-events.server";
+import { readBriefingInputs, writeBriefingInputs } from "@/lib/background/briefing-inputs.firestore";
+import { freshInputs, inputId, type StoredInput } from "@/lib/dashboard/briefing-inputs";
 import {
   briefRoute,
   mapCwbCondition,
@@ -26,52 +32,6 @@ export interface TripOptions {
   activity?: Activity;
   /** 途中模式：目前在路線上的里程；只對 getRouteBriefing 的單一路線有意義 */
   fromKm?: number;
-}
-
-/** 行政區天氣快取秒數（與 CWB 即時雨量相同） */
-const WEATHER_CACHE_SECONDS = 600;
-/** 快取過期後背景重抓期間最多再沿用 5 分鐘，再舊就當場重抓，不拿舊天氣判讀 */
-const WEATHER_MAX_AGE_MS = (WEATHER_CACHE_SECONDS + 300) * 1000;
-
-/**
- * 行政區天氣，只快取解析後的小結果。
- * getDistrictWeather 自己的 fetch 快取對鄉鎮預報（F-D0047 整個縣市）與日出日落（全年）無效：
- * 原始回應超過 Next 資料快取 2 MB 上限就不會被存，每次判讀都要從 CWB 重抓（實測 6 行政區約 5–6 秒）。
- */
-const cachedDistrictWeather = unstable_cache(
-  async (county: string, district: string) => ({
-    weather: await getDistrictWeather(county, district),
-    fetchedAt: Date.now(),
-  }),
-  ["district-weather-v1"],
-  { revalidate: WEATHER_CACHE_SECONDS }
-);
-
-async function districtWeather(county: string, district: string) {
-  const cached = await cachedDistrictWeather(county, district);
-  if (Date.now() - cached.fetchedAt <= WEATHER_MAX_AGE_MS) return cached.weather;
-  return getDistrictWeather(county, district);
-}
-
-/** 縣市即時雨量站同樣只快取解析後的測站清單；取不到（null）不進快取，下次重抓 */
-const cachedRainfallStations = unstable_cache(
-  async (county: string) => {
-    const stations = await getCountyRainfallStations(county);
-    if (!stations) throw new Error(`雨量站取不到：${county}`);
-    return { stations, fetchedAt: Date.now() };
-  },
-  ["rainfall-stations-v1"],
-  { revalidate: WEATHER_CACHE_SECONDS }
-);
-
-async function rainfallStations(county: string) {
-  try {
-    const cached = await cachedRainfallStations(county);
-    if (Date.now() - cached.fetchedAt <= WEATHER_MAX_AGE_MS) return cached.stations;
-  } catch {
-    // 取不到時下面直接重抓一次；仍失敗回 null，判讀視為附近無測站
-  }
-  return getCountyRainfallStations(county);
 }
 
 /** 首頁未登入用：前 N 條路線（loadRoutes 排序）的即時判讀 */
@@ -90,8 +50,8 @@ async function briefPublicRoute(routeId: string, trip: TripOptions): Promise<Rou
 
 /**
  * 單一路線判讀（Dashboard、/routes、AI 摘要、預熱排程共用）；與 Dashboard 同一條流程，前端不再自行判定。
- * 不把整份判讀包進 unstable_cache：包在裡面時，路線清單、TDX 事件、CWB fetch 的快取全部會被略過
- * （Next 對巢狀快取一律不讀不寫），每次都要重抓。判讀本身是純計算，靠這些輸入各自的快取就夠快。
+ * 不把整份判讀包進 unstable_cache：包在裡面時，裡面的快取與 fetch 快取全部會被略過（Next 對巢狀快取一律不讀不寫）。
+ * 判讀本身是純計算，外部資料由 loadBriefingInputs 從 Firestore 取得。
  */
 export async function getRouteBriefing(routeId: string, trip: TripOptions = {}): Promise<RouteBriefing | null> {
   const started = Date.now();
@@ -109,54 +69,129 @@ export async function briefLoadedRoute(route: Route, trip: TripOptions = {}): Pr
   return (await briefRoutes([route], trip, route.id)).briefings[0] ?? null;
 }
 
-/** suggestFor：只替這條路線試算建議出發時段（畫面只顯示目前路線的建議） */
-async function briefRoutes(routes: Route[], trip: TripOptions = {}, suggestFor?: string) {
+const errorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** CWB 回應轉成判讀用的行政區天氣（存進判讀輸入的也是這份，比原始回應小） */
+function toDistrictWeather(w: Awaited<ReturnType<typeof getDistrictWeather>>): DistrictWeather {
+  const first = w.rainfall12h[0];
+  return {
+    rainProbability: first?.pop ?? 0,
+    windSpeedKmh: w.windSpeedKmh,
+    temperature: w.temperature,
+    condition: mapCwbCondition(w.condition),
+    periodLabel: first ? `${first.label}–${first.endLabel}` : null,
+    rainfallBuckets: w.rainfall12h,
+    windBuckets: w.windBuckets,
+    stale: w.stale,
+  };
+}
+
+/**
+ * 判讀需要的外部資料。先一次讀出 Firestore 裡的判讀輸入，缺或過期的才當場向 CWB／TDX 抓，抓到的寫回。
+ * 取不到的資料一律缺席（天氣不進 lookup、事件縣市列入 failed），由判讀改判 unknown，不當成安全。
+ * force：排程更新用，不讀 Firestore、全部重抓。
+ */
+async function loadBriefingInputs(routes: Route[], { force = false } = {}) {
   const keys = routeDistrictKeys(routes);
   const counties = [...new Set(routes.flatMap((r) => r.segments.map((s) => s.county).filter((c): c is string => !!c)))];
-  // 天氣與路況事件平行取得；事件失敗不影響天氣判讀
-  const t0 = Date.now();
-  // 暫時的分段計時（從開始到各資料回來的時間）；查完就移除
-  const lap = (label: string) => <T,>(v: T): T => {
-    console.info(`[判讀計時] ${label} ${Date.now() - t0}ms`);
-    return v;
-  };
-  const eventsPromise = getRoadEvents(counties).then(lap(`TDX 事件 ${counties.length} 縣市`)).catch((e) => {
-    console.warn("路況事件取得失敗:", e instanceof Error ? e.message : e);
-    return null;
-  });
-  // 即時雨量站每縣市抓一次，再依各路線自己的座標篩 3 km 內測站
+  // TDX 以正式縣市名存放（台北縣、新北市同一份）；查無 TDX 代碼的縣市本來就不抓
+  const tdxCounties = [...new Set(counties.filter((c) => tdxCityCode(c)).map(normalizeCountyForCWB))];
+  const ids = [
+    ...keys.map((k) => inputId("weather", k)),
+    ...counties.map((c) => inputId("rain", c)),
+    ...tdxCounties.map((c) => inputId("tdx", c)),
+  ];
+
+  const started = Date.now();
+  let stored = new Map<string, StoredInput>();
+  if (!force) {
+    try {
+      stored = await readBriefingInputs(ids);
+    } catch (e) {
+      console.warn("判讀輸入讀取失敗，改為即時抓取:", errorMessage(e));
+    }
+  }
+  const { fresh, missing } = freshInputs(stored, ids, Date.now());
+  const toWrite: { id: string; data: unknown; fetchedAt: number }[] = [];
+  const save = (id: string, data: unknown) => toWrite.push({ id, data, fetchedAt: Date.now() });
+
+  // TDX：只抓缺的縣市（依序、限流就停）；整個服務失敗回 null，判讀視為事件取不到
+  const eventsPromise = (async (): Promise<RoadEventsResult | null> => {
+    const events: RoadEvent[] = [];
+    const missingCounties: string[] = [];
+    for (const c of tdxCounties) {
+      const stored = fresh.get(inputId("tdx", c));
+      // 形狀不對就當作沒有，重抓；不可當成「沒有事件」
+      if (Array.isArray(stored)) events.push(...(stored as RoadEvent[]));
+      else missingCounties.push(c);
+    }
+    if (missingCounties.length === 0) return { events, failed: [] };
+    try {
+      const live = await getRoadEventsByCounty(missingCounties);
+      for (const [c, list] of live.byCounty) {
+        save(inputId("tdx", c), list);
+        events.push(...list);
+      }
+      return { events, failed: live.failed };
+    } catch (e) {
+      console.warn("路況事件取得失敗:", errorMessage(e));
+      return null;
+    }
+  })();
+
+  // 即時雨量站每縣市一份，再依各路線自己的座標篩 3 km 內測站；取不到（null）不存
   const stationsPromise = Promise.all(
-    counties.map(async (c) => [c, await rainfallStations(c)] as const)
-  )
-    .then(lap("雨量站"))
-    .then((entries) => new Map(entries));
-  const results = await Promise.allSettled(
+    counties.map(async (c) => {
+      const id = inputId("rain", c);
+      const stored = fresh.get(id);
+      if (Array.isArray(stored)) return [c, stored as StationRain[]] as const;
+      const stations = await getCountyRainfallStations(c);
+      if (stations) save(id, stations);
+      return [c, stations] as const;
+    })
+  ).then((entries) => new Map(entries));
+
+  const weatherResults = await Promise.allSettled(
     keys.map(async (key) => {
+      const id = inputId("weather", key);
+      const stored = fresh.get(id);
+      if (stored && typeof stored === "object") return [key, stored as DistrictWeather] as const;
       const [county, district] = key.split("|") as [string, string];
-      const w = await districtWeather(county, district);
-      const first = w.rainfall12h[0];
-      const weather: DistrictWeather = {
-        rainProbability: first?.pop ?? 0,
-        windSpeedKmh: w.windSpeedKmh,
-        temperature: w.temperature,
-        condition: mapCwbCondition(w.condition),
-        periodLabel: first ? `${first.label}–${first.endLabel}` : null,
-        rainfallBuckets: w.rainfall12h,
-        windBuckets: w.windBuckets,
-        stale: w.stale,
-      };
+      const weather = toDistrictWeather(await getDistrictWeather(county, district));
+      save(id, weather);
       return [key, weather] as const;
     })
   );
-
-  lap(`CWB 天氣 ${keys.length} 行政區`)(null);
   const lookup = new Map<string, DistrictWeather>();
-  for (const r of results) {
+  for (const r of weatherResults) {
     if (r.status === "fulfilled") lookup.set(r.value[0], r.value[1]);
-    else console.warn("行政區天氣取得失敗:", r.reason instanceof Error ? r.reason.message : r.reason);
+    else console.warn("行政區天氣取得失敗:", errorMessage(r.reason));
   }
-
   const [eventsResult, stationsByCounty] = await Promise.all([eventsPromise, stationsPromise]);
+
+  try {
+    await writeBriefingInputs(toWrite);
+  } catch (e) {
+    // 寫回失敗只影響下次速度，不影響這次判讀
+    console.warn("判讀輸入寫回失敗:", errorMessage(e));
+  }
+  // 暫時的計時紀錄（Vercel Logs 搜尋「判讀計時」）；確認變快後移除
+  console.info(`[判讀計時] 輸入 ${ids.length} 項，重抓 ${missing.length} 項 ${Date.now() - started}ms`);
+  return { lookup, eventsResult, stationsByCounty, refetched: missing.length, total: ids.length };
+}
+
+/**
+ * 排程用：重抓所有公開路線用到的判讀輸入並寫入 Firestore，使用者請求就不必再打 CWB／TDX。
+ * 回傳筆數供 Inngest 顯示。
+ */
+export async function refreshBriefingInputs(): Promise<{ inputs: number; eventsFailed: string[] | null }> {
+  const { total, eventsResult } = await loadBriefingInputs(await loadRoutes(), { force: true });
+  return { inputs: total, eventsFailed: eventsResult ? eventsResult.failed : null };
+}
+
+/** suggestFor：只替這條路線試算建議出發時段（畫面只顯示目前路線的建議） */
+async function briefRoutes(routes: Route[], trip: TripOptions = {}, suggestFor?: string) {
+  const { lookup, eventsResult, stationsByCounty } = await loadBriefingInputs(routes);
   const now = new Date();
   const eventsFailed = eventsResult ? eventsResult.failed : null;
   const briefings = routes.map((route) =>
