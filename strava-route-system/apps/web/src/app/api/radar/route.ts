@@ -8,20 +8,9 @@
  */
 
 import { NextResponse } from "next/server";
-import { RADAR_VIEW, radarCropFor, type Extent } from "@/lib/cwb/radar";
+import { RADAR_VIEW, radarCropFor, type Extent, type RadarResponse } from "@/lib/cwb/radar";
 import { getRadarCrop } from "@/lib/cwb/radar.server";
 import { townOutlinesInExtent } from "@/lib/maps/taiwan-towns-topojson";
-
-export interface RadarResponse {
-  /** 觀測時間（ISO，+08:00） */
-  observedAt: string;
-  /** 圖的範圍（WGS84） */
-  extent: Extent;
-  /** 裁切後的透明 PNG */
-  image: string;
-  /** 鄉鎮界，座標為 RADAR_VIEW 寬高 */
-  towns: string;
-}
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);

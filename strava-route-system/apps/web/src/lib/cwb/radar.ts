@@ -25,15 +25,44 @@ export const RADAR_STALE_MS = 30 * 60 * 1000;
  */
 export const TWD67_SHIFT = { lon: 0.0082, lat: -0.0019 } as const;
 
-/** 地圖固定 4:3（以公里計），手機子母畫面與桌機主視覺共用同一張裁切圖 */
-export const RADAR_ASPECT = 4 / 3;
-/** 地圖 SVG 的座標尺寸（4:3）；雷達圖、鄉鎮界、路線都投影到這個座標 */
-export const RADAR_VIEW = { width: 400, height: 300 } as const;
-/** 路線外圍至少留的距離比例，與最小涵蓋範圍（緯度約 22 km），讓接近中的雨帶看得到 */
-const PAD_RATIO = 0.25;
+/**
+ * 裁切圖固定寬 2.4:1（以公里計），比桌機主視覺還寬；手機與子母畫面再由 fitViewBox 依容器比例取景，
+ * 所有裝置共用同一張圖（同一個 CDN 快取）。
+ */
+export const RADAR_ASPECT = 2.4;
+/** 地圖 SVG 的座標尺寸（與 RADAR_ASPECT 同比例）；雷達圖、鄉鎮界、路線都投影到這個座標 */
+export const RADAR_VIEW = { width: 480, height: 200 } as const;
+/** 南北留路線高度的倍數（判定與底部列會蓋住上下），東西的倍數，與最小涵蓋範圍（緯度約 22 km） */
+const LAT_PAD = 3.2;
+const LON_PAD = 1.6;
 const MIN_LAT_SPAN = 0.2;
 
 export type Extent = [minLon: number, minLat: number, maxLon: number, maxLat: number];
+
+/** GET /api/radar 的回應 */
+export interface RadarResponse {
+  /** 觀測時間（ISO，+08:00） */
+  observedAt: string;
+  /** 圖的範圍（WGS84） */
+  extent: Extent;
+  /** 裁切後的透明 PNG（data URL，客戶端可在同源 canvas 取色） */
+  image: string;
+  /** 鄉鎮界，座標為 RADAR_VIEW 寬高 */
+  towns: string;
+}
+
+/** 路線點（[lat, lon]）的範圍；沒有點回 null */
+export function bboxOfPoints(points: [number, number][]): Extent | null {
+  if (points.length === 0) return null;
+  let minLon = Infinity, minLat = Infinity, maxLon = -Infinity, maxLat = -Infinity;
+  for (const [lat, lon] of points) {
+    minLon = Math.min(minLon, lon);
+    maxLon = Math.max(maxLon, lon);
+    minLat = Math.min(minLat, lat);
+    maxLat = Math.max(maxLat, lat);
+  }
+  return [minLon, minLat, maxLon, maxLat];
+}
 
 export interface RadarCrop {
   /** 裁切範圍（WGS84），路線與鄉鎮界以此投影 */
@@ -63,9 +92,9 @@ export function radarCropFor(bbox: Extent): RadarCrop | null {
   const cLon = (minLon + maxLon) / 2;
   const cLat = (minLat + maxLat) / 2;
   const cos = Math.cos((cLat * Math.PI) / 180);
-  // 先以公里比例（經度乘 cos）外擴，再補成 4:3
-  let latSpan = Math.max((maxLat - minLat) * (1 + 2 * PAD_RATIO), MIN_LAT_SPAN);
-  let lonSpanKm = Math.max((maxLon - minLon) * cos * (1 + 2 * PAD_RATIO), latSpan * RADAR_ASPECT);
+  // 先以公里比例（經度乘 cos）外擴，再補成 RADAR_ASPECT
+  let latSpan = Math.max((maxLat - minLat) * LAT_PAD, MIN_LAT_SPAN);
+  let lonSpanKm = Math.max((maxLon - minLon) * cos * LON_PAD, latSpan * RADAR_ASPECT);
   latSpan = Math.max(latSpan, lonSpanKm / RADAR_ASPECT);
   lonSpanKm = latSpan * RADAR_ASPECT;
   const lonSpan = lonSpanKm / cos;
@@ -92,6 +121,44 @@ export function radarCropFor(bbox: Extent): RadarCrop | null {
 export function projectToExtent(extent: Extent, lat: number, lon: number): [x: number, y: number] {
   const [minLon, minLat, maxLon, maxLat] = extent;
   return [(lon - minLon) / (maxLon - minLon), (maxLat - lat) / (maxLat - minLat)];
+}
+
+/** 取景時上下被蓋住的比例（0–1）：主視覺上方是判定，下方是圖例與說明列 */
+export interface ViewInsets {
+  top: number;
+  bottom: number;
+}
+
+/**
+ * 依容器長寬比在 RADAR_VIEW 裡取景：路線放在上下沒被蓋住的那一段正中間，
+ * 並盡量完整入鏡（左右留 10%）；超出圖的部分貼齊邊界。回傳 SVG viewBox 的 [x, y, w, h]。
+ */
+export function fitViewBox(
+  route: { minX: number; minY: number; maxX: number; maxY: number },
+  aspect: number,
+  insets: ViewInsets
+): [x: number, y: number, w: number, h: number] {
+  const { width: W, height: H } = RADAR_VIEW;
+  const band = Math.max(0.2, 1 - insets.top - insets.bottom);
+  const routeW = Math.max(route.maxX - route.minX, 1);
+  const routeH = Math.max(route.maxY - route.minY, 1);
+  let h = Math.max(routeH / band, routeW / 0.8 / aspect);
+  let w = h * aspect;
+  // 圖不夠大時縮回圖內，維持比例
+  if (w > W) {
+    w = W;
+    h = w / aspect;
+  }
+  if (h > H) {
+    h = H;
+    w = h * aspect;
+  }
+  const cx = (route.minX + route.maxX) / 2;
+  const cy = (route.minY + route.maxY) / 2;
+  const clamp = (v: number, max: number) => Math.min(Math.max(v, 0), Math.max(max, 0));
+  const x = clamp(cx - w / 2, W - w);
+  const y = clamp(cy - h * (insets.top + band / 2), H - h);
+  return [x, y, w, h];
 }
 
 /** 路線上某里程的經緯度（線性內插）；points 為 [lat, lon]，cumulativeKm 與之等長 */
@@ -166,10 +233,10 @@ export function dbzFromRainRate(mmPerHr: number): number {
   return 10 * Math.log10(200 * Math.pow(mmPerHr, 1.6));
 }
 
-/** 「約 3 mm/h」這類文字；不到 1 mm/h 寫「< 1」 */
+/** 「約 3 mm/h」這類文字；不到 1 mm/h 寫「不到 1 mm/h」 */
 export function rainRateLabel(dbz: number): string {
   const r = rainRateFromDbz(dbz);
-  if (r < 1) return "< 1 mm/h";
+  if (r < 1) return "不到 1 mm/h";
   return `約 ${r < 10 ? Math.round(r * 10) / 10 : Math.round(r)} mm/h`;
 }
 

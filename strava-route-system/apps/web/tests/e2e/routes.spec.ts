@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { CCTV_FEED, makeRoute, segment, slopeProfile } from "../fixtures/route";
-import { stubCctv, stubEvents, stubRoutes, stubWeather } from "./stubs";
+import { stubCctv, stubEvents, stubRadar, stubRoutes, stubWeather } from "./stubs";
 
 // 大安區在起點；士林區涵蓋 10 km 之後，兩區以取樣點中點（5 km）分段，士林區的示警從 5.0 km 開始
 const ROUTE = makeRoute({
@@ -63,6 +63,30 @@ test.describe("/routes 路線偵察", () => {
     await expect(readout).not.toContainText("5.0 km");
     await page.getByRole("button", { name: /降雨 70%/ }).click();
     await expect(readout).toContainText("5.0 km");
+  });
+
+  test("雷達回波：手機點影像角落的縮圖、桌機用底部切換；判定照舊並註明不影響判定", async ({ page, isMobile }) => {
+    await stubWeather(page, { 大安區: 10, 士林區: 70 });
+    await stubCctv(page, [CCTV_FEED]);
+    await stubRadar(page, new Date(Date.now() - 5 * 60 * 1000).toISOString());
+    await page.goto("/routes");
+
+    if (isMobile) await page.getByRole("button", { name: /放大雷達回波圖/ }).click();
+    else await page.getByRole("button", { name: "雷達", exact: true }).click();
+    await expect(page.getByRole("img", { name: /雷達回波/ })).toBeVisible();
+    await expect(page.getByText(/不影響判定/)).toBeVisible();
+    await expect(verdictBar(page)).toContainText("危險");
+  });
+
+  test("雷達資料過期時顯示暫無，不放舊圖", async ({ page, isMobile }) => {
+    await stubWeather(page, { 大安區: 10, 士林區: 10 });
+    await stubCctv(page, [CCTV_FEED]);
+    await stubRadar(page, new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString());
+    await page.goto("/routes");
+
+    if (isMobile) await expect(page.getByText("雷達資料暫無")).toBeVisible();
+    else await expect(page.getByRole("button", { name: "雷達資料暫無" })).toBeDisabled();
+    await expect(page.getByRole("img", { name: /雷達回波/ })).toHaveCount(0);
   });
 
   test("CCTV 載入失敗與沿途無監視器分開顯示", async ({ page }) => {

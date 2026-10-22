@@ -4,6 +4,9 @@ import {
   RADAR_ASPECT,
   RADAR_IMAGE,
   TWD67_SHIFT,
+  bboxOfPoints,
+  fitViewBox,
+  RADAR_VIEW,
   dbzFromColor,
   dbzFromRainRate,
   isRadarStale,
@@ -30,7 +33,7 @@ test.describe("radarCropFor", () => {
     expect(maxLat).toBeGreaterThan(YANGMINGSHAN[3]);
   });
 
-  test("以公里計約為 4:3", () => {
+  test("以公里計為 RADAR_ASPECT 的寬圖", () => {
     const { extent } = radarCropFor(YANGMINGSHAN)!;
     const cos = Math.cos((((extent[1] + extent[3]) / 2) * Math.PI) / 180);
     const ratio = ((extent[2] - extent[0]) * cos) / (extent[3] - extent[1]);
@@ -67,6 +70,11 @@ test.describe("projectToExtent / pointAtKm", () => {
     expect(projectToExtent(e, 25.5, 121.5)).toEqual([0.5, 0.5]);
   });
 
+  test("bboxOfPoints：[lat, lon] 轉成 [minLon, minLat, maxLon, maxLat]", () => {
+    expect(bboxOfPoints([[25.2, 121.6], [25.1, 121.5]])).toEqual([121.5, 25.1, 121.6, 25.2]);
+    expect(bboxOfPoints([])).toBeNull();
+  });
+
   test("里程內插與端點", () => {
     const pts: [number, number][] = [[25, 121], [25.1, 121], [25.1, 121.2]];
     const km = [0, 10, 30];
@@ -75,6 +83,40 @@ test.describe("projectToExtent / pointAtKm", () => {
     expect(pointAtKm(pts, km, -1)).toEqual([25, 121]);
     expect(pointAtKm(pts, km, 99)).toEqual([25.1, 121.2]);
     expect(pointAtKm(pts, [0, 1], 0)).toBeNull();
+  });
+});
+
+test.describe("fitViewBox", () => {
+  const route = { minX: 220, minY: 70, maxX: 260, maxY: 130 };
+  const inside = ([x, y, w, h]: number[]) => {
+    expect(x).toBeGreaterThanOrEqual(0);
+    expect(y).toBeGreaterThanOrEqual(0);
+    expect(x! + w!).toBeLessThanOrEqual(RADAR_VIEW.width + 1e-9);
+    expect(y! + h!).toBeLessThanOrEqual(RADAR_VIEW.height + 1e-9);
+  };
+
+  test("維持容器比例並留在圖內", () => {
+    for (const aspect of [4 / 3, 1.37, 2.34]) {
+      const box = fitViewBox(route, aspect, { top: 0.35, bottom: 0.25 });
+      expect(box[2] / box[3]).toBeCloseTo(aspect, 6);
+      inside(box);
+    }
+  });
+
+  test("路線落在上下沒被蓋住的那一段", () => {
+    const [, y, , h] = fitViewBox(route, 4 / 3, { top: 0.35, bottom: 0.25 });
+    expect((route.minY - y) / h).toBeGreaterThanOrEqual(0.35 - 1e-9);
+    expect((route.maxY - y) / h).toBeLessThanOrEqual(0.75 + 1e-9);
+  });
+
+  test("路線寬度完整入鏡", () => {
+    const [x, , w] = fitViewBox(route, 1.37, { top: 0, bottom: 0.2 });
+    expect(x).toBeLessThanOrEqual(route.minX);
+    expect(x + w).toBeGreaterThanOrEqual(route.maxX);
+  });
+
+  test("路線比圖還大時取整張圖的範圍內", () => {
+    inside(fitViewBox({ minX: 0, minY: 0, maxX: 480, maxY: 200 }, 4 / 3, { top: 0.35, bottom: 0.25 }));
   });
 });
 
@@ -99,8 +141,8 @@ test.describe("降雨強度換算", () => {
     expect(dbzFromRainRate(rainRateFromDbz(31.5))).toBeCloseTo(31.5, 9);
   });
 
-  test("文字：弱回波寫 < 1，其餘寫約數", () => {
-    expect(rainRateLabel(10)).toBe("< 1 mm/h");
+  test("文字：弱回波寫不到 1，其餘寫約數", () => {
+    expect(rainRateLabel(10)).toBe("不到 1 mm/h");
     expect(rainRateLabel(30)).toBe("約 2.7 mm/h");
     expect(rainRateLabel(45)).toBe("約 24 mm/h");
   });

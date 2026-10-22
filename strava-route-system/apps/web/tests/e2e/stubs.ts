@@ -68,6 +68,23 @@ export async function stubRoutes(page: Page, routes: Route[]) {
   await page.route("**/api/routes/gpx", (r) => r.fulfill({ json: routes }));
   // 預設沒有路況事件
   await stubEvents(page, []);
+  // 預設雷達取不到，主視覺維持原樣；要測雷達時另外呼叫 stubRadar
+  await stubRadar(page, "error");
+}
+
+/** 1×1 透明 PNG：雷達圖內容不重要，只測入口與文字 */
+const BLANK_PNG =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+/** 雷達回波：觀測時間（ISO）或 "error"；後註冊的攔截優先，可覆蓋 stubRoutes 的預設 */
+export async function stubRadar(page: Page, observedAt: string | "error") {
+  await page.route("**/api/radar?**", (r) =>
+    observedAt === "error"
+      ? r.fulfill({ status: 502, json: { error: "雷達資料暫時取不到" } })
+      : r.fulfill({
+          json: { observedAt, extent: [121.4, 24.9, 121.7, 25.4], image: BLANK_PNG, towns: "" },
+        })
+  );
 }
 
 /** 路況事件；"error" 模擬 TDX 失敗（判讀端 eventsFailed 為 null） */
