@@ -1,8 +1,29 @@
-// Server 端：從 Request 取得並驗證 Firebase idToken，回傳 uid
+// Server 端：從 Request 取得並驗證身分，回傳 uid
+// cookie 存的是 Firebase session cookie（5 天有效）；Authorization header 仍是 idToken（1 小時）
 
 import { getAuthAdmin } from "@/lib/firebase/admin";
 
 const SESSION_COOKIE_NAME = "firebase-id-token";
+
+/** Read the session cookie value from a raw Cookie header. */
+function readSessionCookie(cookieHeader: string): string | null {
+  const match = cookieHeader.match(new RegExp(`${SESSION_COOKIE_NAME}=([^;]+)`));
+  return match?.[1] ? decodeURIComponent(match[1].trim()) : null;
+}
+
+/**
+ * Verify a session cookie and return its uid.
+ * Old cookies that still hold a raw idToken fail here and count as signed out;
+ * the client then re-issues a session cookie via /api/auth/session.
+ */
+async function uidFromSessionCookie(sessionCookie: string): Promise<string | null> {
+  try {
+    const decoded = await getAuthAdmin().verifySessionCookie(sessionCookie);
+    return decoded.uid;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * 從 Request 的 cookie 或 Authorization header 取得 uid。
@@ -11,21 +32,17 @@ const SESSION_COOKIE_NAME = "firebase-id-token";
 export async function getAuthFromRequest(request: Request): Promise<{
   uid: string;
 } | null> {
-  const cookie = request.headers.get("cookie") ?? "";
+  const sessionCookie = readSessionCookie(request.headers.get("cookie") ?? "");
+  if (sessionCookie) {
+    const uid = await uidFromSessionCookie(sessionCookie);
+    if (uid) return { uid };
+  }
+
+  // Bearer header carries a Firebase idToken (not a session cookie)
   const authHeader = request.headers.get("authorization");
-  let token: string | null = null;
-
-  const match = cookie.match(new RegExp(`${SESSION_COOKIE_NAME}=([^;]+)`));
-  if (match?.[1]) {
-    token = decodeURIComponent(match[1].trim());
-  }
-  if (!token && authHeader?.startsWith("Bearer ")) {
-    token = authHeader.slice(7).trim();
-  }
-  if (!token) return null;
-
+  if (!authHeader?.startsWith("Bearer ")) return null;
   try {
-    const decoded = await getAuthAdmin().verifyIdToken(token);
+    const decoded = await getAuthAdmin().verifyIdToken(authHeader.slice(7).trim());
     return { uid: decoded.uid };
   } catch {
     return null;
@@ -38,16 +55,9 @@ export async function getAuthFromRequest(request: Request): Promise<{
 export async function getCurrentUserId(): Promise<string | null> {
   const { headers } = await import("next/headers");
   const h = await headers();
-  const cookie = h.get("cookie") ?? "";
-  const match = cookie.match(new RegExp(`${SESSION_COOKIE_NAME}=([^;]+)`));
-  const token = match?.[1] ? decodeURIComponent(match[1].trim()) : null;
-  if (!token) return null;
-  try {
-    const decoded = await getAuthAdmin().verifyIdToken(token);
-    return decoded.uid;
-  } catch {
-    return null;
-  }
+  const sessionCookie = readSessionCookie(h.get("cookie") ?? "");
+  if (!sessionCookie) return null;
+  return uidFromSessionCookie(sessionCookie);
 }
 
 export { SESSION_COOKIE_NAME };
