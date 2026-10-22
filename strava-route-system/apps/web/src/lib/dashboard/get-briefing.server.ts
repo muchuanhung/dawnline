@@ -1,9 +1,10 @@
 /**
  * 今日判讀的資料組裝（伺服器端專用）
- * 路線與各行政區天氣平行抓取；同一縣市的 CWB 請求由 fetch 快取去重。
- * 路線清單、CWB 天氣、TDX 事件各自快取 10 分鐘；Dashboard 只判讀畫面上那一條路線。
+ * 路線與各行政區天氣平行抓取；路線清單、行政區天氣、TDX 事件各自快取 10 分鐘。
+ * Dashboard 只判讀畫面上那一條路線。
  */
 
+import { unstable_cache } from "next/cache";
 import { loadRoutes } from "@/lib/routes/load-routes.server";
 import type { Route } from "@/lib/routes/route-data";
 import { demoRoadEvents } from "@/lib/routes/demo-route";
@@ -25,6 +26,52 @@ export interface TripOptions {
   activity?: Activity;
   /** 途中模式：目前在路線上的里程；只對 getRouteBriefing 的單一路線有意義 */
   fromKm?: number;
+}
+
+/** 行政區天氣快取秒數（與 CWB 即時雨量相同） */
+const WEATHER_CACHE_SECONDS = 600;
+/** 快取過期後背景重抓期間最多再沿用 5 分鐘，再舊就當場重抓，不拿舊天氣判讀 */
+const WEATHER_MAX_AGE_MS = (WEATHER_CACHE_SECONDS + 300) * 1000;
+
+/**
+ * 行政區天氣，只快取解析後的小結果。
+ * getDistrictWeather 自己的 fetch 快取對鄉鎮預報（F-D0047 整個縣市）與日出日落（全年）無效：
+ * 原始回應超過 Next 資料快取 2 MB 上限就不會被存，每次判讀都要從 CWB 重抓（實測 6 行政區約 5–6 秒）。
+ */
+const cachedDistrictWeather = unstable_cache(
+  async (county: string, district: string) => ({
+    weather: await getDistrictWeather(county, district),
+    fetchedAt: Date.now(),
+  }),
+  ["district-weather-v1"],
+  { revalidate: WEATHER_CACHE_SECONDS }
+);
+
+async function districtWeather(county: string, district: string) {
+  const cached = await cachedDistrictWeather(county, district);
+  if (Date.now() - cached.fetchedAt <= WEATHER_MAX_AGE_MS) return cached.weather;
+  return getDistrictWeather(county, district);
+}
+
+/** 縣市即時雨量站同樣只快取解析後的測站清單；取不到（null）不進快取，下次重抓 */
+const cachedRainfallStations = unstable_cache(
+  async (county: string) => {
+    const stations = await getCountyRainfallStations(county);
+    if (!stations) throw new Error(`雨量站取不到：${county}`);
+    return { stations, fetchedAt: Date.now() };
+  },
+  ["rainfall-stations-v1"],
+  { revalidate: WEATHER_CACHE_SECONDS }
+);
+
+async function rainfallStations(county: string) {
+  try {
+    const cached = await cachedRainfallStations(county);
+    if (Date.now() - cached.fetchedAt <= WEATHER_MAX_AGE_MS) return cached.stations;
+  } catch {
+    // 取不到時下面直接重抓一次；仍失敗回 null，判讀視為附近無測站
+  }
+  return getCountyRainfallStations(county);
 }
 
 /** 首頁未登入用：前 N 條路線（loadRoutes 排序）的即時判讀 */
@@ -79,14 +126,14 @@ async function briefRoutes(routes: Route[], trip: TripOptions = {}, suggestFor?:
   });
   // 即時雨量站每縣市抓一次，再依各路線自己的座標篩 3 km 內測站
   const stationsPromise = Promise.all(
-    counties.map(async (c) => [c, await getCountyRainfallStations(c)] as const)
+    counties.map(async (c) => [c, await rainfallStations(c)] as const)
   )
     .then(lap("雨量站"))
     .then((entries) => new Map(entries));
   const results = await Promise.allSettled(
     keys.map(async (key) => {
       const [county, district] = key.split("|") as [string, string];
-      const w = await getDistrictWeather(county, district);
+      const w = await districtWeather(county, district);
       const first = w.rainfall12h[0];
       const weather: DistrictWeather = {
         rainProbability: first?.pop ?? 0,
