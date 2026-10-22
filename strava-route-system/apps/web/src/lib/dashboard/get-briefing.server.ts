@@ -1,11 +1,9 @@
 /**
  * 今日判讀的資料組裝（伺服器端專用）
  * 路線與各行政區天氣平行抓取；同一縣市的 CWB 請求由 fetch 快取去重。
- * 單一公開路線的判讀快取 10 分鐘（與 CWB 即時雨量、TDX 事件的快取一致），
- * Dashboard、路線頁判讀 API、AI 摘要與預熱排程共用同一份，不重複計算。
+ * 路線清單、CWB 天氣、TDX 事件各自快取 10 分鐘；Dashboard 只判讀畫面上那一條路線。
  */
 
-import { unstable_cache } from "next/cache";
 import { loadRoutes } from "@/lib/routes/load-routes.server";
 import type { Route } from "@/lib/routes/route-data";
 import { demoRoadEvents } from "@/lib/routes/demo-route";
@@ -20,11 +18,6 @@ import {
   type DistrictWeather,
   type RouteBriefing,
 } from "@/lib/dashboard/briefing";
-
-/** 判讀快取秒數；資料來源本身也是 10 分鐘更新，再短沒有意義 */
-const BRIEFING_CACHE_SECONDS = 600;
-/** 快取過期後最多再沿用 5 分鐘（背景重算期間），再舊就重算 */
-const BRIEFING_MAX_AGE_MS = (BRIEFING_CACHE_SECONDS + 300) * 1000;
 
 /** 行程設定：出發時間與運動類型；未指定為現在、依路線類型 */
 export interface TripOptions {
@@ -41,7 +34,7 @@ export async function getPublicBriefings(limit = 3): Promise<RouteBriefing[]> {
   return (await briefRoutes(routes)).briefings;
 }
 
-/** 單一公開路線判讀，不經快取 */
+/** 單一公開路線判讀 */
 async function briefPublicRoute(routeId: string, trip: TripOptions): Promise<RouteBriefing | null> {
   const route = (await loadRoutes()).find((r) => r.id === routeId);
   if (!route) return null;
@@ -49,38 +42,16 @@ async function briefPublicRoute(routeId: string, trip: TripOptions): Promise<Rou
 }
 
 /**
- * 快取 key：路線、出發時間（ISO；null 為「現在出發」）、運動類型。
- * 「現在出發」在快取期間沿用計算當下的時間，最多相差 10 分鐘。
- * 連同計算時間一起存，讓 getRouteBriefing 擋下太舊的結果。
- */
-const cachedRouteBriefing = unstable_cache(
-  async (routeId: string, departureIso: string | null, activity: Activity | null) => {
-    const briefing = await briefPublicRoute(routeId, {
-      departure: departureIso ? new Date(departureIso) : undefined,
-      activity: activity ?? undefined,
-    });
-    // Stamp after computing, so cacheAge≈0 on a miss and >0 only on a real cache hit
-    return { computedAt: Date.now(), briefing };
-  },
-  ["route-briefing-v1"],
-  { revalidate: BRIEFING_CACHE_SECONDS }
-);
-
-/**
  * 單一路線判讀（Dashboard、/routes、AI 摘要、預熱排程共用）；與 Dashboard 同一條流程，前端不再自行判定。
- * 途中模式（fromKm）每次里程都不同，不快取。
+ * 不把整份判讀包進 unstable_cache：包在裡面時，路線清單、TDX 事件、CWB fetch 的快取全部會被略過
+ * （Next 對巢狀快取一律不讀不寫），每次都要重抓。判讀本身是純計算，靠這些輸入各自的快取就夠快。
  */
 export async function getRouteBriefing(routeId: string, trip: TripOptions = {}): Promise<RouteBriefing | null> {
-  if (trip.fromKm != null) return briefPublicRoute(routeId, trip);
   const started = Date.now();
-  const cached = await cachedRouteBriefing(routeId, trip.departure?.toISOString() ?? null, trip.activity ?? null);
-  const ageS = Math.round((Date.now() - cached.computedAt) / 1000);
-  // 暫時的計時紀錄（Vercel Logs 搜尋「判讀計時」）：確認快取有沒有命中、慢在哪裡；查完就移除
-  console.info(`[判讀計時] route=${routeId} ${Date.now() - started}ms cacheAge=${ageS}s`);
-  // unstable_cache 過期後仍會先回舊值、背景再重算；很久沒人看的路線可能拿到幾小時前的判讀，
-  // 超過上限就當場重算，不顯示過期判讀（背景重算已由這次讀取觸發）
-  if (ageS * 1000 > BRIEFING_MAX_AGE_MS) return briefPublicRoute(routeId, trip);
-  return cached.briefing;
+  const briefing = await briefPublicRoute(routeId, trip);
+  // 暫時的計時紀錄（Vercel Logs 搜尋「判讀計時」）；確認變快後移除
+  console.info(`[判讀計時] route=${routeId} ${Date.now() - started}ms`);
+  return briefing;
 }
 
 /**

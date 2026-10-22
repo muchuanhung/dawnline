@@ -20,8 +20,6 @@ const REQUEST_TIMEOUT_MS = 10000;
  * 所以拉長不會用到過期的句子，只是同一份事實不再重複付費。
  */
 const CACHE_SECONDS = 86400;
-/** 公開路線的整份摘要（含判讀）快取；與 CWB 即時雨量、TDX 事件的快取時間相同 */
-const ROUTE_SUMMARY_SECONDS = 600;
 
 const SYSTEM_PROMPT = `You write one sentence in Traditional Chinese (Taiwan) for a cyclist or hiker, summarising a route check that a rules engine has already decided.
 
@@ -78,58 +76,40 @@ const logFailure = (err: unknown) =>
   console.warn("[AI 摘要] 呼叫失敗:", err instanceof Anthropic.APIError ? `${err.status} ${err.message}` : err);
 
 /**
- * 公開路線摘要，連同判讀一起快取 10 分鐘：同一條路線、同樣的出發時間參數與運動類型直接回快取，
- * 不必每次重新判讀（摘要慢主要慢在這裡）。判讀在這 10 分鐘內變了的話，前端 summaryApplies 會擋下改用規則句。
- * depart／activity 用網址上的原始字串當快取 key（未指定即「現在出發」）。
- */
-const cachedRouteSummary = unstable_cache(
-  async (routeId: string, depart: string | null, activity: string | null) => {
-    const briefing = await getRouteBriefing(routeId, {
-      departure: parseDeparture(depart, new Date()) ?? undefined,
-      activity: parseActivity(activity) ?? undefined,
-    });
-    return briefing ? { found: true, summary: await phraseBriefing(briefing) } : { found: false, summary: null };
-  },
-  ["route-summary-v1"],
-  { revalidate: ROUTE_SUMMARY_SECONDS }
-);
-
-/**
- * 私人路線摘要：與公開路線相同，判讀連同句子快取 10 分鐘。
- * 呼叫端必須先用 loadPrivateRoute 確認是使用者自己的路線；快取 key 只用 routeId（ULID，每條路線唯一）。
+ * 私人路線摘要。呼叫端必須先用 loadPrivateRoute 確認是使用者自己的路線。
+ * 判讀不包進 unstable_cache（包在裡面會讓 TDX 事件、CWB fetch 的快取全被略過，每次重抓）；
+ * 判讀的輸入各自有快取，句子則依事實快取一天（cachedPhrase）。
  */
 export async function getPrivateRouteSummary(
   route: Route,
   depart: string | null,
   activity: string | null
 ): Promise<BriefingSummary | null> {
-  const cached = unstable_cache(
-    async () => {
-      const briefing = await briefLoadedRoute(route, {
-        departure: parseDeparture(depart, new Date()) ?? undefined,
-        activity: parseActivity(activity) ?? undefined,
-      });
-      return briefing ? await phraseBriefing(briefing) : null;
-    },
-    ["private-route-summary-v1", route.id, depart ?? "", activity ?? ""],
-    { revalidate: ROUTE_SUMMARY_SECONDS }
-  );
   try {
-    return await cached();
+    const briefing = await briefLoadedRoute(route, {
+      departure: parseDeparture(depart, new Date()) ?? undefined,
+      activity: parseActivity(activity) ?? undefined,
+    });
+    return briefing ? await phraseBriefing(briefing) : null;
   } catch (err) {
     logFailure(err);
     return null;
   }
 }
 
-/** found=false 代表沒有這條公開路線；API 錯誤不進快取，回 summary null */
+/** 公開路線摘要；found=false 代表沒有這條公開路線。API 錯誤回 summary null */
 export async function getPublicRouteSummary(
   routeId: string,
   depart: string | null,
   activity: string | null
 ): Promise<{ found: boolean; summary: BriefingSummary | null }> {
   try {
-    return await cachedRouteSummary(routeId, depart, activity);
+    const briefing = await getRouteBriefing(routeId, {
+      departure: parseDeparture(depart, new Date()) ?? undefined,
+      activity: parseActivity(activity) ?? undefined,
+    });
+    if (!briefing) return { found: false, summary: null };
+    return { found: true, summary: await phraseBriefing(briefing) };
   } catch (err) {
     logFailure(err);
     return { found: true, summary: null };
