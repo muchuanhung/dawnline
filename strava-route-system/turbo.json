@@ -12,8 +12,7 @@
       ],
       "env": [
         "BACKEND_API_URL",
-        "ALERT_WEBHOOK_URL",
-        "ALERT_TEST_SECRET"
+        "ALERT_WEBHOOK_URL"
       ],
       "outputs": [
         ".next/**",
