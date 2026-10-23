@@ -70,19 +70,26 @@ export interface RoadEventsResult {
   failed: string[];
 }
 
+/** 各縣市分開的事件（key 為正式縣市名），供判讀輸入逐縣市存放 */
+export interface CountyRoadEvents {
+  byCounty: Map<string, RoadEvent[]>;
+  /** 取不到資料的縣市（顯示「暫時取不到」，不可當成沒有事件） */
+  failed: string[];
+}
+
 /**
- * 依路段縣市（可為舊名）取得事件；查無 TDX 代碼的縣市略過。
+ * 依路段縣市（可為舊名）逐縣市取得事件；查無 TDX 代碼的縣市略過（不算失敗）。
  * 依傳入順序抓取，呼叫端把目前要看的路線經過的縣市排在前面，限流時優先保住它們。
- * failed 回傳正式縣市名（例：台北縣 → 新北市），畫面直接顯示。
+ * 縣市名一律回傳正式名（例：台北縣 → 新北市），畫面直接顯示。
  */
-export async function getRoadEvents(counties: string[]): Promise<RoadEventsResult> {
+export async function getRoadEventsByCounty(counties: string[]): Promise<CountyRoadEvents> {
   const byCode = new Map<string, string>();
   for (const county of counties) {
     const code = tdxCityCode(county);
     if (code && !byCode.has(code)) byCode.set(code, normalizeCountyForCWB(county));
   }
 
-  const events: RoadEvent[] = [];
+  const byCounty = new Map<string, RoadEvent[]>();
   const failed: string[] = [];
   let rateLimited = false;
   for (const [code, county] of byCode) {
@@ -91,7 +98,7 @@ export async function getRoadEvents(counties: string[]): Promise<RoadEventsResul
       continue;
     }
     try {
-      events.push(...(await fetchCityEvents(code)));
+      byCounty.set(county, await fetchCityEvents(code));
     } catch (e) {
       console.warn("[TDX] 路況事件取得失敗:", county, e instanceof Error ? e.message : e);
       failed.push(county);
@@ -99,5 +106,11 @@ export async function getRoadEvents(counties: string[]): Promise<RoadEventsResul
       if (e instanceof Error && e.name === "RateLimitedError") rateLimited = true;
     }
   }
-  return { events, failed };
+  return { byCounty, failed };
+}
+
+/** 所有縣市的事件合併成一份；失敗縣市另列 */
+export async function getRoadEvents(counties: string[]): Promise<RoadEventsResult> {
+  const { byCounty, failed } = await getRoadEventsByCounty(counties);
+  return { events: [...byCounty.values()].flat(), failed };
 }

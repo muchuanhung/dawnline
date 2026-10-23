@@ -1,25 +1,29 @@
-import { getDashboardBriefing } from "@/lib/dashboard/get-briefing.server";
+import { Suspense } from "react";
+import { loadRoutes } from "@/lib/routes/load-routes.server";
+import { getRouteBriefing } from "@/lib/dashboard/get-briefing.server";
 import { BriefingCard } from "./briefing-card";
+import { BriefingLoading } from "./briefing-loading";
 import { HazardSummary } from "./hazard-summary";
 import { RouteSwitcher } from "./route-switcher";
 import { TripSettings } from "@/components/trip/trip-settings";
-import type { Activity, TripParams } from "@/lib/routes/trip";
+import { ACTIVITY, activityOfRouteType, type Activity, type TripParams } from "@/lib/routes/trip";
 
-/** 今日判讀主體：在伺服器端取得路線與天氣後一次輸出 */
+type Trip = { departure: Date | null; activity: Activity | null };
+
+/**
+ * 今日判讀主體。行程設定與路線切換列只需要路線清單（已快取），先輸出；
+ * 判讀卡另外串流。換路線、改出發或運動時只有判讀卡位置顯示載入中，上方設定與切換列不消失。
+ */
 export async function Briefing({
   routeId,
   trip,
 }: {
   routeId?: string;
   /** 網址上的行程設定；null 為未指定（現在出發、依路線類型） */
-  trip: { departure: Date | null; activity: Activity | null };
+  trip: Trip;
 }) {
-  const data = await getDashboardBriefing(routeId, {
-    departure: trip.departure ?? undefined,
-    activity: trip.activity ?? undefined,
-  });
-
-  if (data.status === "no-routes") {
+  const routes = await loadRoutes();
+  if (routes.length === 0) {
     return (
       <section className="rounded-2xl border border-dashed border-border bg-card p-8 text-center">
         <h2 className="text-lg font-bold">目前沒有可判讀的路線</h2>
@@ -28,28 +32,52 @@ export async function Briefing({
     );
   }
 
-  const { featured, routes } = data;
+  const current = routes.find((r) => r.id === routeId) ?? routes[0]!;
   /** 換路線、換頁時帶著的行程設定 */
   const tripParams: TripParams = { depart: trip.departure?.toISOString(), activity: trip.activity };
+  // Same defaults as briefRoute, so the settings row can render before the briefing arrives
+  const defaultActivity = activityOfRouteType(current.type);
+  const activity = trip.activity ?? defaultActivity;
 
   return (
     <div className="space-y-6">
       <div className="space-y-3">
         <TripSettings
-          departure={featured.departure}
-          activity={featured.activity}
-          speedKmh={featured.speedKmh}
-          defaultActivity={featured.defaultActivity}
+          departure={(trip.departure ?? new Date()).toISOString()}
+          activity={activity}
+          speedKmh={ACTIVITY[activity].speedKmh}
+          defaultActivity={defaultActivity}
           explicitActivity={trip.activity}
           explicitDeparture={trip.departure?.toISOString() ?? null}
         />
-        <RouteSwitcher routes={routes} currentId={featured.id} trip={tripParams} />
+        {/* 名稱規則與 briefRoute 相同（中文名優先） */}
+        <RouteSwitcher
+          routes={routes.map((r) => ({ id: r.id, name: r.nameZh || r.name }))}
+          currentId={current.id}
+          trip={tripParams}
+        />
       </div>
-      {/* 桌機左主卡、右沿途示警；手機依序往下 */}
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] lg:items-start">
-        <BriefingCard featured={featured} trip={tripParams} />
-        <HazardSummary briefing={featured} />
-      </div>
+      {/* key 換了就是新的判讀：只有這一塊顯示載入中 */}
+      <Suspense key={[current.id, tripParams.depart, tripParams.activity].join("|")} fallback={<BriefingLoading />}>
+        <BriefingResult routeId={current.id} trip={trip} tripParams={tripParams} />
+      </Suspense>
+    </div>
+  );
+}
+
+/** 判讀卡與沿途示警：只判讀目前這一條路線（判讀輸入讀 Firestore，由排程每 10 分鐘更新） */
+async function BriefingResult({ routeId, trip, tripParams }: { routeId: string; trip: Trip; tripParams: TripParams }) {
+  const featured = await getRouteBriefing(routeId, {
+    departure: trip.departure ?? undefined,
+    activity: trip.activity ?? undefined,
+  });
+  if (!featured) return null;
+
+  return (
+    // 桌機左主卡、右沿途示警；手機依序往下
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] lg:items-start">
+      <BriefingCard featured={featured} trip={tripParams} />
+      <HazardSummary briefing={featured} />
     </div>
   );
 }

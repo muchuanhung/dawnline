@@ -117,15 +117,3 @@ export async function fetchPrivateRouteDetail(id: string): Promise<Route> {
   if (!res.ok) throw new BackendError(res.status, "http_error", data?.error ?? `HTTP ${res.status}`);
   return data as Route;
 }
-
-/**
- * 預熱私人路線的 AI 摘要：打開「我的路線」列表時，替每條已處理好的路線先請求一次摘要 API，
- * 伺服器把判讀與 AI 句子放進 10 分鐘快取，點進詳情時句子通常已經好了。
- * 只送預設行程（現在出發、預設運動類型），與詳情頁第一次載入的請求相同；不等結果、失敗不處理。
- */
-export function warmPrivateSummaries(routes: readonly Pick<PrivateRoute, "id" | "status">[]): void {
-  for (const r of routes) {
-    if (r.status !== "ready") continue;
-    fetch(`/api/routes/private/briefing/summary?route=${encodeURIComponent(r.id)}`).catch(() => {});
-  }
-}

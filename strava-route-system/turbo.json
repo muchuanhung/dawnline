@@ -11,8 +11,7 @@
         ".env*"
       ],
       "env": [
-        "BACKEND_API_URL",
-        "ANTHROPIC_API_KEY"
+        "BACKEND_API_URL"
       ],
       "outputs": [
         ".next/**",
