@@ -76,29 +76,3 @@ async function sendAlert(text: string, key: string, meta: Record<string, unknown
     console.error(JSON.stringify({ level: "error", scope: "api", event: "alert-webhook-failed", message: describe(e) }));
   }
 }
-
-export type TestAlertResult =
-  | { sent: true; status: number }
-  | { sent: false; reason: "no-webhook" | "webhook-rejected" | "webhook-unreachable"; status?: number; message?: string };
-
-/**
- * 手動驗證告警管道用：不走節流，直接送一則測試訊息，並把 webhook 的回應交回呼叫端
- * （一般告警不檢查回應碼，網址打錯時只能靠這支看出來）。
- */
-export async function sendTestAlert(note?: string): Promise<TestAlertResult> {
-  const url = process.env.ALERT_WEBHOOK_URL;
-  if (!url) return { sent: false, reason: "no-webhook" };
-  const env = process.env.VERCEL_ENV ?? process.env.NODE_ENV ?? "unknown";
-  const text = `[曉行] 測試告警（${env}）${note ? `：${note}` : ""}`;
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text }),
-    });
-    if (!res.ok) return { sent: false, reason: "webhook-rejected", status: res.status };
-    return { sent: true, status: res.status };
-  } catch (e) {
-    return { sent: false, reason: "webhook-unreachable", message: describe(e) };
-  }
-}
