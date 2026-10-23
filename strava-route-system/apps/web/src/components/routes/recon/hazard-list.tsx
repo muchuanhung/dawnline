@@ -107,7 +107,7 @@ export function HazardList({
 
   return (
     <section aria-labelledby="hazard-list-title" className="space-y-2">
-      <h3 id="hazard-list-title" className="text-sm font-semibold text-foreground">
+      <h3 id="hazard-list-title" className="scroll-mt-20 text-sm font-semibold text-foreground">
         沿途示警
         {hazards.length > 0 && (
           <span className="ml-1.5 font-normal tabular-nums text-muted-foreground">{hazards.length}</span>

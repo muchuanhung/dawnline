@@ -112,7 +112,7 @@ export function ReconView({
   const totalKm = routeTotalKm(route);
   // 判讀未回來時軌道不上安全色；過期快照的路段一律不上安全色（未判定 ≠ 安全），示警路段照舊標出
   const zoneStages = trip ? stages : NO_STAGES;
-  const eventsComplete = trip ? trip.eventsFailed !== null && trip.eventsFailed.length === 0 && !snapshot?.expired : false;
+  const eventsComplete = trip ? trip.eventsFailed !== null && trip.eventsFailed.length === 0 && !briefing.expired : false;
   // 途中模式的目前里程：之前的路段不上色，游標也移到這裡
   const fromKm = trip?.fromKm ?? null;
   const zones = useMemo(

@@ -274,57 +274,34 @@ const VERDICT_PILL: Record<VerdictLevel, string> = {
 
 /**
  * 影像上方的判定：一眼看到能不能走；影像只是佐證，判定仍以規則式結果為準。
- * compact：桌機主視覺切到雷達時縮成一行，讓出地圖。
+ * 影像與雷達都只疊一行讓出畫面；note（另有 N 項示警等）收成右側標籤，點了捲到示警清單。
  */
-function VerdictOverlay({
-  verdict,
-  loading,
-  compact = false,
-}: {
-  verdict: ReconVerdict;
-  loading: boolean;
-  compact?: boolean;
-}) {
+function VerdictOverlay({ verdict, loading }: { verdict: ReconVerdict; loading: boolean }) {
   const word = VERDICT_LEVEL_STYLE[verdict.level].word;
-  const pill = (
-    <span
-      className={cn(
-        "inline-flex shrink-0 items-center rounded-full font-bold leading-none",
-        compact ? "px-2.5 py-1 text-sm" : "px-3 py-1 text-lg",
-        VERDICT_PILL[loading ? "unknown" : verdict.level],
-      )}
-    >
-      {loading ? (
-        "判讀中"
-      ) : verdict.level === "unknown" ? (
-        <UnknownReasons reasons={verdict.reasons}>{word}</UnknownReasons>
-      ) : (
-        word
-      )}
-    </span>
-  );
-  if (compact) {
-    return (
-      <div role="status" aria-live="polite" className="absolute inset-x-0 top-0 flex items-center gap-2 bg-black/65 px-4 py-2 text-white">
-        {pill}
-        {!loading && <p className="min-w-0 truncate text-sm font-medium">{verdict.headline}</p>}
-      </div>
-    );
-  }
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="absolute inset-x-0 top-0 bg-black/65 px-4 py-3 text-white"
-    >
-      <p>{pill}</p>
-      {!loading && (
-        <p className="mt-1.5 text-sm font-medium leading-snug">
-          {verdict.headline}
-        </p>
-      )}
+    <div role="status" aria-live="polite" className="absolute inset-x-0 top-0 flex items-center gap-2 bg-black/65 px-4 py-2 text-white">
+      <span
+        className={cn(
+          "inline-flex shrink-0 items-center rounded-full px-2.5 py-1 text-sm font-bold leading-none",
+          VERDICT_PILL[loading ? "unknown" : verdict.level],
+        )}
+      >
+        {loading ? (
+          "判讀中"
+        ) : verdict.level === "unknown" ? (
+          <UnknownReasons reasons={verdict.reasons}>{word}</UnknownReasons>
+        ) : (
+          word
+        )}
+      </span>
+      {!loading && <p className="min-w-0 flex-1 truncate text-sm font-medium">{verdict.headline}</p>}
       {!loading && verdict.note && (
-        <p className="mt-0.5 text-xs text-white/75">{verdict.note}</p>
+        <a
+          href="#hazard-list-title"
+          className="block max-w-[40%] shrink-0 truncate rounded-full bg-white/20 px-2.5 py-1 text-xs hover:bg-white/30"
+        >
+          {verdict.note}
+        </a>
       )}
     </div>
   );
@@ -382,11 +359,7 @@ function CctvStage({
             <RadarPip radar={radar} polyline={polyline} positionKm={positionKm} onOpen={onOpenRadar} />
           </>
         )}
-        <VerdictOverlay
-          verdict={verdict}
-          loading={verdictLoading}
-          compact={showRadar}
-        />
+        <VerdictOverlay verdict={verdict} loading={verdictLoading} />
         <div
           className={cn(
             "absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-black/65 pl-4 text-white",

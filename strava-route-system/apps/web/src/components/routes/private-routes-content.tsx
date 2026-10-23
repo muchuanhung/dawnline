@@ -17,7 +17,8 @@ import { PrivateRouteDetail } from "@/components/routes/private-route-detail";
 import { routeCardClassName } from "@/components/routes/route-card-style";
 import { SwipeActions } from "@/components/routes/swipe-actions";
 import { RoutesTabs } from "@/components/routes/routes-tabs";
-import { RouteFilters, matchesTypeFilter, type FilterType } from "@/components/routes/route-filters";
+import { RouteFilters } from "@/components/routes/route-filters";
+import { ALL_TYPES, effectiveTypeFilter, matchesTypeFilter, routeTypesOf } from "@/lib/routes/route-types";
 import { ROUTE_TYPE_ICONS } from "@/constants";
 import { usePrivateRoutes } from "@/hooks/usePrivateRoutes";
 import { cn } from "@/lib/utils";
@@ -57,7 +58,7 @@ export function PrivateRoutesContent({
   const [uploading, setUploading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState<FilterType>("全部");
+  const [typeFilter, setTypeFilter] = useState(ALL_TYPES);
   const [selectedId, setSelectedId] = useState(initialRouteId ?? "");
   // 手機：目前左滑打開的路線（同時只開一張）與待確認刪除的路線
   const [swipedId, setSwipedId] = useState<string | null>(null);
@@ -65,8 +66,11 @@ export function PrivateRoutesContent({
   const full = limit != null && routes.length >= limit;
   const canUpload = !uploading && !loading && !full && error == null;
 
+  // 類型篩選的選項依路線資料產生；選的類型已不在資料裡（例如刪掉最後一條）就退回「全部」
+  const routeTypes = routeTypesOf(routes);
+  const activeTypeFilter = effectiveTypeFilter(typeFilter, routeTypes);
   const filtered = routes.filter(
-    (r) => r.name.toLowerCase().includes(search.toLowerCase()) && matchesTypeFilter(r.type, typeFilter)
+    (r) => r.name.toLowerCase().includes(search.toLowerCase()) && matchesTypeFilter(r.type, activeTypeFilter)
   );
   const readyRoutes = routes.filter((r) => r.status === "ready");
   // 沒指定或指定的路線不存在時，退回第一條可判讀的路線；選了「上傳新路線」時顯示上傳面板
@@ -164,7 +168,7 @@ export function PrivateRoutesContent({
           <RoutesTabs current="mine" className="sm:w-full" />
         </div>
         <div className="border-b border-border p-4">
-          <RouteFilters search={search} onSearch={setSearch} typeFilter={typeFilter} onFilter={setTypeFilter} />
+          <RouteFilters search={search} onSearch={setSearch} types={routeTypes} typeFilter={activeTypeFilter} onFilter={setTypeFilter} />
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
           {loading ? (
