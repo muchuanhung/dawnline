@@ -34,27 +34,38 @@ export function isSnapshotExpired(savedAt: number, now: number): boolean {
   return now - savedAt >= SNAPSHOT_MAX_AGE_MS;
 }
 
+/** 線上判讀過期後已知示警的加註 */
+export const BRIEFING_EXPIRED_NOTE = "資料可能已變化";
+
 /**
- * 過期快照的顯示用判定：
- * - clear → unknown（原因 snapshot_expired），不可沿用「安全」
+ * 過期判讀的顯示用判定；offline 區分離線快照與線上取得但太久沒更新（頁面開著不動、從背景回來）：
+ * - clear → unknown（原因 snapshot_expired／briefing_expired），不可沿用「安全」
  * - risky／caution → 保留等級與標題，note 加註可能已變化
- * - unknown → 補上 snapshot_expired 原因，其餘不變
+ * - unknown → 補上過期原因，其餘不變
  */
-export function expireVerdict(verdict: ReconVerdict): ReconVerdict {
+export function expireVerdict(verdict: ReconVerdict, offline = true): ReconVerdict {
+  const reason = offline ? "snapshot_expired" : "briefing_expired";
   switch (verdict.level) {
     case "clear":
-      return {
-        level: "unknown",
-        reasons: ["snapshot_expired"],
-        headline: "離線資料過期，無法確認安全",
-        note: "收不到訊號，判讀超過 30 分鐘沒有更新，不代表安全。",
-      };
+      return offline
+        ? {
+            level: "unknown",
+            reasons: [reason],
+            headline: "離線資料過期，無法確認安全",
+            note: "收不到訊號，判讀超過 30 分鐘沒有更新，不代表安全。",
+          }
+        : {
+            level: "unknown",
+            reasons: [reason],
+            headline: "判讀過期，無法確認安全",
+            note: "判讀超過 30 分鐘沒有更新，不代表安全。",
+          };
     case "risky":
     case "caution":
-      return { ...verdict, note: joinNote(verdict.note, SNAPSHOT_EXPIRED_NOTE) };
+      return { ...verdict, note: joinNote(verdict.note, offline ? SNAPSHOT_EXPIRED_NOTE : BRIEFING_EXPIRED_NOTE) };
     case "unknown": {
       const reasons = verdict.reasons ?? [];
-      return reasons.includes("snapshot_expired") ? verdict : { ...verdict, reasons: [...reasons, "snapshot_expired"] };
+      return reasons.includes(reason) ? verdict : { ...verdict, reasons: [...reasons, reason] };
     }
   }
 }

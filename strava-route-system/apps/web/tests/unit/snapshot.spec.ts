@@ -4,6 +4,7 @@
 import { test, expect } from "@playwright/test";
 import type { ReconVerdict } from "@/lib/routes/recon-geo";
 import {
+  BRIEFING_EXPIRED_NOTE,
   SNAPSHOT_EXPIRED_NOTE,
   SNAPSHOT_HEADER,
   SNAPSHOT_MAX_AGE_MS,
@@ -74,6 +75,29 @@ test.describe("expireVerdict", () => {
     expect(v.level).toBe("unknown");
     expect(v.reasons).toEqual(["stale", "snapshot_expired"]);
     expect(expireVerdict(v).reasons).toEqual(["stale", "snapshot_expired"]);
+  });
+});
+
+test.describe("expireVerdict online (offline = false)", () => {
+  test("clear becomes unknown with the online reason, not the offline wording", () => {
+    const v = expireVerdict({ level: "clear", headline: "沿途無示警", note: "" }, false);
+    expect(v.level).toBe("unknown");
+    expect(v.reasons).toEqual(["briefing_expired"]);
+    expect(v.headline).not.toContain("離線");
+    expect(v.note).not.toContain("收不到訊號");
+  });
+
+  test("risky keeps level and gets the online note", () => {
+    const v = expireVerdict({ level: "risky", headline: "12.4 km 起道路封閉", note: "另有 2 項示警" }, false);
+    expect(v.level).toBe("risky");
+    expect(v.note).toBe(`另有 2 項示警・${BRIEFING_EXPIRED_NOTE}`);
+  });
+
+  test("unknown gains the online reason once", () => {
+    const unknown: ReconVerdict = { level: "unknown", reasons: ["no_data"], headline: "判讀暫時取不到", note: "" };
+    const v = expireVerdict(unknown, false);
+    expect(v.reasons).toEqual(["no_data", "briefing_expired"]);
+    expect(expireVerdict(v, false).reasons).toEqual(["no_data", "briefing_expired"]);
   });
 });
 
