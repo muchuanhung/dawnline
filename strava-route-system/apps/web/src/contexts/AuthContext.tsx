@@ -25,9 +25,21 @@ import {
 } from "firebase/auth";
 import { PRIVATE_SNAPSHOT_CACHE } from "@/lib/routes/snapshot";
 
+/** 上次登入者的顯示資料，重新整理後 Firebase 還原登入狀態前先用來畫帳號名牌 */
+export type CachedProfile = {
+  displayName: string | null;
+  email: string | null;
+  photoURL: string | null;
+};
+
 type AuthContextValue = {
   user: User | null;
+  /** Firebase 還沒還原登入狀態（不含換 session cookie 的時間） */
   loading: boolean;
+  /** 已登入者的 session cookie（Next 與 FastAPI 後端）換好了；未登入時也是 true */
+  sessionReady: boolean;
+  /** 上次登入者的顯示資料；loading 期間用來避免名牌閃 spinner */
+  cachedProfile: CachedProfile | null;
   refreshSession: () => Promise<void>;
   signIn: () => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
@@ -92,9 +104,40 @@ function clearPrivateSnapshots(): Promise<unknown> {
   return caches.delete(PRIVATE_SNAPSHOT_CACHE).catch(() => false);
 }
 
+const PROFILE_STORAGE_KEY = "dawnline-user";
+
+function readCachedProfile(): CachedProfile | null {
+  try {
+    const raw = localStorage.getItem(PROFILE_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as CachedProfile) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 登入時記下顯示資料、登出時刪掉；儲存失敗（私密模式等）只是少了快取，不影響登入 */
+function writeCachedProfile(user: User | null): void {
+  try {
+    if (!user) {
+      localStorage.removeItem(PROFILE_STORAGE_KEY);
+      return;
+    }
+    const profile: CachedProfile = {
+      displayName: user.displayName,
+      email: user.email,
+      photoURL: user.photoURL,
+    };
+    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
+  } catch {
+    // ignore
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sessionReady, setSessionReady] = useState(false);
+  const [cachedProfile, setCachedProfile] = useState<CachedProfile | null>(null);
   const authRef = useRef<ReturnType<typeof getAuthClient> | null>(null);
 
   const setSessionFromUser = useCallback(async (user: User) => {
@@ -112,21 +155,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // Read after mount (not in useState) so server and first client render match
+    setCachedProfile(readCachedProfile());
     authRef.current = getAuthClient();
     let cancelled = false;
     const unsub = onAuthStateChanged(authRef.current, async (u) => {
       setUser(u ?? null);
+      writeCachedProfile(u);
+      // 登入狀態一確定就結束 loading：畫面（帳號名牌等）不必等下面換 session 的兩個網路請求
+      setLoading(false);
       // 沒有使用者（登出、session 過期、別的分頁登出）就刪私人快照；
       // 離線時 Firebase 仍從本機還原登入狀態，不會誤刪騎乘中要用的快照
-      if (!u) void clearPrivateSnapshots();
-      if (u) {
-        try {
-          await setSessionFromUser(u);
-        } catch {
-          // 仍顯示使用者，後續 API 若 401 再處理
-        }
+      if (!u) {
+        void clearPrivateSnapshots();
+        setSessionReady(true);
+        return;
       }
-      if (!cancelled) setLoading(false);
+      setSessionReady(false);
+      try {
+        await setSessionFromUser(u);
+      } catch {
+        // 仍顯示使用者，後續 API 若 401 再處理
+      }
+      if (!cancelled) setSessionReady(true);
     });
     return () => {
       cancelled = true;
@@ -200,6 +251,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     () => ({
       user,
       loading,
+      sessionReady,
+      cachedProfile,
       refreshSession,
       signIn,
       signInWithEmail,
@@ -207,7 +260,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       sendPasswordReset,
       signOut,
     }),
-    [user, loading, refreshSession, signIn, signInWithEmail, signUpWithEmail, sendPasswordReset, signOut]
+    [user, loading, sessionReady, cachedProfile, refreshSession, signIn, signInWithEmail, signUpWithEmail, sendPasswordReset, signOut]
   );
 
   return (

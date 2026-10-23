@@ -41,7 +41,7 @@ function useSessionRetry() {
 }
 
 export function usePrivateRoutes() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, sessionReady } = useAuth();
   const [state, setState] = useState<State>({ routes: [], limit: null, loading: true, error: null });
   const withSessionRetry = useSessionRetry();
 
@@ -55,10 +55,10 @@ export function usePrivateRoutes() {
     }
   }, [withSessionRetry]);
 
-  // 等 AuthContext 換完 session（onAuthStateChanged 完成後 loading 才變 false）再讀列表
+  // 等 AuthContext 換完 session（sessionReady）再讀列表，才帶得到有效的 rc_session
   useEffect(() => {
-    if (!authLoading && user) refetch();
-  }, [authLoading, user, refetch]);
+    if (sessionReady && user) refetch();
+  }, [sessionReady, user, refetch]);
 
   const upload = useCallback(
     async (file: File) => {
@@ -85,7 +85,7 @@ export function usePrivateRoutes() {
  * 先完成 session 重換，之後同頁的判讀請求（/api/routes/private/briefing）才帶得到有效 cookie。
  */
 export function usePrivateRoute(id: string) {
-  const { user, loading: authLoading } = useAuth();
+  const { user, sessionReady } = useAuth();
   const withSessionRetry = useSessionRetry();
   const [state, setState] = useState<{ route: Route | null; loading: boolean; error: string | null }>({
     route: null,
@@ -94,7 +94,7 @@ export function usePrivateRoute(id: string) {
   });
 
   useEffect(() => {
-    if (authLoading || !user) return;
+    if (!sessionReady || !user) return;
     let cancelled = false;
     setState({ route: null, loading: true, error: null });
     withSessionRetry(() => fetchPrivateRouteDetail(id))
@@ -107,7 +107,7 @@ export function usePrivateRoute(id: string) {
     return () => {
       cancelled = true;
     };
-  }, [id, authLoading, user, withSessionRetry]);
+  }, [id, sessionReady, user, withSessionRetry]);
 
   return state;
 }
