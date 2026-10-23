@@ -17,6 +17,7 @@ import { tdxCityCode } from "@/lib/tdx/client";
 import { getRoadEventsByCounty, type RoadEventsResult } from "@/lib/tdx/road-events.server";
 import { readBriefingInputs, writeBriefingInputs } from "@/lib/background/briefing-inputs.firestore";
 import { freshInputs, inputId, type StoredInput } from "@/lib/dashboard/briefing-inputs";
+import { reportError, reportFailureRate } from "@/lib/observability/report";
 import {
   briefRoute,
   mapCwbCondition,
@@ -129,7 +130,7 @@ async function loadBriefingInputs(routes: Route[], { force = false } = {}) {
       }
       return { events, failed: live.failed };
     } catch (e) {
-      console.warn("路況事件取得失敗:", errorMessage(e));
+      reportError("tdx", "road-events-unavailable", e, { counties: missingCounties.length });
       return null;
     }
   })();
@@ -160,9 +161,15 @@ async function loadBriefingInputs(routes: Route[], { force = false } = {}) {
   const lookup = new Map<string, DistrictWeather>();
   for (const r of weatherResults) {
     if (r.status === "fulfilled") lookup.set(r.value[0], r.value[1]);
-    else console.warn("行政區天氣取得失敗:", errorMessage(r.reason));
+    else reportError("cwb", "district-weather-failed", r.reason);
   }
+  // 失敗率告警：單一行政區失敗是常態，整批拿不到代表 CWB 或金鑰出事
+  reportFailureRate("cwb", "district-weather-degraded", lookup.size, keys.length);
   const [eventsResult, stationsByCounty] = await Promise.all([eventsPromise, stationsPromise]);
+  // Firestore 命中的縣市算成功；只有當場抓失敗的縣市計入失敗率
+  if (eventsResult && tdxCounties.length) {
+    reportFailureRate("tdx", "road-events-degraded", tdxCounties.length - eventsResult.failed.length, tdxCounties.length);
+  }
 
   try {
     await writeBriefingInputs(toWrite);

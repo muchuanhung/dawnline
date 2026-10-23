@@ -18,6 +18,7 @@
  */
 
 import { normalizeCountyForCWB } from "@/lib/cwb/county-map";
+import { reportError, reportFailureRate } from "@/lib/observability/report";
 
 const TOKEN_URL ="https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token";
 const CCTV_BASE = "https://tdx.transportdata.tw/api/basic/v2/Road/Traffic/CCTV";
@@ -166,17 +167,23 @@ export async function fetchCCTVByCity(cityCode: string): Promise<TDXCCTVItem[]> 
 export async function fetchAllCCTV(cities?: string[]): Promise<TDXCCTVItem[]> {
   const cityList = cities ?? Object.keys(TDX_CITY_CODES);
   const all: TDXCCTVItem[] = [];
+  let attempted = 0;
+  let ok = 0;
   for (const cityZh of cityList) {
     const code = TDX_CITY_CODES[cityZh];
     if (!code) continue;
+    attempted += 1;
     try {
       const items = await fetchCCTVByCity(code);
       all.push(...items.map((i) => ({ ...i, _county: cityZh })));
+      ok += 1;
     } catch (e) {
-      console.error(`[TDX] ${cityZh} 取得失敗:`, e);
+      reportError("tdx", "cctv-city-failed", e, { county: cityZh });
     }
     await new Promise((r) => setTimeout(r, 500)); // 節流避免 rate limit
   }
+  // 每日同步只跑一次，失敗率要在這裡看；少數縣市失敗可以接受，整批失敗代表金鑰或 API 變更
+  reportFailureRate("tdx", "cctv-sync-degraded", ok, attempted, { threshold: 0.3 });
   return all;
 }
 

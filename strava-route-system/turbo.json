@@ -11,7 +11,8 @@
         ".env*"
       ],
       "env": [
-        "BACKEND_API_URL"
+        "BACKEND_API_URL",
+        "ALERT_WEBHOOK_URL"
       ],
       "outputs": [
         ".next/**",

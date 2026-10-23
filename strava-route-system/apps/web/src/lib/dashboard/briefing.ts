@@ -258,6 +258,8 @@ export interface RouteBriefing {
   demo: boolean;
   /** 途中模式：判讀起點的里程（目前位置）；null 為從起點出發的整條路線判讀 */
   fromKm: number | null;
+  /** 這份判讀依據的時間（ISO）；畫面標示資料時間用，離線或快取命中時不會跟著現在走 */
+  generatedAt: string;
 }
 
 export interface BriefRouteOptions {
@@ -331,6 +333,7 @@ export function briefRoute(
     defaultActivity,
     demo: route.demo === true,
     fromKm: aheadFrom,
+    generatedAt: now.toISOString(),
   };
 }
 
