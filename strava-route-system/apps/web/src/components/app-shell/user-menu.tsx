@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { ChevronDown, LogIn, LogOut, User } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import Spinner from "@/components/ui/Spinner";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -26,16 +25,24 @@ function shortName(displayName: string | null | undefined, email: string | null 
 
 /** 桌機頂部導覽右側：頭像＋名字的名牌，點開為帳號選單（個人資料、登出） */
 export function UserMenu({ active }: { active: boolean }) {
-  const { user, loading } = useAuth();
+  const { user, loading, cachedProfile } = useAuth();
   const handleSignOut = useSignOut();
 
-  // 登入狀態載入中先留位置，避免載入完才把版面推開
   if (loading) {
-    return (
-      <div aria-hidden className="flex h-10 w-32 items-center justify-center">
-        <Spinner size="sm" dotClassName="bg-primary" />
-      </div>
-    );
+    // 重新整理後 Firebase 還原登入狀態前：有上次登入者的資料就直接畫名牌，不閃載入動畫
+    if (cachedProfile) {
+      return (
+        <UserMenuView
+          active={active}
+          displayName={cachedProfile.displayName}
+          email={cachedProfile.email}
+          avatarUrl={getProxiedAvatarUrl(cachedProfile.photoURL)}
+          onSignOut={handleSignOut}
+        />
+      );
+    }
+    // 沒有快取（第一次來、或伺服器渲染）：靜態佔位，和名牌同尺寸，避免載入完把版面推開
+    return <div aria-hidden className="h-10 w-32 rounded-full border border-border bg-card" />;
   }
   // Auth resolved with no user (e.g. guest browsing the demo route): offer sign-in instead of a spinner that never ends
   if (!user) {
