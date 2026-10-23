@@ -28,7 +28,7 @@ export function RouteReconBody({
   /** 路線卡外層；手機往下捲過它後顯示懸浮路線列 */
   headerRef?: Ref<HTMLDivElement>;
 }) {
-  const { briefing, summary, cctv, radar, polyline, aheadKm, setAheadKm } = recon;
+  const { briefing, cctv, radar, polyline, aheadKm, setAheadKm } = recon;
   const suggestion = briefing.briefing?.departureSuggestion;
 
   return (
@@ -47,7 +47,6 @@ export function RouteReconBody({
         cctvOffline={cctv.offline}
         radar={radar}
         briefing={briefing}
-        summary={summary}
         afterHero={
           <div className="space-y-3">
             <RideAhead

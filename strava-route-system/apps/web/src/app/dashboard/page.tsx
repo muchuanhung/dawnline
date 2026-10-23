@@ -26,7 +26,8 @@ export default async function DashboardPage({
   return (
     <AppShell current="dashboard">
       <DashboardHeader title={departure ? `${formatClock(departure, now)} 出發適合嗎？` : "現在出發適合嗎？"} />
-      <Suspense key={[route, depart, activity].join("|")} fallback={<BriefingLoading />}>
+      {/* 只在第一次進頁面時顯示；換路線時 Briefing 內部只讓判讀卡顯示載入中 */}
+      <Suspense fallback={<BriefingLoading />}>
         <Briefing routeId={route} trip={trip} />
       </Suspense>
     </AppShell>

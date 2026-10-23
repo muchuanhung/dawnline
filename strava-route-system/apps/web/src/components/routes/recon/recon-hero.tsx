@@ -279,12 +279,10 @@ const VERDICT_PILL: Record<VerdictLevel, string> = {
 function VerdictOverlay({
   verdict,
   loading,
-  headlinePending,
   compact = false,
 }: {
   verdict: ReconVerdict;
   loading: boolean;
-  headlinePending: boolean;
   compact?: boolean;
 }) {
   const word = VERDICT_LEVEL_STYLE[verdict.level].word;
@@ -309,7 +307,7 @@ function VerdictOverlay({
     return (
       <div role="status" aria-live="polite" className="absolute inset-x-0 top-0 flex items-center gap-2 bg-black/65 px-4 py-2 text-white">
         {pill}
-        {!loading && !headlinePending && <p className="min-w-0 truncate text-sm font-medium">{verdict.headline}</p>}
+        {!loading && <p className="min-w-0 truncate text-sm font-medium">{verdict.headline}</p>}
       </div>
     );
   }
@@ -320,30 +318,15 @@ function VerdictOverlay({
       className="absolute inset-x-0 top-0 bg-black/65 px-4 py-3 text-white"
     >
       <p>{pill}</p>
-      {!loading &&
-        (headlinePending ? (
-          <HeadlineSkeleton className="mt-2 h-4 bg-white/25" />
-        ) : (
-          <p className="mt-1.5 text-sm font-medium leading-snug">
-            {verdict.headline}
-          </p>
-        ))}
+      {!loading && (
+        <p className="mt-1.5 text-sm font-medium leading-snug">
+          {verdict.headline}
+        </p>
+      )}
       {!loading && verdict.note && (
         <p className="mt-0.5 text-xs text-white/75">{verdict.note}</p>
       )}
     </div>
-  );
-}
-
-/** 判定句等 AI 摘要時的骨架：只佔句子的位置，判定詞照常顯示 */
-export function HeadlineSkeleton({ className }: { className?: string }) {
-  return (
-    <span
-      role="status"
-      className={cn("block w-3/4 max-w-xs animate-pulse rounded", className)}
-    >
-      <span className="sr-only">判定說明載入中</span>
-    </span>
   );
 }
 
@@ -353,7 +336,6 @@ function CctvStage({
   positionKm,
   verdict,
   verdictLoading,
-  headlinePending,
   radar,
   polyline,
   view,
@@ -363,7 +345,6 @@ function CctvStage({
   marker: CctvMarker;
   verdict: ReconVerdict;
   verdictLoading: boolean;
-  headlinePending: boolean;
   view: HeroView;
   onView: (v: HeroView) => void;
   onOpenRadar: () => void;
@@ -404,7 +385,6 @@ function CctvStage({
         <VerdictOverlay
           verdict={verdict}
           loading={verdictLoading}
-          headlinePending={headlinePending}
           compact={showRadar}
         />
         <div
@@ -450,7 +430,6 @@ function CctvStage({
 /** 沒有鏡頭（載入中、載入失敗、沿途沒有、離線）：主視覺改成判定本身，不留空黑框 */
 function NoCctvStage({
   verdict,
-  headlinePending,
   cctvLoading,
   cctvError,
   cctvOffline,
@@ -460,7 +439,6 @@ function NoCctvStage({
   onOpenRadar,
 }: RadarProps & {
   verdict: ReconVerdict;
-  headlinePending: boolean;
   cctvLoading: boolean;
   cctvError: boolean;
   cctvOffline: boolean;
@@ -470,7 +448,7 @@ function NoCctvStage({
   const cctvNote = cctvLoading ? null : cctvOffline ? "離線中，無法看即時影像" : cctvError ? "監視器載入失敗" : "沿途沒有監視器";
   return (
     <div>
-      <RouteVerdictBar verdict={verdict} headlinePending={headlinePending} />
+      <RouteVerdictBar verdict={verdict} />
       <p
         className="flex items-center gap-2 px-4 pt-3 text-sm text-muted-foreground"
         role={cctvLoading ? "status" : undefined}
@@ -547,7 +525,6 @@ function ZoneCallout({
 export function ReconHero({
   verdict,
   verdictLoading,
-  headlinePending = false,
   markers,
   activeMarker,
   cctvLoading,
@@ -568,8 +545,6 @@ export function ReconHero({
   verdict: ReconVerdict;
   /** 判讀尚未回來 */
   verdictLoading: boolean;
-  /** 判定句還在等 AI 摘要：句子位置顯示骨架 */
-  headlinePending?: boolean;
   markers: CctvMarker[];
   activeMarker: CctvMarker | null;
   cctvLoading: boolean;
@@ -606,7 +581,6 @@ export function ReconHero({
           positionKm={positionKm}
           verdict={verdict}
           verdictLoading={verdictLoading}
-          headlinePending={headlinePending}
           radar={radar}
           polyline={polyline}
           view={view}
@@ -619,7 +593,6 @@ export function ReconHero({
           radar={radar}
           polyline={polyline}
           positionKm={positionKm}
-          headlinePending={headlinePending}
           cctvLoading={cctvLoading}
           cctvError={cctvError}
           cctvOffline={cctvOffline}

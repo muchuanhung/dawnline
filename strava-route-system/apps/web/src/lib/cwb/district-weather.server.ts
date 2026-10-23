@@ -156,9 +156,11 @@ function computeVerdict(
 const timeLabel = (iso: string) =>
   iso ? new Date(iso).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: TIME_ZONE }) : "—";
 
-/** O-A0002 自動雨量站；getDistrictWeather 與 getCountyRainfallStations 用同一網址以共用 fetch 快取 */
-const rainfallUrl = (auth: string, cwbCounty: string) =>
-  `${CWB_BASE}/O-A0002-002?${auth}&format=JSON&locationName=${encodeURIComponent(cwbCounty)}`;
+/**
+ * O-A0002-001 自動雨量站（全台）。這個資料集沒有縣市篩選參數，由 parseRainfallStations 依 GeoInfo.CountyName 篩；
+ * getDistrictWeather 與 getCountyRainfallStations 用同一網址以共用 fetch 快取
+ */
+const rainfallUrl = (auth: string) => `${CWB_BASE}/O-A0002-001?${auth}&format=JSON`;
 
 /**
  * 縣市內有效時雨量的測站，供呼叫端依各自的座標（如每條路線）篩附近測站。
@@ -169,11 +171,17 @@ export async function getCountyRainfallStations(county: string): Promise<Station
   if (!key) return null;
   const cwbCounty = normalizeCountyForCWB(county);
   try {
-    const res = await fetch(rainfallUrl(`Authorization=${encodeURIComponent(key)}`, cwbCounty), {
+    const res = await fetch(rainfallUrl(`Authorization=${encodeURIComponent(key)}`), {
       next: { revalidate: 600 },
     });
-    return res.ok ? parseRainfallStations(await res.json(), cwbCounty) : null;
-  } catch {
+    if (!res.ok) {
+      // 失敗時呼叫端只會看到「附近無測站」，留紀錄才查得到原因
+      console.warn(`[CWB] 雨量站 ${cwbCounty} HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+      return null;
+    }
+    return parseRainfallStations(await res.json(), cwbCounty);
+  } catch (e) {
+    console.warn(`[CWB] 雨量站 ${cwbCounty} 失敗: ${e instanceof Error ? e.message : String(e)}`);
     return null;
   }
 }
@@ -211,7 +219,7 @@ export async function getDistrictWeather(
     [forecastRes, sunsetRes, rainRes] = await Promise.all([
       fetch(forecastUrl, { next: { revalidate: 3600 } }),
       fetch(`${CWB_BASE}/A-B0062-001?${auth}&${format}`, { next: { revalidate: 86400 } }),
-      fetch(rainfallUrl(auth, cwbCounty), { next: { revalidate: 600 } }),
+      fetch(rainfallUrl(auth), { next: { revalidate: 600 } }),
     ]);
   } catch (e) {
     throw new CwbError(`CWB 請求失敗：${e instanceof Error ? e.message : String(e)}`, 500);

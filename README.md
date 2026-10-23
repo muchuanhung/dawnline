@@ -28,7 +28,7 @@
 | 認證 | Firebase Authentication（client 登入，server 以 Firebase Admin 驗證 `firebase-id-token` cookie） |
 | 資料儲存 | Firestore（CCTV 清單）、Firebase Storage（`gpx/routes/*.gpx` 公開路線） |
 | 背景工作 | Inngest（TDX CCTV 每日同步） |
-| 外部資料 | CWB 開放資料（`F-D0047-*` 鄉鎮預報、`O-A0002-002` 測站雨量）、TDX（路況事件、CCTV） |
+| 外部資料 | CWB 開放資料（`F-D0047-*` 鄉鎮預報、`O-A0002-001` 自動雨量站）、TDX（路況事件、CCTV） |
 | 行政區反查 | 內建台灣鄉鎮 TopoJSON + bbox 索引，本地 point-in-polygon，不需外部地理服務 |
 | 部署 | Vercel（見 `strava-route-system/vercel.json`） |
 | 測試／CI | Playwright（unit 與 E2E project）、GitHub Actions 跑型別檢查與 unit 測試 |

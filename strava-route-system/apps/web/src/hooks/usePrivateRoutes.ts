@@ -8,7 +8,6 @@ import {
   fetchPrivateRouteDetail,
   listPrivateRoutes,
   uploadGpx,
-  warmPrivateSummaries,
   type PrivateRoute,
 } from "@/lib/routes/private-routes";
 import type { Route } from "@/lib/routes/route-data";
@@ -51,8 +50,6 @@ export function usePrivateRoutes() {
     try {
       const { routes, limit } = await withSessionRetry(listPrivateRoutes);
       setState({ routes, limit, loading: false, error: null });
-      // 背景先產生各路線的 AI 句子（伺服器快取），點進路線時不用等
-      warmPrivateSummaries(routes);
     } catch (err) {
       setState((s) => ({ ...s, loading: false, error: err instanceof Error ? err.message : "無法載入路線" }));
     }
@@ -67,7 +64,6 @@ export function usePrivateRoutes() {
     async (file: File) => {
       const route = await withSessionRetry(() => uploadGpx(file));
       setState((s) => ({ ...s, routes: [route, ...s.routes] }));
-      warmPrivateSummaries([route]);
       return route;
     },
     [withSessionRetry]
