@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getAuthAdmin } from "@/lib/firebase/admin";
 import { SESSION_COOKIE_NAME } from "@/lib/auth/server";
 
+// Session cookie lifetime (Firebase allows 5 min to 14 days)
 const COOKIE_MAX_AGE = 60 * 60 * 24 * 5;
 
 export async function POST(request: Request) {
@@ -15,8 +16,14 @@ export async function POST(request: Request) {
     const decoded = await getAuthAdmin().verifyIdToken(idToken);
     const uid = decoded.uid;
 
+    // Exchange the 1-hour idToken for a session cookie, so the server can still
+    // recognise the user (and redirect / to /dashboard) after the idToken expires
+    const sessionCookie = await getAuthAdmin().createSessionCookie(idToken, {
+      expiresIn: COOKIE_MAX_AGE * 1000,
+    });
+
     const response = NextResponse.json({ success: true, uid });
-    response.cookies.set(SESSION_COOKIE_NAME, idToken, {
+    response.cookies.set(SESSION_COOKIE_NAME, sessionCookie, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",

@@ -29,11 +29,13 @@ import { HazardList } from "./recon/hazard-list";
 import { ElevationScrubber } from "./recon/elevation-scrubber";
 import { ReconHero } from "./recon/recon-hero";
 import { OfflineNotice } from "./recon/offline-notice";
+import type { RouteRadarState } from "@/hooks/useRouteRadar";
 
 export type { RouteStage, CctvMarker } from "@/lib/routes/recon-geo";
 
 /** 判讀未回來時軌道不上安全色（固定參照，避免每次 render 重算色段） */
 const NO_STAGES: RouteStage[] = [];
+const NO_RADAR: RouteRadarState = { status: "unavailable" };
 
 interface ReconViewProps {
   route: Route;
@@ -44,6 +46,8 @@ interface ReconViewProps {
   cctvError?: boolean;
   /** CCTV 清單來自離線快照或網路失敗 */
   cctvOffline?: boolean;
+  /** 路線附近的雷達回波（只供顯示，不影響判定） */
+  radar?: RouteRadarState;
   /** 伺服器端判讀（判定、示警、合併天氣的路段）；前端不自行判定 */
   briefing: RouteBriefingState;
   /** 緊接在主視覺下方的行程控制（途中定位、出發時間與運動類型），讓判定與影像留在第一眼 */
@@ -62,6 +66,7 @@ export function ReconView({
   cctvLoading = false,
   cctvError = false,
   cctvOffline = false,
+  radar = NO_RADAR,
   briefing,
   afterHero,
 }: ReconViewProps) {
@@ -161,6 +166,8 @@ export function ReconView({
         cctvLoading={cctvLoading}
         cctvError={cctvError}
         cctvOffline={offline}
+        radar={radar}
+        polyline={routePolyline}
         positionKm={positionKm}
         totalKm={totalKm}
         zones={zones}
