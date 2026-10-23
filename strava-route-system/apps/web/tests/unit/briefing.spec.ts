@@ -389,3 +389,13 @@ test.describe("建議出發時段", () => {
     expect(b.departureSuggestion?.nowIsBest).toBe(true);
   });
 });
+
+test.describe("generatedAt", () => {
+  test("等於判讀所用的 now，不是呼叫當下的時間", () => {
+    const route = makeRoute({ segments: [segment("士林區", [0, 5, 10, 15, 20])] });
+    const b = briefRoute(route, lookupOf({ 士林區: weather(10, { rainfallBuckets: MORNING_THEN_RAIN }) }), {
+      now: AT_8AM,
+    });
+    expect(b.generatedAt).toBe(AT_8AM.toISOString());
+  });
+});

@@ -12,7 +12,8 @@
       ],
       "env": [
         "BACKEND_API_URL",
-        "ANTHROPIC_API_KEY"
+        "ANTHROPIC_API_KEY",
+        "ALERT_WEBHOOK_URL"
       ],
       "outputs": [
         ".next/**",

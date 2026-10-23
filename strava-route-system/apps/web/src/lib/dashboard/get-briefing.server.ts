@@ -9,6 +9,7 @@ import { demoRoadEvents } from "@/lib/routes/demo-route";
 import type { Activity } from "@/lib/routes/trip";
 import { getCountyRainfallStations, getDistrictWeather } from "@/lib/cwb/district-weather.server";
 import { getRoadEvents } from "@/lib/tdx/road-events.server";
+import { reportError, reportFailureRate } from "@/lib/observability/report";
 import {
   briefRoute,
   mapCwbCondition,
@@ -88,7 +89,7 @@ async function briefRoutes(routes: Route[], trip: TripOptions = {}, suggestFor?:
   const counties = [...new Set(routes.flatMap((r) => r.segments.map((s) => s.county).filter((c): c is string => !!c)))];
   // 天氣與路況事件平行取得；事件失敗不影響天氣判讀
   const eventsPromise = getRoadEvents(counties).catch((e) => {
-    console.warn("路況事件取得失敗:", e instanceof Error ? e.message : e);
+    reportError("tdx", "road-events-unavailable", e, { counties: counties.length });
     return null;
   });
   // 即時雨量站每縣市抓一次，再依各路線自己的座標篩 3 km 內測站
@@ -117,12 +118,17 @@ async function briefRoutes(routes: Route[], trip: TripOptions = {}, suggestFor?:
   const lookup = new Map<string, DistrictWeather>();
   for (const r of results) {
     if (r.status === "fulfilled") lookup.set(r.value[0], r.value[1]);
-    else console.warn("行政區天氣取得失敗:", r.reason instanceof Error ? r.reason.message : r.reason);
+    else reportError("cwb", "district-weather-failed", r.reason);
   }
+  // 失敗率告警：單一行政區失敗是常態，整批拿不到代表 CWB 或金鑰出事
+  reportFailureRate("cwb", "district-weather-degraded", lookup.size, keys.length);
 
   const [eventsResult, stationsByCounty] = await Promise.all([eventsPromise, stationsPromise]);
   const now = new Date();
   const eventsFailed = eventsResult ? eventsResult.failed : null;
+  if (eventsResult && counties.length) {
+    reportFailureRate("tdx", "road-events-degraded", counties.length - eventsResult.failed.length, counties.length);
+  }
   const briefings = routes.map((route) =>
     briefRoute(route, withRouteObservedRain(route, lookup, stationsByCounty), {
       // 示意路線另加假事件；真實路線只看 TDX

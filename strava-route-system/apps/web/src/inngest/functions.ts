@@ -3,6 +3,7 @@ import { fetchAllCCTV, TDX_SYNC_CITIES } from "@/lib/tdx/client";
 import { persistCCTVFirestore } from "@/lib/background/tdx-cctv.firestore";
 import { loadRoutes } from "@/lib/routes/load-routes.server";
 import { getPublicRouteSummary } from "@/lib/ai/summary.server";
+import { reportError } from "@/lib/observability/report";
 
 /**
  * TDX CCTV 每日同步
@@ -16,7 +17,12 @@ import { getPublicRouteSummary } from "@/lib/ai/summary.server";
  *
  */
 export const syncTDXCCTV = inngest.createFunction(
-  { id: "tdx-cctv-sync", name: "TDX CCTV 每日同步" },
+  {
+    id: "tdx-cctv-sync",
+    name: "TDX CCTV 每日同步",
+    // 重試用盡仍失敗：鏡頭清單會停在上一次的資料，畫面不會報錯，所以一定要主動送出去
+    onFailure: ({ error }) => reportError("inngest", "tdx-cctv-sync-failed", error),
+  },
   { cron: "0 4 * * *" },
   async ({ step }) => {
     const items = await step.run("fetch-tdx-cctv", () =>
@@ -41,7 +47,11 @@ export const syncTDXCCTV = inngest.createFunction(
  * Claude 只在判讀事實改變時才會被呼叫（句子以事實為 key 快取一天），其餘只是重算判讀（天氣、路況本身也有快取）。
  */
 export const warmRouteSummaries = inngest.createFunction(
-  { id: "route-summary-warm", name: "公開路線 AI 摘要預熱" },
+  {
+    id: "route-summary-warm",
+    name: "公開路線 AI 摘要預熱",
+    onFailure: ({ error }) => reportError("inngest", "route-summary-warm-failed", error),
+  },
   { cron: "*/10 * * * *" },
   async ({ step }) => {
     const ids = await step.run("list-routes", async () => (await loadRoutes()).map((r) => r.id));
