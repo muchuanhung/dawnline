@@ -1,34 +1,29 @@
 "use client";
 
-import { Search, Bike, Footprints, Mountain, Trophy, X } from "lucide-react";
+import { Search, X } from "lucide-react";
+import { ROUTE_TYPE_ICONS } from "@/constants";
+import { ALL_TYPES } from "@/lib/routes/route-types";
 import { cn } from "@/lib/utils";
 
-export type FilterType = "全部" | "自行車" | "跑步" | "健行" | "雪巴運動";
+/** 類型 icon；資料裡出現沒登記的新類型就只顯示文字 */
+const TYPE_ICONS: Record<string, React.ComponentType<{ className?: string }> | undefined> = ROUTE_TYPE_ICONS;
 
-const FILTERS: { value: FilterType; icon?: React.ComponentType<{ className?: string }> }[] = [
-  { value: "全部" },
-  { value: "自行車", icon: Bike },
-  { value: "跑步", icon: Footprints },
-  { value: "健行", icon: Mountain },
-  { value: "雪巴運動", icon: Trophy },
-];
-
-/** 類型是否符合目前篩選（「全部」一律符合） */
-export function matchesTypeFilter(type: string, filter: FilterType): boolean {
-  return filter === "全部" || type === filter;
-}
-
-/** 路線搜尋＋類型篩選：公開路線頁與私人路線頁共用 */
+/**
+ * 路線搜尋＋類型篩選：公開路線頁與私人路線頁共用。
+ * types：目前路線資料實際有的類型（routeTypesOf）；少於兩種時篩選沒有意義，不顯示。
+ */
 export function RouteFilters({
   search,
   onSearch,
+  types,
   typeFilter,
   onFilter,
 }: {
   search: string;
   onSearch: (v: string) => void;
-  typeFilter: FilterType;
-  onFilter: (v: FilterType) => void;
+  types: string[];
+  typeFilter: string;
+  onFilter: (v: string) => void;
 }) {
   return (
     <div className="space-y-3">
@@ -53,25 +48,30 @@ export function RouteFilters({
           </button>
         )}
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        {FILTERS.map(({ value, icon: Icon }) => (
-          <button
-            key={value}
-            type="button"
-            onClick={() => onFilter(value)}
-            aria-pressed={typeFilter === value}
-            className={cn(
-              "inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
-              typeFilter === value
-                ? "border-primary bg-primary text-primary-foreground"
-                : "border-border bg-card text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {Icon && <Icon className="size-3" aria-hidden />}
-            {value}
-          </button>
-        ))}
-      </div>
+      {types.length >= 2 && (
+        <div className="flex flex-wrap items-center gap-2">
+          {[ALL_TYPES, ...types].map((value) => {
+            const Icon = TYPE_ICONS[value];
+            return (
+              <button
+                key={value}
+                type="button"
+                onClick={() => onFilter(value)}
+                aria-pressed={typeFilter === value}
+                className={cn(
+                  "inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                  typeFilter === value
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border bg-card text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {Icon && <Icon className="size-3" aria-hidden />}
+                {value}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

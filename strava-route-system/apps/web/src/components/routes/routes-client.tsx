@@ -12,7 +12,8 @@ import { RoutesLoading } from "@/components/routes/routes-loading";
 import { useRouteRecon } from "@/hooks/useRouteRecon";
 import { RouteCard } from "@/components/routes/route-card";
 import { RoutesTabs } from "@/components/routes/routes-tabs";
-import { RouteFilters, type FilterType } from "@/components/routes/route-filters";
+import { RouteFilters } from "@/components/routes/route-filters";
+import { ALL_TYPES, effectiveTypeFilter, matchesTypeFilter, routeTypesOf } from "@/lib/routes/route-types";
 import { RouteStickyBar } from "@/components/routes/route-sticky-bar";
 import { RouteReconBody } from "@/components/routes/route-recon-body";
 import type { Activity } from "@/lib/routes/trip";
@@ -32,7 +33,7 @@ export function RoutesClient({
   const { routes, loading, error } = useRoutesFromStorage();
   const [selectedId, setSelectedId] = useState(initialRouteId ?? "");
   const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState<FilterType>("全部");
+  const [typeFilter, setTypeFilter] = useState(ALL_TYPES);
   const [mobileListOpen, setMobileListOpen] = useState(false);
   const [drawerLoading, setDrawerLoading] = useState(false);
   const [switchingRoute, setSwitchingRoute] = useState(false);
@@ -70,10 +71,12 @@ export function RoutesClient({
   // CCTV、途中模式、判讀與判定（與私人路線詳情共用）
   const recon = useRouteRecon(selectedRoute, trip);
   const routeStatus = recon.status;
+  // 類型篩選的選項依路線資料產生；選的類型已不在資料裡就退回「全部」
+  const routeTypes = routeTypesOf(routes);
+  const activeTypeFilter = effectiveTypeFilter(typeFilter, routeTypes);
   const filteredRoutes = routes.filter((r) => {
     const matchesSearch = r.name.toLowerCase().includes(search.toLowerCase()) || r.nameZh.includes(search);
-    const matchesType = typeFilter === "全部" || r.type === typeFilter;
-    return matchesSearch && matchesType;
+    return matchesSearch && matchesTypeFilter(r.type, activeTypeFilter);
   });
 
   function handleSelectRoute(id: string) {
@@ -129,7 +132,7 @@ export function RoutesClient({
           <RoutesTabs current="explore" className="sm:w-full" />
         </div>
         <div className="border-b border-border p-4">
-          <RouteFilters search={search} onSearch={setSearch} typeFilter={typeFilter} onFilter={setTypeFilter} />
+          <RouteFilters search={search} onSearch={setSearch} types={routeTypes} typeFilter={activeTypeFilter} onFilter={setTypeFilter} />
         </div>
         {/* 側欄只有 max-height，Radix ScrollArea 的 viewport（height: 100%）會撐成內容高度而無法捲動；改用原生捲動 */}
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -181,7 +184,7 @@ export function RoutesClient({
                   </div>
                 ) : (
                   <div className="space-y-3">
-                      <RouteFilters search={search} onSearch={setSearch} typeFilter={typeFilter} onFilter={setTypeFilter} />
+                      <RouteFilters search={search} onSearch={setSearch} types={routeTypes} typeFilter={activeTypeFilter} onFilter={setTypeFilter} />
                       <div className="space-y-2">
                         {filteredRoutes.map((route, i) => (
                           <RouteCard key={route.id} {...cardProps(route, i)} />
