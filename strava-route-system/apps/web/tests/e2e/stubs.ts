@@ -101,11 +101,6 @@ export async function stubRadar(page: Page, latestObservedAt: string | "error") 
 /** 路況事件；"error" 模擬 TDX 失敗（判讀端 eventsFailed 為 null） */
 export async function stubEvents(page: Page, events: Events) {
   stateOf(page).events = events;
-  await page.route("**/api/road-events?**", (r) =>
-    events === "error"
-      ? r.fulfill({ status: 500, json: { error: "TDX 請求失敗" } })
-      : r.fulfill({ json: { events, failed: [] } })
-  );
 }
 
 /** 依行政區設定降雨機率；"error" 模擬 CWB 失敗（判讀端沒有任何天氣） */

@@ -2,7 +2,6 @@
 
 import { ThemeProvider } from "next-themes";
 import { AuthProvider } from "@/contexts/AuthContext";
-import { LocationProvider } from "@/contexts/LocationContext";
 import { PwaProvider } from "@/components/pwa/pwa-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -18,9 +17,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem storageKey="dawnline-theme">
       <TooltipProvider>
         <AuthProvider>
-          <LocationProvider>
-            <PwaProvider>{children}</PwaProvider>
-          </LocationProvider>
+          <PwaProvider>{children}</PwaProvider>
         </AuthProvider>
       </TooltipProvider>
     </ThemeProvider>

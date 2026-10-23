@@ -108,9 +108,3 @@ export async function getRoadEventsByCounty(counties: string[]): Promise<CountyR
   }
   return { byCounty, failed };
 }
-
-/** 所有縣市的事件合併成一份；失敗縣市另列 */
-export async function getRoadEvents(counties: string[]): Promise<RoadEventsResult> {
-  const { byCounty, failed } = await getRoadEventsByCounty(counties);
-  return { events: [...byCounty.values()].flat(), failed };
-}

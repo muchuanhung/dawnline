@@ -34,7 +34,6 @@ const nextConfig = {
     // 未設定 BACKEND_API_URL 時不轉，私人路線 API 會 404。
     const backend = process.env.BACKEND_API_URL?.replace(/\/+$/, '');
     return [
-      { source: '/favicon.ico', destination: '/api/favicon' },
       ...(backend ? [{ source: '/api/v1/:path*', destination: `${backend}/api/v1/:path*` }] : []),
     ];
   },
