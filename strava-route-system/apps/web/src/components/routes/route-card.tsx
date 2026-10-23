@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { Route } from "@/lib/routes/route-data";
 import { getStatusColor, getStatusLabel, getDifficultyColor } from "@/lib/routes/route-data";
+import type { CardStatus } from "@/lib/routes/route-statuses";
 import { ROUTE_TYPE_ICONS } from "@/constants";
 import { routeCardClassName } from "@/components/routes/route-card-style";
 
@@ -14,13 +15,16 @@ interface RouteCardProps {
   isSelected: boolean;
   onSelect: (id: string) => void;
   index: number;
-  /** null／未提供代表尚未評估，不顯示狀態（route.status 為 GPX 寫死值） */
-  statusOverride?: Route["status"] | null;
+  /** null／未提供代表尚未取得判讀，不顯示標籤（route.status 為 GPX 寫死值）；unknown 顯示「未判定」 */
+  statusOverride?: CardStatus | null;
 }
+
+/** 卡片標籤的顏色與文字；未判定用灰色，不能像安全那樣給綠色 */
+const UNKNOWN_STATUS = { color: "#9ca3af", label: "未判定" };
 
 export function RouteCard({ route, isSelected, onSelect, index, statusOverride }: RouteCardProps) {
   const status = statusOverride ?? null;
-  const statusColor = status ? getStatusColor(status) : undefined;
+  const statusColor = status ? (status === "unknown" ? UNKNOWN_STATUS.color : getStatusColor(status)) : undefined;
   const diffColor = getDifficultyColor(route.difficulty);
   const TypeIcon = ROUTE_TYPE_ICONS[route.type];
 
@@ -57,7 +61,7 @@ export function RouteCard({ route, isSelected, onSelect, index, statusOverride }
               className="mr-1.5 h-1.5 w-1.5 rounded-full inline-block"
               style={{ backgroundColor: statusColor }}
             />
-            {getStatusLabel(status)}
+            {status === "unknown" ? UNKNOWN_STATUS.label : getStatusLabel(status)}
           </Badge>
         )}
       </div>

@@ -10,6 +10,9 @@ import type { Route } from "@/lib/routes/route-data";
 import { useRoutesFromStorage } from "@/hooks/useRoutesFromStorage";
 import { RoutesLoading } from "@/components/routes/routes-loading";
 import { useRouteRecon } from "@/hooks/useRouteRecon";
+import { useRouteStatuses } from "@/hooks/useRouteStatuses";
+import { verdictOf } from "@/hooks/useRouteBriefing";
+import { cardStatusOf } from "@/lib/routes/route-statuses";
 import { RouteCard } from "@/components/routes/route-card";
 import { RoutesTabs } from "@/components/routes/routes-tabs";
 import { RouteFilters } from "@/components/routes/route-filters";
@@ -71,6 +74,11 @@ export function RoutesClient({
   // CCTV、途中模式、判讀與判定（與私人路線詳情共用）
   const recon = useRouteRecon(selectedRoute, trip);
   const routeStatus = recon.status;
+  // 清單每張卡的標籤（預設行程）；選中的那張改用詳情判讀，與使用者設定的出發時間、運動類型一致
+  const listStatusOf = useRouteStatuses();
+  const selectedCardStatus = recon.briefing.briefing
+    ? cardStatusOf(verdictOf(recon.briefing).level, recon.briefing.expired)
+    : undefined;
   // 類型篩選的選項依路線資料產生；選的類型已不在資料裡就退回「全部」
   const routeTypes = routeTypesOf(routes);
   const activeTypeFilter = effectiveTypeFilter(typeFilter, routeTypes);
@@ -116,7 +124,7 @@ export function RoutesClient({
     isSelected: route.id === selectedId,
     onSelect: handleSelectRoute,
     index: i,
-    statusOverride: route.id === selectedRoute?.id ? routeStatus : null,
+    statusOverride: (route.id === selectedRoute?.id ? selectedCardStatus : undefined) ?? listStatusOf(route.id) ?? null,
   });
 
   return (

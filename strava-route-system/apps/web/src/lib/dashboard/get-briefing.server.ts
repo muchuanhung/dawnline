@@ -7,6 +7,7 @@
 
 import { loadRoutes } from "@/lib/routes/load-routes.server";
 import type { Route } from "@/lib/routes/route-data";
+import type { RouteStatusEntry } from "@/lib/routes/route-statuses";
 import { demoRoadEvents } from "@/lib/routes/demo-route";
 import type { RoadEvent } from "@/lib/routes/road-events";
 import type { Activity } from "@/lib/routes/trip";
@@ -40,6 +41,13 @@ export async function getPublicBriefings(limit = 3): Promise<RouteBriefing[]> {
   const routes = (await loadRoutes()).slice(0, limit);
   if (routes.length === 0) return [];
   return (await briefRoutes(routes)).briefings;
+}
+
+/** 路線清單卡片用：所有公開路線的判定等級（預設行程：現在出發、依路線類型的運動），一次算完 */
+export async function getRouteStatuses(): Promise<RouteStatusEntry[]> {
+  const routes = await loadRoutes();
+  if (routes.length === 0) return [];
+  return (await briefRoutes(routes)).briefings.map((b) => ({ id: b.id, level: b.verdict.level }));
 }
 
 /** 單一公開路線判讀 */
