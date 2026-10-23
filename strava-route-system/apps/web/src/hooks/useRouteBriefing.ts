@@ -5,7 +5,7 @@ import type { RouteBriefing } from "@/lib/dashboard/briefing";
 import type { ReconVerdict } from "@/lib/routes/recon-geo";
 import type { RouteEvent } from "@/lib/routes/road-events";
 import { withTrip, type TripParams } from "@/lib/routes/trip";
-import { expireVerdict, isSnapshotExpired, snapshotAtOf } from "@/lib/routes/snapshot";
+import { SNAPSHOT_MAX_AGE_MS, expireVerdict, isSnapshotExpired, snapshotAtOf } from "@/lib/routes/snapshot";
 
 export interface RouteEventsState {
   events: RouteEvent[];
@@ -38,6 +38,9 @@ const SNAPSHOT_TICK_MS = 30_000;
 /** 頁面回到前景時，判讀超過這個時間就重抓一次；不做持續輪詢 */
 const REFRESH_ON_RETURN_MS = 10 * 60_000;
 
+/** 頁面一直在前景時，在過期前這麼久先重抓一次，避免畫面先閃成未判定 */
+const REFRESH_BEFORE_EXPIRY_MS = 60_000;
+
 /** dataAt：判讀資料的時間（快照為存檔時間，線上為收到回應的時間），過期判斷用 */
 type FetchState = Omit<RouteBriefingState, "snapshot" | "expired"> & { savedAt: number | null; dataAt: number | null };
 
@@ -54,6 +57,7 @@ const EMPTY: FetchState = { briefing: null, loading: false, error: false, savedA
  *
  * 回前景：頁面從背景回來（iOS 鎖屏、切分頁、bfcache 還原）時，判讀超過 10 分鐘或上次失敗就重抓一次，
  * 重抓期間保留畫面上的判讀；超過 30 分鐘沒更新的線上判讀一樣套過期規則（未判定 ≠ 安全）。
+ * 頁面一直開在前景沒人操作時，在過期前 1 分鐘自動重抓一次；抓不到就照規則過期。
  *
  * endpoint：判讀 API；私人路線用 /api/routes/private/briefing（參數相同）。
  */
@@ -146,6 +150,18 @@ export function useRouteBriefing(
     const timer = setInterval(() => setNow(Date.now()), SNAPSHOT_TICK_MS);
     return () => clearInterval(timer);
   }, [dataAt]);
+
+  // 前景不動：過期前重抓一次。每份判讀只排一次；重抓失敗而 dataAt 沒變時不會再排，不會變成輪詢。
+  // 背景中不抓，回前景由上面的 onReturn 處理。
+  useEffect(() => {
+    if (!routeId || dataAt == null) return;
+    const delay = Math.max(0, dataAt + SNAPSHOT_MAX_AGE_MS - REFRESH_BEFORE_EXPIRY_MS - Date.now());
+    const timer = setTimeout(() => {
+      if (document.visibilityState !== "visible" || stateRef.current.loading) return;
+      setReload((n) => n + 1);
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [routeId, dataAt]);
 
   const { briefing, loading, error } = state;
   const expired = briefing != null && dataAt != null && isSnapshotExpired(dataAt, now);
