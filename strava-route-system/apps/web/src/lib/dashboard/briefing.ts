@@ -346,7 +346,7 @@ export function briefRoute(
   );
   const passedRoadEvents = aheadFrom != null ? matched.filter((e) => e.km < aheadFrom) : [];
   const passedHazards =
-    aheadFrom != null ? passedHazardsOf(route, lookup, weatherOptions, passedRoadEvents, aheadFrom) : [];
+    aheadFrom != null ? passedHazardsOf(route, lookup, weatherOptions, passedRoadEvents, aheadFrom, now) : [];
 
   // 超出預報時段的路段數值不可當真，不列入統計
   const withWeather = enriched.segments.filter((s) => s.hasWeather && !s.outOfCoverage);
@@ -389,12 +389,14 @@ export function briefRoute(
 function passedHazardsOf(
   route: Route,
   lookup: WeatherLookup,
-  weatherOptions: ApplyWeatherOptions,
+  weatherOptions: TimedWeatherOptions,
   passedEvents: RouteEvent[],
-  fromKm: number
+  fromKm: number,
+  now: Date
 ): Hazard[] {
-  const full = applyWeather(route, lookup, weatherOptions);
-  const weather = computeHazards(full, deriveStages(full)).filter((h) => isWeatherHazard(h) && h.endKm < fromKm);
+  // Same stage rules as the ahead briefing (incl. which stages may use live rain)
+  const { enriched, stages } = weatherStages(route, lookup, weatherOptions, now);
+  const weather = computeHazards(enriched, stages).filter((h) => isWeatherHazard(h) && h.endKm < fromKm);
   return [...weather, ...eventHazards(passedEvents)].sort((a, b) => a.startKm - b.startKm);
 }
 
