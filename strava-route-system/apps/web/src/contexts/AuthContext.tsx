@@ -40,7 +40,11 @@ type AuthContextValue = {
   sessionReady: boolean;
   /** 上次登入者的顯示資料；loading 期間用來避免名牌閃 spinner */
   cachedProfile: CachedProfile | null;
-  refreshSession: () => Promise<void>;
+  /**
+   * 重新換 session cookie。預設等 Next 與 FastAPI 兩份都換好（私人路線 401 重試要用）；
+   * waitForBackend: false 只等 Next 的 cookie，導向 dashboard 用。
+   */
+  refreshSession: (opts?: { waitForBackend?: boolean }) => Promise<void>;
   signIn: () => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signUpWithEmail: (email: string, password: string, displayName?: string) => Promise<void>;
@@ -49,6 +53,9 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+/** 一輪 session 交換：cookie = Next 的 session cookie；done = 連同 FastAPI 的 rc_session 都結束（不論成敗） */
+type SessionExchange = { uid: string; cookie: Promise<void>; done: Promise<void> };
 
 /** 回到登入頁後等這麼久還沒有結果，就當作使用者關掉了 Google 登入分頁 */
 const POPUP_RETURN_GRACE_MS = 3000;
@@ -140,19 +147,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [cachedProfile, setCachedProfile] = useState<CachedProfile | null>(null);
   const authRef = useRef<ReturnType<typeof getAuthClient> | null>(null);
 
-  const setSessionFromUser = useCallback(async (user: User) => {
-    const idToken = await user.getIdToken();
-    const [res] = await Promise.all([
-      fetch("/api/auth/session", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: idToken }),
-      }),
-      exchangeBackendSession(idToken),
-    ]);
-    if (!res.ok) throw new Error("Session 設定失敗");
+  const inflightRef = useRef<SessionExchange | null>(null);
+
+  /**
+   * 換 session cookie；同一位使用者已有一輪在進行中就共用。
+   * 登入成功時 signIn、onAuthStateChanged、登入頁導向三處會在同一瞬間各要一次，
+   * 不共用的話是三輪（六個請求）同時打，冷啟動的 serverless function 會被拖慢。
+   */
+  const startSessionExchange = useCallback((user: User): SessionExchange => {
+    const current = inflightRef.current;
+    if (current && current.uid === user.uid) return current;
+    const idToken = user.getIdToken();
+    const cookie = idToken
+      .then((token) =>
+        fetch("/api/auth/session", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token }),
+        })
+      )
+      .then((res) => {
+        if (!res.ok) throw new Error("Session 設定失敗");
+      });
+    const backend = idToken.then(exchangeBackendSession, () => undefined);
+    const done = Promise.allSettled([cookie, backend]).then(() => undefined);
+    const exchange: SessionExchange = { uid: user.uid, cookie, done };
+    inflightRef.current = exchange;
+    void done.then(() => {
+      if (inflightRef.current === exchange) inflightRef.current = null;
+    });
+    return exchange;
   }, []);
+
+  /** 等 Next 的 session cookie（/dashboard 等 Server Component 認得這份）；FastAPI 那份在背景換，不擋導向 */
+  const setSessionFromUser = useCallback(
+    async (user: User) => {
+      await startSessionExchange(user).cookie;
+    },
+    [startSessionExchange]
+  );
 
   useEffect(() => {
     // Read after mount (not in useState) so server and first client render match
@@ -172,18 +206,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       setSessionReady(false);
-      try {
-        await setSessionFromUser(u);
-      } catch {
-        // 仍顯示使用者，後續 API 若 401 再處理
-      }
+      // 兩份 session 都換完（成功或失敗）才算 ready；失敗仍顯示使用者，後續 API 若 401 再處理
+      await startSessionExchange(u).done;
       if (!cancelled) setSessionReady(true);
     });
     return () => {
       cancelled = true;
       unsub();
     };
-  }, [setSessionFromUser]);
+  }, [startSessionExchange]);
 
   const signIn = useCallback(async () => {
     const auth = authRef.current ?? getAuthClient();
@@ -241,11 +272,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     ]);
   }, []);
 
-  const refreshSession = useCallback(async () => {
-    const auth = authRef.current ?? getAuthClient();
-    const u = auth.currentUser;
-    if (u) await setSessionFromUser(u);
-  }, [setSessionFromUser]);
+  const refreshSession = useCallback(
+    async ({ waitForBackend = true }: { waitForBackend?: boolean } = {}) => {
+      const auth = authRef.current ?? getAuthClient();
+      const u = auth.currentUser;
+      if (!u) return;
+      const exchange = startSessionExchange(u);
+      if (waitForBackend) await exchange.done;
+      await exchange.cookie;
+    },
+    [startSessionExchange]
+  );
 
   const value = useMemo<AuthContextValue>(
     () => ({
