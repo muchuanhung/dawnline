@@ -298,7 +298,7 @@ export function RouteTrack({
         )}
         <p className="text-sm text-foreground">
           {placing ? (
-            <span className="font-medium text-primary">拖到你現在的位置，放開就只看前方</span>
+            <span className="font-medium text-primary">拖到你現在的位置後放開</span>
           ) : (
             caption
           )}
