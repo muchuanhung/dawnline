@@ -143,6 +143,38 @@ export function hazardZones(hazards: Hazard[], totalKm: number): TrackZone[] {
   return zones;
 }
 
+/** 沿途示警清單的一段：範圍重疊的示警併成一列，等級取最嚴重 */
+export interface HazardGroup {
+  startKm: number;
+  endKm: number;
+  level: HazardLevel;
+  /** 危險排在前面，同等級依里程 */
+  hazards: Hazard[];
+}
+
+/** 示警範圍相接（含單點示警落在另一段的邊界上）的容許誤差，km */
+const GROUP_TOUCH_KM = 0.05;
+
+/**
+ * 沿途示警依路段分組：範圍重疊或相接的示警併成一段，不分等級（與軌道的 hazardZones 不同，
+ * 軌道上危險與注意分開畫；清單上同一處的降雨、雨量、風速放在同一列，里程與時間只寫一次）。
+ */
+export function hazardGroups(hazards: Hazard[]): HazardGroup[] {
+  const groups: HazardGroup[] = [];
+  for (const h of [...hazards].sort((a, b) => a.startKm - b.startKm)) {
+    const last = groups[groups.length - 1];
+    if (last && h.startKm <= last.endKm + GROUP_TOUCH_KM) {
+      last.endKm = Math.max(last.endKm, h.endKm);
+      last.hazards.push(h);
+      if (h.level === "risky") last.level = "risky";
+    } else {
+      groups.push({ startKm: h.startKm, endKm: h.endKm, level: h.level, hazards: [h] });
+    }
+  }
+  for (const g of groups) g.hazards.sort((a, b) => (a.level === b.level ? 0 : a.level === "risky" ? -1 : 1));
+  return groups;
+}
+
 export interface TrackZoneOptions {
   /** 路況事件完整取得；取不到時沒有示警的路段也只能算未判定 */
   eventsComplete: boolean;
