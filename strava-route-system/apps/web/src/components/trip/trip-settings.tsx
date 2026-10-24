@@ -82,7 +82,6 @@ export function TripSettings({
         <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
           出發
           <span className="font-mono font-medium text-foreground">{formatClock(new Date(departure), now)}</span>
-          （依你的位置反推）
         </span>
       ) : (
         <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
