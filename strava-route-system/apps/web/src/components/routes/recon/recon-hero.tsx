@@ -98,10 +98,11 @@ function RadarPanel({
         className="absolute inset-0 h-full w-full"
       />
       {!frameLoaded && (
-        <p role="status" className="absolute inset-0 flex items-center justify-center gap-2 bg-[#0b1220]/70 text-sm text-white">
+        // div, not p: Spinner renders divs, which are invalid inside <p> (hydration warning)
+        <div role="status" className="absolute inset-0 flex items-center justify-center gap-2 bg-[#0b1220]/70 text-sm text-white">
           <Spinner size="sm" dotClassName="bg-white" />
           雷達圖載入中
-        </p>
+        </div>
       )}
       <div className="absolute inset-x-0 bottom-0 space-y-2 bg-gradient-to-t from-black/90 via-black/70 to-transparent px-3 pb-2 pt-8">
         <div className="flex items-end justify-between gap-3">
@@ -422,7 +423,8 @@ function NoCctvStage({
   return (
     <div>
       <RouteVerdictBar verdict={verdict} />
-      <p
+      {/* div, not p: the loading Spinner renders divs, which are invalid inside <p> */}
+      <div
         className="flex items-center gap-2 px-4 pt-3 text-sm text-muted-foreground"
         role={cctvLoading ? "status" : undefined}
       >
@@ -437,7 +439,7 @@ function NoCctvStage({
             {cctvNote}
           </>
         )}
-      </p>
+      </div>
       {/* 沿途沒有影像但有雷達：判定在上、雷達回放在下，互不遮蓋 */}
       {radarData && !cctvLoading && (
         <RadarPanel
