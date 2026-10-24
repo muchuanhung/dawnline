@@ -166,6 +166,9 @@ test.describe("缺口 4：雨量只取路線 3 km 內測站", () => {
 
 test.describe("Dashboard 判讀納入路線 3 km 內即時雨量", () => {
   const route = makeRoute({ segments: [segment("士林區", [0, 5, 10, 15, 20])] });
+  /** 即時雨量示警涵蓋的里程 */
+  const observedSpans = (b: ReturnType<typeof briefRoute>) =>
+    b.hazards.filter((h) => h.label.startsWith("即時雨量")).map((h) => [h.startKm, h.endKm]);
   const brief = (observedRainMmPerHr?: number | null) =>
     briefRoute(route, new Map([[districtKey("台北市", "士林區"), weather(10, { observedRainMmPerHr })]]));
 
@@ -227,6 +230,84 @@ test.describe("Dashboard 判讀納入路線 3 km 內即時雨量", () => {
     } finally {
       restore();
     }
+  });
+
+  test("出發時間在 60 分鐘後：即時雨量是現在的實測，不列入判定，只看預報", () => {
+    const now = new Date("2026-10-01T07:00:00+08:00");
+    const lookup = new Map([[districtKey("台北市", "士林區"), weather(10, { observedRainMmPerHr: 26 })]]);
+    const later = (min: number) => new Date(now.getTime() + min * 60_000);
+
+    const fourDays = briefRoute(route, lookup, { now, departure: later(4 * 24 * 60) });
+    expect(fourDays.verdict.level).toBe("clear");
+    expect(fourDays.verdict.headline).not.toContain("即時雨量");
+    expect(observedSpans(fourDays)).toEqual([]);
+
+    expect(briefRoute(route, lookup, { now, departure: later(61) }).verdict.level).toBe("clear");
+    // 剛好 60 分鐘仍採用，與建議出發時段的試算一致
+    expect(briefRoute(route, lookup, { now, departure: later(60) }).verdict.level).toBe("risky");
+    expect(briefRoute(route, lookup, { now }).verdict.headline).toContain("即時雨量 26 mm/hr");
+  });
+
+  test("途中模式反推的出發時間在現在之前，仍採用即時雨量", () => {
+    const now = new Date("2026-10-01T07:00:00+08:00");
+    const lookup = new Map([[districtKey("台北市", "士林區"), weather(10, { observedRainMmPerHr: 3 })]]);
+    const b = briefRoute(route, lookup, { now, fromKm: 10 });
+    expect(b.verdict.level).toBe("risky");
+    expect(b.verdict.headline).toContain("即時雨量 3 mm/hr");
+  });
+
+  test("逐區段判定：60 分鐘內進入的區段採用即時雨量，較晚抵達的只看預報", () => {
+    const now = new Date("2026-10-01T07:00:00+08:00");
+    // 均速 20 km/h：區段為士林區 0–30 km、北投區 30–100 km，北投區約 1.5 小時後才進入
+    const long = makeRoute({
+      elevationProfile: flatProfile(100),
+      segments: [segment("士林區", [0, 10, 20]), segment("北投區", [40, 50, 60])],
+    });
+    const lookup = new Map([
+      [districtKey("台北市", "士林區"), weather(10, { observedRainMmPerHr: 26 })],
+      [districtKey("台北市", "北投區"), weather(10, { observedRainMmPerHr: 26 })],
+    ]);
+
+    expect(observedSpans(briefRoute(long, lookup, { now }))).toEqual([[0, 30]]);
+
+    // 途中模式在 5 km：前方士林區仍在 60 分鐘內，北投區 25 km 外（1.25 小時）只看預報
+    const ahead = observedSpans(briefRoute(long, lookup, { now, fromKm: 5 }));
+    expect(ahead).toHaveLength(1);
+    expect(ahead[0]![1]).toBe(30);
+
+    // 90 分鐘後出發：兩個區段都超過 60 分鐘
+    const later = briefRoute(long, lookup, { now, departure: new Date(now.getTime() + 90 * 60_000) });
+    expect(observedSpans(later)).toEqual([]);
+    expect(later.verdict.level).toBe("clear");
+  });
+
+  test("繞圈路線：回程經過起點行政區是另一個區段，依它自己的 ETA 判斷", () => {
+    const now = new Date("2026-10-01T07:00:00+08:00");
+    // 區段：士林區 0–16、北投區 16–84、士林區 84–100（約 4 小時後才回到士林）
+    const loop = makeRoute({
+      elevationProfile: flatProfile(100),
+      segments: [segment("士林區", [0, 2, 98, 100]), segment("北投區", [30, 50, 70])],
+    });
+    const lookup = new Map([
+      [districtKey("台北市", "士林區"), weather(10, { observedRainMmPerHr: 26 })],
+      [districtKey("台北市", "北投區"), weather(10)],
+    ]);
+    expect(observedSpans(briefRoute(loop, lookup, { now }))).toEqual([[0, 16]]);
+  });
+
+  test("舊資料：取樣點未排序或沒有取樣點，仍依區段起點 ETA 判斷", () => {
+    const now = new Date("2026-10-01T07:00:00+08:00");
+    const fourDays = new Date(now.getTime() + 4 * 24 * 3_600_000);
+    const lookup = new Map([[districtKey("台北市", "士林區"), weather(10, { observedRainMmPerHr: 26 })]]);
+
+    // 未排序：第一個取樣點在 90 km，但路段從 0 km 開始，現在出發要採用
+    const unsorted = makeRoute({ elevationProfile: flatProfile(100), segments: [segment("士林區", [90, 0, 45])] });
+    expect(briefRoute(unsorted, lookup, { now }).verdict.level).toBe("risky");
+
+    // 沒有取樣點：區段由路線長度推估，4 天後出發不採用
+    const noSamples = makeRoute({ segments: [segment("士林區", [])] });
+    expect(briefRoute(noSamples, lookup, { now }).verdict.level).toBe("risky");
+    expect(briefRoute(noSamples, lookup, { now, departure: fourDays }).verdict.level).toBe("clear");
   });
 
   test("縣市雨量站取不到時視為附近無測站，維持預報判定、不加註", () => {

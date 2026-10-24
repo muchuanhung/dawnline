@@ -21,6 +21,7 @@ import {
   type Hazard,
   type HazardLevel,
   type ReconVerdict,
+  type RouteStage,
   type VerdictLevel,
 } from "@/lib/routes/recon-geo";
 import { normalizeCountyForCWB } from "@/lib/cwb/county-map";
@@ -29,6 +30,7 @@ import { summarizeRainfall, type LatLon, type StationRain } from "@/lib/cwb/rain
 import {
   DEFAULT_CYCLING_SPEED_KMH,
   departureForPosition,
+  estimateArrivalTime,
   isBeyondForecast,
   pickRainfallBucketForSegment,
   pickWindForSegment,
@@ -196,6 +198,39 @@ export function applyWeather(route: Route, lookup: WeatherLookup, options: Apply
   };
 }
 
+/** 區段起點 ETA 在現在起幾分鐘內才參考即時雨量 */
+const OBSERVED_RAIN_RELEVANT_MIN = 60;
+
+/** 有出發時間的套天氣選項：判讀與建議出發時段都依 ETA 挑時段 */
+type TimedWeatherOptions = ApplyWeatherOptions & { departureTime: Date };
+
+/**
+ * 套天氣並切出判定用的區段（途中模式另裁掉已走過的部分）。
+ * 即時雨量是「現在」的實測，只對快要抵達的地方有意義：逐區段以起點 ETA 判斷，
+ * 現在起 60 分鐘內進入的區段採用，較晚抵達的只看預報。
+ * 以區段而非路段判斷：區段已依里程排序、繞圈路線的回程是另一個區段，起點里程一定存在。
+ * 途中模式反推的出發時間在現在之前，目前所在區段的 ETA 也在現在之前，仍採用。
+ */
+function weatherStages(
+  route: Route,
+  lookup: WeatherLookup,
+  options: TimedWeatherOptions,
+  now: Date,
+  fromKm: number | null = null
+): { enriched: Route; stages: RouteStage[] } {
+  const enriched = applyWeather(route, lookup, options);
+  const derived = deriveStages(enriched);
+  const clipped = fromKm != null ? clipStagesFrom(derived, fromKm) : derived;
+  const cutoff = now.getTime() + OBSERVED_RAIN_RELEVANT_MIN * 60_000;
+  const { departureTime, pace = DEFAULT_CYCLING_SPEED_KMH } = options;
+  const stages = clipped.map((s) =>
+    s.observedRainMmPerHr === undefined || estimateArrivalTime(s.startKm, departureTime, pace).getTime() <= cutoff
+      ? s
+      : { ...s, observedRainMmPerHr: undefined }
+  );
+  return { enriched, stages };
+}
+
 /**
  * 判讀實際用到的預報時段：各路段 ETA 時段的最早開始到最晚結束；沒有時段資料時退回第一個路段的時段。
  * 起訖不在 now 的同一天時加「明日」或日期，避免跨日時段顯示成「18:00–18:00」；迄與起同一天時只寫時分。
@@ -296,9 +331,8 @@ export function briefRoute(
   const tripDeparture = aheadFrom != null ? departureForPosition(now, aheadFrom, pace) : departure;
   // 途中模式只對前方路段套天氣：目前所在路段的進入 ETA 為 now，不會挑到已過去的預報時段
   const ahead = aheadFrom != null ? clipRouteFrom(route, aheadFrom) : route;
-  const weatherOptions: ApplyWeatherOptions = { departureTime: tripDeparture, pace };
-  const enriched = applyWeather(ahead, lookup, weatherOptions);
-  const stages = aheadFrom != null ? clipStagesFrom(deriveStages(enriched), aheadFrom) : deriveStages(enriched);
+  const weatherOptions: TimedWeatherOptions = { departureTime: tripDeparture, pace };
+  const { enriched, stages } = weatherStages(ahead, lookup, weatherOptions, now, aheadFrom);
   const matched = matchEventsToRoute(events, buildRoutePolylineKm(route), { now });
   const roadEvents = aheadFrom != null ? matched.filter((e) => e.km >= aheadFrom) : matched;
   const hazards = [...computeHazards(enriched, stages).filter(isWeatherHazard), ...eventHazards(roadEvents)].sort(
@@ -350,8 +384,6 @@ export interface DepartureSuggestion {
 /** 建議出發時段的試算範圍：現在起 12 小時、每 30 分鐘一個出發時間 */
 export const SUGGEST_HORIZON_H = 12;
 export const SUGGEST_STEP_MIN = 30;
-/** 出發時間在現在起幾分鐘內才參考即時雨量 */
-const OBSERVED_RAIN_RELEVANT_MIN = 60;
 
 const WEATHER_RANK = (hazards: Hazard[]) =>
   hazards.reduce((worst, h) => Math.max(worst, h.level === "risky" ? 2 : 1), 0);
@@ -363,18 +395,14 @@ const WEATHER_RANK = (hazards: Hazard[]) =>
 function weatherRankAt(
   route: Route,
   lookup: WeatherLookup,
-  options: ApplyWeatherOptions,
-  useObservedRain: boolean
+  options: TimedWeatherOptions,
+  now: Date
 ): number | null {
-  const applied = applyWeather(route, lookup, options);
-  // 即時雨量是「現在」的實測，只對近期出發有意義；較晚出發只看預報
-  const enriched = useObservedRain
-    ? applied
-    : { ...applied, segments: applied.segments.map((s) => ({ ...s, observedRainMmPerHr: undefined })) };
+  const { enriched, stages } = weatherStages(route, lookup, options, now);
   const comparable =
     enriched.segments.length > 0 && enriched.segments.every((s) => s.hasWeather && !s.weatherStale && !s.outOfCoverage);
   if (!comparable) return null;
-  return WEATHER_RANK(computeHazards(enriched, deriveStages(enriched)).filter(isWeatherHazard));
+  return WEATHER_RANK(computeHazards(enriched, stages).filter(isWeatherHazard));
 }
 
 /**
@@ -392,12 +420,7 @@ export function suggestDeparture(
   const ranked: { departure: Date; rank: number | null }[] = [];
   for (let i = 0; i <= steps; i++) {
     const departure = new Date(now.getTime() + i * SUGGEST_STEP_MIN * 60_000);
-    const rank = weatherRankAt(
-      route,
-      lookup,
-      { departureTime: departure, pace },
-      i * SUGGEST_STEP_MIN <= OBSERVED_RAIN_RELEVANT_MIN
-    );
+    const rank = weatherRankAt(route, lookup, { departureTime: departure, pace }, now);
     ranked.push({ departure, rank });
     // 最好的等級就是 0：第一段 0 的區間結束後，後面不可能更好也不會更早
     const firstZero = ranked.findIndex((r) => r.rank === 0);
