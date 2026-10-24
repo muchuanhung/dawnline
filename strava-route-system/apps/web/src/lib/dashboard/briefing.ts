@@ -21,6 +21,7 @@ import {
   type Hazard,
   type HazardLevel,
   type ReconVerdict,
+  type RouteStage,
   type VerdictLevel,
 } from "@/lib/routes/recon-geo";
 import { normalizeCountyForCWB } from "@/lib/cwb/county-map";
@@ -197,29 +198,37 @@ export function applyWeather(route: Route, lookup: WeatherLookup, options: Apply
   };
 }
 
-/** 路段進入時間在現在起幾分鐘內才參考即時雨量 */
+/** 區段起點 ETA 在現在起幾分鐘內才參考即時雨量 */
 const OBSERVED_RAIN_RELEVANT_MIN = 60;
 
+/** 有出發時間的套天氣選項：判讀與建議出發時段都依 ETA 挑時段 */
+type TimedWeatherOptions = ApplyWeatherOptions & { departureTime: Date };
+
 /**
- * 即時雨量是「現在」的實測，只對快要抵達的路段有意義：逐段以進入 ETA 判斷，
- * 現在起 60 分鐘內進入的路段採用，較晚抵達的路段只看預報。
- * 途中模式反推的出發時間在現在之前，前方近處的路段 ETA 仍在 60 分鐘內。
+ * 套天氣並切出判定用的區段（途中模式另裁掉已走過的部分）。
+ * 即時雨量是「現在」的實測，只對快要抵達的地方有意義：逐區段以起點 ETA 判斷，
+ * 現在起 60 分鐘內進入的區段採用，較晚抵達的只看預報。
+ * 以區段而非路段判斷：區段已依里程排序、繞圈路線的回程是另一個區段，起點里程一定存在。
+ * 途中模式反推的出發時間在現在之前，目前所在區段的 ETA 也在現在之前，仍採用。
  */
-function withObservedRainFor(
+function weatherStages(
   route: Route,
-  { departureTime, pace = DEFAULT_CYCLING_SPEED_KMH }: ApplyWeatherOptions & { departureTime: Date },
-  now: Date
-): Route {
+  lookup: WeatherLookup,
+  options: TimedWeatherOptions,
+  now: Date,
+  fromKm: number | null = null
+): { enriched: Route; stages: RouteStage[] } {
+  const enriched = applyWeather(route, lookup, options);
+  const derived = deriveStages(enriched);
+  const clipped = fromKm != null ? clipStagesFrom(derived, fromKm) : derived;
   const cutoff = now.getTime() + OBSERVED_RAIN_RELEVANT_MIN * 60_000;
-  return {
-    ...route,
-    segments: route.segments.map((s) => {
-      const entryKm = s.sampleKms?.[0];
-      if (s.observedRainMmPerHr === undefined || entryKm === undefined) return s;
-      if (estimateArrivalTime(entryKm, departureTime, pace).getTime() <= cutoff) return s;
-      return { ...s, observedRainMmPerHr: undefined };
-    }),
-  };
+  const { departureTime, pace = DEFAULT_CYCLING_SPEED_KMH } = options;
+  const stages = clipped.map((s) =>
+    s.observedRainMmPerHr === undefined || estimateArrivalTime(s.startKm, departureTime, pace).getTime() <= cutoff
+      ? s
+      : { ...s, observedRainMmPerHr: undefined }
+  );
+  return { enriched, stages };
 }
 
 /**
@@ -322,9 +331,8 @@ export function briefRoute(
   const tripDeparture = aheadFrom != null ? departureForPosition(now, aheadFrom, pace) : departure;
   // 途中模式只對前方路段套天氣：目前所在路段的進入 ETA 為 now，不會挑到已過去的預報時段
   const ahead = aheadFrom != null ? clipRouteFrom(route, aheadFrom) : route;
-  const weatherOptions = { departureTime: tripDeparture, pace };
-  const enriched = withObservedRainFor(applyWeather(ahead, lookup, weatherOptions), weatherOptions, now);
-  const stages = aheadFrom != null ? clipStagesFrom(deriveStages(enriched), aheadFrom) : deriveStages(enriched);
+  const weatherOptions: TimedWeatherOptions = { departureTime: tripDeparture, pace };
+  const { enriched, stages } = weatherStages(ahead, lookup, weatherOptions, now, aheadFrom);
   const matched = matchEventsToRoute(events, buildRoutePolylineKm(route), { now });
   const roadEvents = aheadFrom != null ? matched.filter((e) => e.km >= aheadFrom) : matched;
   const hazards = [...computeHazards(enriched, stages).filter(isWeatherHazard), ...eventHazards(roadEvents)].sort(
@@ -387,14 +395,14 @@ const WEATHER_RANK = (hazards: Hazard[]) =>
 function weatherRankAt(
   route: Route,
   lookup: WeatherLookup,
-  options: ApplyWeatherOptions & { departureTime: Date },
+  options: TimedWeatherOptions,
   now: Date
 ): number | null {
-  const enriched = withObservedRainFor(applyWeather(route, lookup, options), options, now);
+  const { enriched, stages } = weatherStages(route, lookup, options, now);
   const comparable =
     enriched.segments.length > 0 && enriched.segments.every((s) => s.hasWeather && !s.weatherStale && !s.outOfCoverage);
   if (!comparable) return null;
-  return WEATHER_RANK(computeHazards(enriched, deriveStages(enriched)).filter(isWeatherHazard));
+  return WEATHER_RANK(computeHazards(enriched, stages).filter(isWeatherHazard));
 }
 
 /**
