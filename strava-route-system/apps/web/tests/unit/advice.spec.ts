@@ -4,7 +4,7 @@
 
 import { test, expect } from "@playwright/test";
 import type { DepartureSuggestion, RouteBriefing } from "@/lib/dashboard/briefing";
-import { departureLabelOf, riskyAdvice } from "@/lib/dashboard/advice";
+import { alignedWindow, departureLabelOf, riskyAdvice } from "@/lib/dashboard/advice";
 
 const NOW = new Date("2026-10-21T00:00:00Z"); // 台灣 08:00
 
@@ -43,5 +43,34 @@ test.describe("departureLabelOf", () => {
   test("非危險時段：現在或台灣時間", () => {
     expect(departureLabelOf(suggestion({ nowIsBest: true }), NOW)).toBe("現在");
     expect(departureLabelOf(suggestion({ level: "caution" }), NOW)).toBe("10:00");
+  });
+});
+
+test.describe("alignedWindow 建議區間對齊整點／半點", () => {
+  const iso = (d: Date) => d.toISOString();
+
+  test("起點往後、終點往前取，區間只縮不擴", () => {
+    // 台灣 06:13–07:43 → 06:30–07:30
+    const w = alignedWindow(suggestion({ from: "2026-10-20T22:13:00Z", to: "2026-10-20T23:43:00Z" }));
+    expect([iso(w.from), iso(w.to)]).toEqual(["2026-10-20T22:30:00.000Z", "2026-10-20T23:30:00.000Z"]);
+  });
+
+  test("06:13–06:43 縮成 06:30 一個時間", () => {
+    const w = alignedWindow(suggestion({ from: "2026-10-20T22:13:00Z", to: "2026-10-20T22:43:00Z" }));
+    expect([iso(w.from), iso(w.to)]).toEqual(["2026-10-20T22:30:00.000Z", "2026-10-20T22:30:00.000Z"]);
+  });
+
+  test("單一試算點對不到整點半點時沿用原本的時間", () => {
+    const w = alignedWindow(suggestion({ from: "2026-10-20T22:13:00Z", to: "2026-10-20T22:13:00Z" }));
+    expect(iso(w.from)).toBe("2026-10-20T22:13:00.000Z");
+  });
+
+  test("現在就是最佳時段時起點維持現在", () => {
+    const w = alignedWindow(suggestion({ nowIsBest: true, from: "2026-10-20T22:13:00Z", to: "2026-10-20T23:43:00Z" }));
+    expect(iso(w.from)).toBe("2026-10-20T22:13:00.000Z");
+  });
+
+  test("路線卡建議時間也對齊", () => {
+    expect(departureLabelOf(suggestion({ from: "2026-10-21T02:13:00Z", to: "2026-10-21T03:13:00Z" }), NOW)).toBe("10:30");
   });
 });
