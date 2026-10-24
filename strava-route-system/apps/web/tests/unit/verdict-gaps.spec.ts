@@ -253,6 +253,29 @@ test.describe("Dashboard 判讀納入路線 3 km 內即時雨量", () => {
     expect(b.verdict.headline).toContain("即時雨量 3 mm/hr");
   });
 
+  test("逐段判定：60 分鐘內進入的路段採用即時雨量，較晚抵達的路段只看預報", () => {
+    const now = new Date("2026-10-01T07:00:00+08:00");
+    // 均速 20 km/h：士林區 0 km 起立即進入；北投區 40 km 起約 2 小時後才到
+    const long = makeRoute({ segments: [segment("士林區", [0, 10, 20]), segment("北投區", [40, 50, 60])] });
+    const lookup = new Map([
+      [districtKey("台北市", "士林區"), weather(10, { observedRainMmPerHr: 26 })],
+      [districtKey("台北市", "北投區"), weather(10, { observedRainMmPerHr: 26 })],
+    ]);
+    const observed = (b: ReturnType<typeof briefRoute>) => b.segments.map((s) => s.observedRainMmPerHr);
+
+    const departNow = briefRoute(long, lookup, { now });
+    expect(observed(departNow)).toEqual([26, undefined]);
+    expect(departNow.hazards.every((h) => h.startKm < 40)).toBe(true);
+
+    // 途中模式在 10 km：前方士林區仍在 60 分鐘內，北投區 30 km 外（1.5 小時）只看預報
+    expect(observed(briefRoute(long, lookup, { now, fromKm: 10 }))).toEqual([26, undefined]);
+
+    // 90 分鐘後出發：兩段都超過 60 分鐘
+    const later = briefRoute(long, lookup, { now, departure: new Date(now.getTime() + 90 * 60_000) });
+    expect(observed(later)).toEqual([undefined, undefined]);
+    expect(later.verdict.level).toBe("clear");
+  });
+
   test("縣市雨量站取不到時視為附近無測站，維持預報判定、不加註", () => {
     const route = makeRoute({ segments: [segment("士林區", [0, 10, 20])] });
     const lookup = new Map([[districtKey("台北市", "士林區"), weather(10)]]);

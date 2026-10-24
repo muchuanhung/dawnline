@@ -29,6 +29,7 @@ import { summarizeRainfall, type LatLon, type StationRain } from "@/lib/cwb/rain
 import {
   DEFAULT_CYCLING_SPEED_KMH,
   departureForPosition,
+  estimateArrivalTime,
   isBeyondForecast,
   pickRainfallBucketForSegment,
   pickWindForSegment,
@@ -196,16 +197,29 @@ export function applyWeather(route: Route, lookup: WeatherLookup, options: Apply
   };
 }
 
-/** 出發時間在現在起幾分鐘內才參考即時雨量 */
+/** 路段進入時間在現在起幾分鐘內才參考即時雨量 */
 const OBSERVED_RAIN_RELEVANT_MIN = 60;
 
 /**
- * 即時雨量是「現在」的實測，只對近期出發有意義；較晚出發只看預報。
- * 途中模式反推的出發時間在現在之前，仍採用即時雨量。
+ * 即時雨量是「現在」的實測，只對快要抵達的路段有意義：逐段以進入 ETA 判斷，
+ * 現在起 60 分鐘內進入的路段採用，較晚抵達的路段只看預報。
+ * 途中模式反推的出發時間在現在之前，前方近處的路段 ETA 仍在 60 分鐘內。
  */
-function withObservedRainFor(route: Route, departure: Date, now: Date): Route {
-  if (departure.getTime() - now.getTime() <= OBSERVED_RAIN_RELEVANT_MIN * 60_000) return route;
-  return { ...route, segments: route.segments.map((s) => ({ ...s, observedRainMmPerHr: undefined })) };
+function withObservedRainFor(
+  route: Route,
+  { departureTime, pace = DEFAULT_CYCLING_SPEED_KMH }: ApplyWeatherOptions & { departureTime: Date },
+  now: Date
+): Route {
+  const cutoff = now.getTime() + OBSERVED_RAIN_RELEVANT_MIN * 60_000;
+  return {
+    ...route,
+    segments: route.segments.map((s) => {
+      const entryKm = s.sampleKms?.[0];
+      if (s.observedRainMmPerHr === undefined || entryKm === undefined) return s;
+      if (estimateArrivalTime(entryKm, departureTime, pace).getTime() <= cutoff) return s;
+      return { ...s, observedRainMmPerHr: undefined };
+    }),
+  };
 }
 
 /**
@@ -308,8 +322,8 @@ export function briefRoute(
   const tripDeparture = aheadFrom != null ? departureForPosition(now, aheadFrom, pace) : departure;
   // 途中模式只對前方路段套天氣：目前所在路段的進入 ETA 為 now，不會挑到已過去的預報時段
   const ahead = aheadFrom != null ? clipRouteFrom(route, aheadFrom) : route;
-  const weatherOptions: ApplyWeatherOptions = { departureTime: tripDeparture, pace };
-  const enriched = withObservedRainFor(applyWeather(ahead, lookup, weatherOptions), tripDeparture, now);
+  const weatherOptions = { departureTime: tripDeparture, pace };
+  const enriched = withObservedRainFor(applyWeather(ahead, lookup, weatherOptions), weatherOptions, now);
   const stages = aheadFrom != null ? clipStagesFrom(deriveStages(enriched), aheadFrom) : deriveStages(enriched);
   const matched = matchEventsToRoute(events, buildRoutePolylineKm(route), { now });
   const roadEvents = aheadFrom != null ? matched.filter((e) => e.km >= aheadFrom) : matched;
@@ -376,7 +390,7 @@ function weatherRankAt(
   options: ApplyWeatherOptions & { departureTime: Date },
   now: Date
 ): number | null {
-  const enriched = withObservedRainFor(applyWeather(route, lookup, options), options.departureTime, now);
+  const enriched = withObservedRainFor(applyWeather(route, lookup, options), options, now);
   const comparable =
     enriched.segments.length > 0 && enriched.segments.every((s) => s.hasWeather && !s.weatherStale && !s.outOfCoverage);
   if (!comparable) return null;
