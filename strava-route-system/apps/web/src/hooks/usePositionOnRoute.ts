@@ -18,7 +18,7 @@ export type PositionOnRouteState =
   | { status: "denied" }
   /** 瀏覽器不支援、逾時或其他定位錯誤 */
   | { status: "unavailable" }
-  /** 使用者按「改位置」：在軌道上手動放置 */
+  /** 使用者按「手動定位」：在軌道上手動放置 */
   | { status: "placing" }
   | RoutePosition;
 
@@ -190,7 +190,7 @@ export function usePositionOnRoute({ routeId, polyline, riding, onKm }: Options)
     setState({ status: "idle" });
   }, [routeId]);
 
-  /** 改位置：不等定位（定位中也可按），直接進入軌道放置模式 */
+  /** 手動定位：不等定位（定位中也可按），直接進入軌道放置模式 */
   const place = useCallback(() => {
     locateSeqRef.current++;
     setState({ status: "placing" });

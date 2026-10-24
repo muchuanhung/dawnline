@@ -32,6 +32,9 @@ const UNKNOWN_HATCH = {
 };
 const ZONE_WORD = { risky: "危險", caution: "注意" } as const;
 
+/** 「你」的圖釘可抓取的水平範圍（px，左右各） */
+const YOU_GRAB_PX = 22;
+
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
 /**
@@ -40,7 +43,8 @@ const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
  * 示警再密也只是一段顏色，不會被拇指蓋住。沒有任何停點的路線才連續拖曳。
  * 軌道下方的小點是鏡頭位置；刻度只標整數公里（見 lib/routes/route-track）。
  * 途中模式另畫「你」的標記，和游標分開：游標拖去看前方時，「你」留在原地，可一鍵回到你的位置。
- * 定位失敗（placing）時軌道就是手動定位的方式：把手放大、改為連續拖曳，放開即以該里程為你的位置。
+ * 改自己的位置有兩種方式：直接抓「你」的圖釘拖（途中模式，一步完成，放開即套用，放開後可 ±0.1 km 微調）；
+ * 定位失敗或按手動定位（placing）時整條軌道都是放置模式：把手放大、改為連續拖曳，放開即以該里程為你的位置。
  */
 export function RouteTrack({
   totalKm,
@@ -54,6 +58,7 @@ export function RouteTrack({
   onSelectZone,
   youKm = null,
   onPlaceYou,
+  placing = false,
 }: {
   totalKm: number;
   positionKm: number;
@@ -71,12 +76,18 @@ export function RouteTrack({
   onSelectZone: (zone: TrackZone) => void;
   /** 途中模式的目前里程（判讀起點）；null 為整條路線判讀 */
   youKm?: number | null;
-  /** 定位失敗、需要使用者放置位置時提供：放開把手即回報里程 */
+  /** 使用者自己放置位置：拖「你」的圖釘，或放置模式下拖整條軌道，放開即回報里程 */
   onPlaceYou?: (km: number) => void;
+  /** 放置模式：整條軌道都用來放置（定位失敗、按了手動定位） */
+  placing?: boolean;
 }) {
-  const placing = onPlaceYou != null;
   const trackRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
+  // 正在拖「你」的圖釘：預覽里程（放開才套用，避免拖動中一直重新判讀）
+  const [youDragKm, setYouDragKm] = useState<number | null>(null);
+  // 拖過圖釘之後顯示 ±0.1 km 微調
+  const [tuning, setTuning] = useState(false);
+  const grabbedYouRef = useRef(false);
   const ticks = useMemo(() => trackTicks(totalKm), [totalKm]);
   const stops = useMemo(() => trackStops(markers, zones), [markers, zones]);
   const at = (km: number) => (totalKm > 0 ? clamp01(km / totalKm) : 0);
@@ -91,6 +102,8 @@ export function RouteTrack({
     else onSelectZone(stop.zone);
   };
 
+  const clampKm = (km: number) => Math.round(Math.min(totalKm, Math.max(0, km)) * 10) / 10;
+
   const kmAt = useCallback(
     (clientX: number) => {
       const rect = trackRef.current?.getBoundingClientRect();
@@ -103,6 +116,10 @@ export function RouteTrack({
   /** 拖曳中：有停點就跳到最近的停點（換站時才更新），沒有停點或正在放置你的位置時連續移動 */
   const dragTo = (clientX: number) => {
     const km = kmAt(clientX);
+    if (grabbedYouRef.current) {
+      setYouDragKm(km);
+      return;
+    }
     const stop = placing ? null : nearestStop(stops, km);
     if (!stop) onMove(km);
     else if (stopKey(stop) !== currentKey) selectStop(stop);
@@ -195,6 +212,11 @@ export function RouteTrack({
           onKeyDown={onKeyDown}
           onPointerDown={(e) => {
             e.currentTarget.setPointerCapture(e.pointerId);
+            // 按在「你」的圖釘上：拖的是你的位置，不是瀏覽游標（44 px 的點擊範圍，手機好抓）
+            const rect = trackRef.current?.getBoundingClientRect();
+            grabbedYouRef.current =
+              !placing && youKm != null && onPlaceYou != null && rect != null &&
+              Math.abs(e.clientX - (rect.left + at(youKm) * rect.width)) <= YOU_GRAB_PX;
             setDragging(true);
             dragTo(e.clientX);
           }}
@@ -203,9 +225,18 @@ export function RouteTrack({
           }}
           onPointerUp={(e) => {
             setDragging(false);
-            if (placing) onPlaceYou?.(kmAt(e.clientX));
+            if (grabbedYouRef.current) {
+              grabbedYouRef.current = false;
+              setYouDragKm(null);
+              setTuning(true);
+              onPlaceYou?.(kmAt(e.clientX));
+            } else if (placing) onPlaceYou?.(kmAt(e.clientX));
           }}
-          onPointerCancel={() => setDragging(false)}
+          onPointerCancel={() => {
+            grabbedYouRef.current = false;
+            setYouDragKm(null);
+            setDragging(false);
+          }}
           className="relative h-14 cursor-pointer touch-none select-none rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           {/* 軌道本身就是路況條；沒有色段的地方（判讀未回來、途中已走過）只留底色 */}
@@ -240,10 +271,17 @@ export function RouteTrack({
           {youKm != null && (
             <span
               className="pointer-events-none absolute top-0 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center"
-              style={{ left: `${at(youKm) * 100}%` }}
+              style={{ left: `${at(youDragKm ?? youKm) * 100}%` }}
               aria-hidden
             >
-              <span className="rounded-md bg-primary px-1.5 text-[11px] font-bold leading-4 text-primary-foreground">你</span>
+              <span
+                className={cn(
+                  "rounded-md bg-primary px-1.5 text-[11px] font-bold leading-4 text-primary-foreground",
+                  youDragKm != null && "font-mono tabular-nums"
+                )}
+              >
+                {youDragKm != null ? `${youDragKm.toFixed(1)} km` : "你"}
+              </span>
               <span className="size-0 border-x-4 border-t-[5px] border-x-transparent border-t-primary" />
             </span>
           )}
@@ -317,6 +355,29 @@ export function RouteTrack({
           <span className="size-11" aria-hidden />
         )}
       </div>
+      {tuning && youKm != null && onPlaceYou && !placing && (
+        <div className="flex items-center justify-center gap-1 text-sm text-muted-foreground">
+          微調位置
+          <button
+            type="button"
+            onClick={() => onPlaceYou(clampKm(youKm - 0.1))}
+            disabled={youKm <= 0}
+            aria-label="往回 0.1 公里"
+            className="flex size-9 cursor-pointer items-center justify-center rounded-full font-mono hover:bg-muted disabled:cursor-default disabled:opacity-40"
+          >
+            −0.1
+          </button>
+          <button
+            type="button"
+            onClick={() => onPlaceYou(clampKm(youKm + 0.1))}
+            disabled={youKm >= totalKm}
+            aria-label="往前 0.1 公里"
+            className="flex size-9 cursor-pointer items-center justify-center rounded-full font-mono hover:bg-muted disabled:cursor-default disabled:opacity-40"
+          >
+            +0.1
+          </button>
+        </div>
+      )}
       {awayFromYou && (
         <div className="flex justify-center">
           <button

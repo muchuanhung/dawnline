@@ -11,7 +11,7 @@ type PositionOnRoute = ReturnType<typeof usePositionOnRoute>;
 type PositionState = PositionOnRoute["state"];
 
 /**
- * 需要使用者在軌道上放置位置：按了「改位置」，或定位結果不能用（不準、不在路線上、沒有權限、取不到定位、沒有軌跡）。
+ * 需要使用者在軌道上放置位置：按了「手動定位」，或定位結果不能用（不準、不在路線上、沒有權限、取不到定位、沒有軌跡）。
  * 途中模式也適用：重新定位失敗時讓使用者改用拖曳，不會卡在原本的里程。
  */
 export function needsPlacement(state: PositionState): boolean {
@@ -125,7 +125,7 @@ export function RideAhead({ position, totalKm, fromKm, onChange, children }: Rid
             onClick={place}
             className="cursor-pointer font-medium text-primary underline-offset-2 hover:underline"
           >
-            改位置
+            手動定位
           </button>
         </p>
       )}

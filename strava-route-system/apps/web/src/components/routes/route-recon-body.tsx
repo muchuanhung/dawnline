@@ -51,7 +51,8 @@ export function RouteReconBody({
         cctvOffline={cctv.offline}
         radar={radar}
         briefing={briefing}
-        onPlaceYou={placing ? position.choose : undefined}
+        onPlaceYou={placing || aheadKm != null ? position.choose : undefined}
+        placing={placing}
         afterHero={
           <RideAhead position={position} totalKm={routeTotalKm(route)} fromKm={aheadKm} onChange={setAheadKm}>
             {/* 途中模式的出發時間由目前位置反推，TripSettings 改為唯讀顯示，避免與「現在」矛盾 */}

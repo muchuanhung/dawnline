@@ -519,6 +519,7 @@ export function ReconHero({
   polyline,
   youKm = null,
   onPlaceYou,
+  placing = false,
 }: {
   verdict: ReconVerdict;
   /** 判讀尚未回來 */
@@ -548,6 +549,7 @@ export function ReconHero({
   youKm?: number | null;
   /** 定位失敗時，讓使用者在軌道上放置自己的位置 */
   onPlaceYou?: (km: number) => void;
+  placing?: boolean;
 }) {
   const [view, setView] = useState<HeroView>("cctv");
   const [radarOpen, setRadarOpen] = useState(false);
@@ -602,6 +604,7 @@ export function ReconHero({
         onSelectZone={onSelectZone}
         youKm={youKm}
         onPlaceYou={onPlaceYou}
+        placing={placing}
       />
       {activeZone && (
         <ZoneCallout zone={activeZone} etaOf={etaOf} onClose={onCloseZone} />

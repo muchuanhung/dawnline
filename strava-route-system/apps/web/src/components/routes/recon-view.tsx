@@ -54,6 +54,8 @@ interface ReconViewProps {
   afterHero?: ReactNode;
   /** 途中模式定位失敗時提供：使用者在軌道上拖到自己的位置後放開，以該里程只看前方 */
   onPlaceYou?: (km: number) => void;
+  /** 整條軌道都是放置模式（定位失敗或按了手動定位）；否則只有拖「你」的圖釘會改位置 */
+  placing?: boolean;
 }
 
 /**
@@ -72,6 +74,7 @@ export function ReconView({
   briefing,
   afterHero,
   onPlaceYou,
+  placing = false,
 }: ReconViewProps) {
   const routePolyline = useMemo(() => buildRoutePolylineKm(route), [route]);
 
@@ -182,6 +185,7 @@ export function ReconView({
         onCloseZone={closeZone}
         youKm={fromKm}
         onPlaceYou={onPlaceYou}
+        placing={placing}
       />
 
       {afterHero}
