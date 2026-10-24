@@ -20,11 +20,12 @@ export function LoginView({ featured }: { featured: ReactNode }) {
   const { user, loading: authLoading, refreshSession, signIn, signInWithEmail, signUpWithEmail, sendPasswordReset } =
     auth;
 
-  // 已登入則先更新 session cookie（避免 idToken 過期導致 dashboard ↔ login 導向迴圈），再導向 dashboard
+  // 已登入則先更新 session cookie（避免 idToken 過期導致 dashboard ↔ login 導向迴圈），再導向 dashboard。
+  // 只等 Next 的 cookie：/dashboard 只認這份；FastAPI 的 rc_session 在背景換完，私人路線靠 sessionReady 等它
   useEffect(() => {
     if (authLoading) return;
     if (user) {
-      refreshSession()
+      refreshSession({ waitForBackend: false })
         .then(() => router.replace("/dashboard"))
         .catch(() => router.replace("/dashboard")); // 仍導向，後續 API 會處理 401
     }
