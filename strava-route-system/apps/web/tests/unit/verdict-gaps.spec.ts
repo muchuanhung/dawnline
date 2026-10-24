@@ -229,6 +229,30 @@ test.describe("Dashboard 判讀納入路線 3 km 內即時雨量", () => {
     }
   });
 
+  test("出發時間在 60 分鐘後：即時雨量是現在的實測，不列入判定，只看預報", () => {
+    const now = new Date("2026-10-01T07:00:00+08:00");
+    const lookup = new Map([[districtKey("台北市", "士林區"), weather(10, { observedRainMmPerHr: 26 })]]);
+    const later = (min: number) => new Date(now.getTime() + min * 60_000);
+
+    const fourDays = briefRoute(route, lookup, { now, departure: later(4 * 24 * 60) });
+    expect(fourDays.verdict.level).toBe("clear");
+    expect(fourDays.verdict.headline).not.toContain("即時雨量");
+    expect(fourDays.segments.every((s) => s.observedRainMmPerHr === undefined)).toBe(true);
+
+    expect(briefRoute(route, lookup, { now, departure: later(61) }).verdict.level).toBe("clear");
+    // 剛好 60 分鐘仍採用，與建議出發時段的試算一致
+    expect(briefRoute(route, lookup, { now, departure: later(60) }).verdict.level).toBe("risky");
+    expect(briefRoute(route, lookup, { now }).verdict.headline).toContain("即時雨量 26 mm/hr");
+  });
+
+  test("途中模式反推的出發時間在現在之前，仍採用即時雨量", () => {
+    const now = new Date("2026-10-01T07:00:00+08:00");
+    const lookup = new Map([[districtKey("台北市", "士林區"), weather(10, { observedRainMmPerHr: 3 })]]);
+    const b = briefRoute(route, lookup, { now, fromKm: 10 });
+    expect(b.verdict.level).toBe("risky");
+    expect(b.verdict.headline).toContain("即時雨量 3 mm/hr");
+  });
+
   test("縣市雨量站取不到時視為附近無測站，維持預報判定、不加註", () => {
     const route = makeRoute({ segments: [segment("士林區", [0, 10, 20])] });
     const lookup = new Map([[districtKey("台北市", "士林區"), weather(10)]]);

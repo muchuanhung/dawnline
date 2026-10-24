@@ -196,6 +196,18 @@ export function applyWeather(route: Route, lookup: WeatherLookup, options: Apply
   };
 }
 
+/** 出發時間在現在起幾分鐘內才參考即時雨量 */
+const OBSERVED_RAIN_RELEVANT_MIN = 60;
+
+/**
+ * 即時雨量是「現在」的實測，只對近期出發有意義；較晚出發只看預報。
+ * 途中模式反推的出發時間在現在之前，仍採用即時雨量。
+ */
+function withObservedRainFor(route: Route, departure: Date, now: Date): Route {
+  if (departure.getTime() - now.getTime() <= OBSERVED_RAIN_RELEVANT_MIN * 60_000) return route;
+  return { ...route, segments: route.segments.map((s) => ({ ...s, observedRainMmPerHr: undefined })) };
+}
+
 /**
  * 判讀實際用到的預報時段：各路段 ETA 時段的最早開始到最晚結束；沒有時段資料時退回第一個路段的時段。
  * 起訖不在 now 的同一天時加「明日」或日期，避免跨日時段顯示成「18:00–18:00」；迄與起同一天時只寫時分。
@@ -297,7 +309,7 @@ export function briefRoute(
   // 途中模式只對前方路段套天氣：目前所在路段的進入 ETA 為 now，不會挑到已過去的預報時段
   const ahead = aheadFrom != null ? clipRouteFrom(route, aheadFrom) : route;
   const weatherOptions: ApplyWeatherOptions = { departureTime: tripDeparture, pace };
-  const enriched = applyWeather(ahead, lookup, weatherOptions);
+  const enriched = withObservedRainFor(applyWeather(ahead, lookup, weatherOptions), tripDeparture, now);
   const stages = aheadFrom != null ? clipStagesFrom(deriveStages(enriched), aheadFrom) : deriveStages(enriched);
   const matched = matchEventsToRoute(events, buildRoutePolylineKm(route), { now });
   const roadEvents = aheadFrom != null ? matched.filter((e) => e.km >= aheadFrom) : matched;
@@ -350,8 +362,6 @@ export interface DepartureSuggestion {
 /** 建議出發時段的試算範圍：現在起 12 小時、每 30 分鐘一個出發時間 */
 export const SUGGEST_HORIZON_H = 12;
 export const SUGGEST_STEP_MIN = 30;
-/** 出發時間在現在起幾分鐘內才參考即時雨量 */
-const OBSERVED_RAIN_RELEVANT_MIN = 60;
 
 const WEATHER_RANK = (hazards: Hazard[]) =>
   hazards.reduce((worst, h) => Math.max(worst, h.level === "risky" ? 2 : 1), 0);
@@ -363,14 +373,11 @@ const WEATHER_RANK = (hazards: Hazard[]) =>
 function weatherRankAt(
   route: Route,
   lookup: WeatherLookup,
-  options: ApplyWeatherOptions,
-  useObservedRain: boolean
+  departure: Date,
+  pace: Pace,
+  now: Date
 ): number | null {
-  const applied = applyWeather(route, lookup, options);
-  // 即時雨量是「現在」的實測，只對近期出發有意義；較晚出發只看預報
-  const enriched = useObservedRain
-    ? applied
-    : { ...applied, segments: applied.segments.map((s) => ({ ...s, observedRainMmPerHr: undefined })) };
+  const enriched = withObservedRainFor(applyWeather(route, lookup, { departureTime: departure, pace }), departure, now);
   const comparable =
     enriched.segments.length > 0 && enriched.segments.every((s) => s.hasWeather && !s.weatherStale && !s.outOfCoverage);
   if (!comparable) return null;
@@ -392,12 +399,7 @@ export function suggestDeparture(
   const ranked: { departure: Date; rank: number | null }[] = [];
   for (let i = 0; i <= steps; i++) {
     const departure = new Date(now.getTime() + i * SUGGEST_STEP_MIN * 60_000);
-    const rank = weatherRankAt(
-      route,
-      lookup,
-      { departureTime: departure, pace },
-      i * SUGGEST_STEP_MIN <= OBSERVED_RAIN_RELEVANT_MIN
-    );
+    const rank = weatherRankAt(route, lookup, departure, pace, now);
     ranked.push({ departure, rank });
     // 最好的等級就是 0：第一段 0 的區間結束後，後面不可能更好也不會更早
     const firstZero = ranked.findIndex((r) => r.rank === 0);
