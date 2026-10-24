@@ -18,6 +18,8 @@ export type PositionOnRouteState =
   | { status: "denied" }
   /** 瀏覽器不支援、逾時或其他定位錯誤 */
   | { status: "unavailable" }
+  /** 使用者按「改位置」：在軌道上手動放置 */
+  | { status: "placing" }
   | RoutePosition;
 
 /** 定位來源：tap 為使用者按按鈕，auto 為自動單次定位，watch 為途中模式持續定位 */
@@ -52,6 +54,8 @@ export function usePositionOnRoute({ routeId, polyline, riding, onKm }: Options)
   // 使用者按「整條路線」離開途中模式的路線：本次瀏覽不再自動進入，按定位才恢復
   const dismissedRef = useRef(new Set<string>());
   const routeIdRef = useRef(routeId);
+  // 按按鈕定位的請求序號：使用者改走手動放置、離開途中模式或再按一次後，舊的定位結果丟掉
+  const locateSeqRef = useRef(0);
   const onKmRef = useRef(onKm);
 
   useEffect(() => {
@@ -149,15 +153,17 @@ export function usePositionOnRoute({ routeId, polyline, riding, onKm }: Options)
       return;
     }
     dismissedRef.current.delete(routeId);
+    const seq = ++locateSeqRef.current;
     setState({ status: "locating" });
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
+        if (seq !== locateSeqRef.current) return;
         // 不支援 Permissions API 的瀏覽器（舊版 Safari）：定位成功即視為已授權，之後可自動更新
         markGranted();
         handleFix("tap", coords, routeId);
       },
       (err) => {
-        if (routeIdRef.current !== routeId) return;
+        if (seq !== locateSeqRef.current || routeIdRef.current !== routeId) return;
         setState({ status: err.code === err.PERMISSION_DENIED ? "denied" : "unavailable" });
       },
       GEO_OPTIONS
@@ -167,6 +173,7 @@ export function usePositionOnRoute({ routeId, polyline, riding, onKm }: Options)
   /** 使用者手動選定里程（定位不準、往返路線選擇）：直接套用，也記成上次里程 */
   const choose = useCallback(
     (km: number) => {
+      locateSeqRef.current++;
       dismissedRef.current.delete(routeId);
       previousKmRef.current = km;
       apply(km, true);
@@ -177,12 +184,24 @@ export function usePositionOnRoute({ routeId, polyline, riding, onKm }: Options)
 
   /** 離開途中模式：本次瀏覽不再對這條路線自動進入，按定位才恢復 */
   const dismiss = useCallback(() => {
+    locateSeqRef.current++;
     dismissedRef.current.add(routeId);
     appliedRef.current = null;
     setState({ status: "idle" });
   }, [routeId]);
 
-  return { state, locate, choose, dismiss };
+  /** 改位置：不等定位（定位中也可按），直接進入軌道放置模式 */
+  const place = useCallback(() => {
+    locateSeqRef.current++;
+    setState({ status: "placing" });
+  }, []);
+
+  /** 取消放置：保留目前生效的里程 */
+  const cancelPlace = useCallback(() => {
+    setState({ status: "idle" });
+  }, []);
+
+  return { state, locate, choose, dismiss, place, cancelPlace };
 }
 
 /** 定位權限狀態；不支援 Permissions API 時為 null（只能靠使用者按按鈕） */

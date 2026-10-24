@@ -33,7 +33,7 @@ export function RouteReconBody({
   const suggestion = briefing.briefing?.departureSuggestion;
   // 定位狀態放在這一層：判讀範圍卡顯示狀態，定位失敗時軌道也要用 choose 讓使用者放置位置
   const position = usePositionOnRoute({ routeId: route.id, polyline, riding: aheadKm != null, onKm: setAheadKm });
-  const placing = aheadKm == null && needsPlacement(position.state);
+  const placing = needsPlacement(position.state);
 
   return (
     <>

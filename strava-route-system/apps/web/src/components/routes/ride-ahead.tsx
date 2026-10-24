@@ -10,9 +10,13 @@ import { kmRangeOf } from "@/lib/routes/recon-geo";
 type PositionOnRoute = ReturnType<typeof usePositionOnRoute>;
 type PositionState = PositionOnRoute["state"];
 
-/** 定位結果需要使用者自己放置位置（定位不準、不在路線上、沒有權限、取不到定位、沒有軌跡） */
+/**
+ * 需要使用者在軌道上放置位置：按了「改位置」，或定位結果不能用（不準、不在路線上、沒有權限、取不到定位、沒有軌跡）。
+ * 途中模式也適用：重新定位失敗時讓使用者改用拖曳，不會卡在原本的里程。
+ */
 export function needsPlacement(state: PositionState): boolean {
   return (
+    state.status === "placing" ||
     state.status === "inaccurate" ||
     state.status === "off_route" ||
     state.status === "denied" ||
@@ -41,10 +45,10 @@ const SEGMENT =
  * 定位不準、拒絕定位時不猜，也不跳數字輸入框：提示使用者拖曳上方軌道到自己的位置（見 RouteTrack 的放置模式）。
  */
 export function RideAhead({ position, totalKm, fromKm, onChange, children }: RideAheadProps) {
-  const { state, locate, choose, dismiss } = position;
+  const { state, locate, choose, dismiss, place, cancelPlace } = position;
   const riding = fromKm != null;
   const locating = state.status === "locating";
-  const placing = !riding && needsPlacement(state);
+  const placing = needsPlacement(state);
 
   const exit = () => {
     dismiss();
@@ -56,7 +60,6 @@ export function RideAhead({ position, totalKm, fromKm, onChange, children }: Rid
   // 由定位換算的里程才有誤差範圍；手動放置後 state 會被 reset，不顯示範圍
   const range = state.status === "on_route" && shownKm != null ? kmRangeOf(shownKm, state.accuracyM, totalKm) : null;
   const showRange = range != null && range[1] - range[0] >= 0.1;
-  const offRoute = state.status === "off_route" && riding;
 
   return (
     <section aria-label="判讀範圍" className="space-y-3 rounded-lg border border-border bg-card px-4 py-3">
@@ -99,12 +102,10 @@ export function RideAhead({ position, totalKm, fromKm, onChange, children }: Rid
         </button>
       </div>
 
-      {riding && (
+      {riding && !placing && (
         <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground" role="status">
           <span>
-            {offRoute
-              ? `你不在這條路線上（離路約 ${distanceLabel(state.distKm)}），前方仍從 ${fromKm.toFixed(1)} km 起算`
-              : showRange
+            {showRange
                 ? `定位誤差約 ${range[0].toFixed(1)}–${range[1].toFixed(1)} km，畫面開著時會自動更新`
                 : state.status === "on_route"
                   ? "畫面開著時會自動更新"
@@ -117,6 +118,14 @@ export function RideAhead({ position, totalKm, fromKm, onChange, children }: Rid
             className="cursor-pointer font-medium text-primary underline-offset-2 hover:underline"
           >
             {locating ? "定位中…" : "重新定位"}
+          </button>
+          {/* 定位中也可按：GPS 遲遲不回時不必等到逾時 */}
+          <button
+            type="button"
+            onClick={place}
+            className="cursor-pointer font-medium text-primary underline-offset-2 hover:underline"
+          >
+            改位置
           </button>
         </p>
       )}
@@ -149,6 +158,15 @@ export function RideAhead({ position, totalKm, fromKm, onChange, children }: Rid
             >
               重新定位
             </button>
+            {riding && (
+              <button
+                type="button"
+                onClick={cancelPlace}
+                className="ml-2 cursor-pointer font-medium text-primary underline-offset-2 hover:underline"
+              >
+                維持 <span className="font-mono">{fromKm.toFixed(1)} km</span>
+              </button>
+            )}
           </p>
         </div>
       )}
@@ -168,6 +186,8 @@ function placementMessage(state: PositionState): string {
       return "沒有定位權限，";
     case "no_route":
       return "這條路線沒有軌跡資料，";
+    case "placing":
+      return "";
     default:
       return "取不到定位，";
   }
