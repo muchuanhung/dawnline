@@ -15,7 +15,7 @@ import Spinner from "@/components/ui/Spinner";
 import { UnknownReasons } from "@/components/verdict/unknown-reasons";
 import {
   HAZARD_ROW_GRID,
-  HazardRowContent,
+  HazardGroupRowContent,
 } from "@/components/verdict/hazard-row";
 import { cn } from "@/lib/utils";
 import type {
@@ -24,7 +24,7 @@ import type {
   VerdictLevel,
 } from "@/lib/routes/recon-geo";
 import type { RoutePolylineKm } from "@/lib/routes/recon-geo";
-import type { TrackZone } from "@/lib/routes/route-track";
+import { hazardGroups, type TrackZone } from "@/lib/routes/route-track";
 import { latestObserved, type RouteRadar, type RouteRadarState } from "@/hooks/useRouteRadar";
 import type { RadarZoom, ViewInsets } from "@/lib/cwb/radar";
 import {
@@ -481,10 +481,11 @@ function ZoneCallout({
           <X className="size-4" aria-hidden />
         </button>
       </div>
+      {/* 同一處的多個指標併成一列（與沿途示警時間軸一致），里程與時間只寫一次 */}
       <ul className="divide-y divide-border/60 border-t border-border/60 px-1">
-        {zone.hazards.map((h) => (
-          <li key={h.id} className={HAZARD_ROW_GRID}>
-            <HazardRowContent hazard={h} eta={etaOf?.(h.startKm)} />
+        {hazardGroups(zone.hazards).map((g) => (
+          <li key={`${g.startKm}-${g.hazards[0]!.id}`} className={HAZARD_ROW_GRID}>
+            <HazardGroupRowContent group={g} eta={etaOf?.(g.startKm)} />
           </li>
         ))}
       </ul>

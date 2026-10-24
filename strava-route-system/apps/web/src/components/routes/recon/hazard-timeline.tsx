@@ -7,15 +7,13 @@ import type { Hazard } from "@/lib/routes/recon-geo";
 import { CATEGORY_LABEL, groupRouteEvents, type RouteEvent } from "@/lib/routes/road-events";
 import { hazardGroups, type HazardGroup, type TrackZone } from "@/lib/routes/route-track";
 import type { RouteEventsState } from "@/hooks/useRouteBriefing";
-import { KIND_ICON } from "@/components/verdict/hazard-row";
+import { HazardGroupBody } from "@/components/verdict/hazard-row";
 
 /** 里程 → 預估到達時間；沒有行程設定時不顯示 */
 type EtaOf = ((km: number) => string) | undefined;
 
 /** 時間軸上的一列：一段示警（同一處的多個指標併成一列）或一筆不影響判定的路況 */
 type TimelineItem = { kind: "group"; km: number; group: HazardGroup } | { kind: "notice"; km: number; event: RouteEvent };
-
-const LEVEL_WORD = { risky: "危險", caution: "注意" } as const;
 
 /** 左欄｜軸線與節點｜內容 */
 const ROW = "grid w-full grid-cols-[4.25rem_1.25rem_minmax(0,1fr)] gap-x-2 text-left";
@@ -62,24 +60,6 @@ function Axis({ node }: { node: "risky" | "caution" | "notice" | "end" | null })
   );
 }
 
-/** 一個指標：危險實心、注意外框；色條、圖示、文字同一色系 */
-function HazardChip({ hazard }: { hazard: Hazard }) {
-  const Icon = KIND_ICON[hazard.kind];
-  const risky = hazard.level === "risky";
-  return (
-    <span
-      className={cn(
-        "inline-flex max-w-full items-center gap-1.5 rounded-full border-[1.5px] px-2.5 py-1 text-[13px] leading-snug",
-        risky ? "border-destructive bg-destructive font-semibold text-card" : "border-warning font-medium text-warning-strong"
-      )}
-    >
-      <Icon className="size-3.5 shrink-0" />
-      <span className="min-w-0">{hazard.label}</span>
-      <span className="sr-only">（{LEVEL_WORD[hazard.level]}）</span>
-    </span>
-  );
-}
-
 function GroupRow({
   group,
   eta,
@@ -111,21 +91,11 @@ function GroupRow({
       >
         <KmCell startKm={group.startKm} endKm={group.endKm} eta={eta} />
         <Axis node={group.level} />
-        <span className="flex min-w-0 flex-col gap-1.5 py-2.5 pr-1">
-          <span className="flex items-center gap-2 text-xs font-bold">
-            <span className={group.level === "risky" ? "text-destructive" : "text-warning-strong"}>
-              {LEVEL_WORD[group.level]}
-            </span>
-            {isHere && <span className="font-medium text-muted-foreground">目前路段</span>}
-            {group.hazards.length > 1 && (
-              <span className="font-normal tabular-nums text-muted-foreground">{group.hazards.length} 項</span>
-            )}
-          </span>
-          <span className="flex flex-wrap gap-1.5">
-            {group.hazards.map((h) => (
-              <HazardChip key={h.id} hazard={h} />
-            ))}
-          </span>
+        <span className="min-w-0 py-2.5 pr-1">
+          <HazardGroupBody
+            group={group}
+            extra={isHere && <span className="font-medium text-muted-foreground">目前路段</span>}
+          />
         </span>
       </button>
     </li>

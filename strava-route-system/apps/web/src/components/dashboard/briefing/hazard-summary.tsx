@@ -1,16 +1,17 @@
-import { UNKNOWN_REASON_TEXT, type Hazard } from "@/lib/routes/recon-geo";
+import { UNKNOWN_REASON_TEXT } from "@/lib/routes/recon-geo";
 import type { RouteBriefing } from "@/lib/dashboard/briefing";
 import { groupRouteEvents } from "@/lib/routes/road-events";
-import { HAZARD_ROW_GRID, HazardRowContent } from "@/components/verdict/hazard-row";
+import { HAZARD_ROW_GRID, HazardGroupRowContent } from "@/components/verdict/hazard-row";
+import { hazardGroups, type HazardGroup } from "@/lib/routes/route-track";
 import { etaLabel, paceFor } from "@/lib/routes/trip";
 import { ProfileStrip } from "./profile-strip";
 
 /** 今日判讀只列最要緊的幾項，完整清單在路線頁 */
 const SUMMARY_LIMIT = 3;
 
-/** 危險優先，同等級依里程 */
-function topHazards(hazards: Hazard[]): Hazard[] {
-  return [...hazards]
+/** 同一處的示警併成一段後，危險優先、同等級依里程，取前幾段 */
+function topGroups(groups: HazardGroup[]): HazardGroup[] {
+  return [...groups]
     .sort((a, b) => (a.level === b.level ? a.startKm - b.startKm : a.level === "risky" ? -1 : 1))
     .slice(0, SUMMARY_LIMIT);
 }
@@ -22,7 +23,8 @@ function topHazards(hazards: Hazard[]): Hazard[] {
 export function HazardSummary({ briefing }: { briefing: RouteBriefing }) {
   const { hazards } = briefing;
   const { notices, routine } = groupRouteEvents(briefing.roadEvents);
-  const shown = topHazards(hazards);
+  const groups = hazardGroups(hazards);
+  const shown = topGroups(groups);
   const roadNotices = notices.length + routine.length;
   const now = new Date();
   const pace = paceFor(briefing.activity, briefing.elevationProfile);
@@ -32,8 +34,8 @@ export function HazardSummary({ briefing }: { briefing: RouteBriefing }) {
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 id="hazard-title" className="text-lg font-bold">
           沿途示警
-          {hazards.length > 0 && (
-            <span className="ml-1.5 font-normal tabular-nums text-muted-foreground">{hazards.length}</span>
+          {groups.length > 0 && (
+            <span className="ml-1.5 font-normal tabular-nums text-muted-foreground">{groups.length} 段</span>
           )}
         </h2>
         <p className="font-mono text-sm text-muted-foreground">
@@ -45,9 +47,9 @@ export function HazardSummary({ briefing }: { briefing: RouteBriefing }) {
 
       {shown.length > 0 ? (
         <ul className="divide-y divide-border/60 border-y border-border/60">
-          {shown.map((h) => (
-            <li key={h.id} className={HAZARD_ROW_GRID}>
-              <HazardRowContent hazard={h} eta={etaLabel(h.startKm, briefing.departure, pace, now)} />
+          {shown.map((g) => (
+            <li key={`${g.startKm}-${g.hazards[0]!.id}`} className={HAZARD_ROW_GRID}>
+              <HazardGroupRowContent group={g} eta={etaLabel(g.startKm, briefing.departure, pace, now)} />
             </li>
           ))}
         </ul>
@@ -65,10 +67,10 @@ export function HazardSummary({ briefing }: { briefing: RouteBriefing }) {
         </p>
       )}
 
-      {(hazards.length > shown.length || roadNotices > 0) && (
+      {(groups.length > shown.length || roadNotices > 0) && (
         <p className="text-sm text-muted-foreground">
-          {hazards.length > shown.length && `還有 ${hazards.length - shown.length} 項示警`}
-          {hazards.length > shown.length && roadNotices > 0 && "，"}
+          {groups.length > shown.length && `還有 ${groups.length - shown.length} 段示警`}
+          {groups.length > shown.length && roadNotices > 0 && "，"}
           {roadNotices > 0 && `沿線另有 ${roadNotices} 則施工、壅塞等路況（不影響判定）`}
           {/* 完整清單由判定卡的「看逐段示警與 CCTV」進入，同頁不重複放同一個入口 */}
           ，完整清單在逐段示警頁。
