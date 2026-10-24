@@ -294,9 +294,14 @@ export function HazardTimeline({
       {passed.length > 0 && (
         <ToggleRow open={passedOpen} onToggle={() => setPassedOpen((v) => !v)}>
           <span>
-            已經過 <span className="tabular-nums">{passedGroups}</span> 段示警、
-            <span className="tabular-nums">{passed.length - passedGroups}</span> 項路況・
-            <span className="font-medium text-primary">{passedOpen ? "收起" : "顯示"}</span>
+            已經過{" "}
+            {[
+              passedGroups > 0 && `${passedGroups} 段示警`,
+              passed.length - passedGroups > 0 && `${passed.length - passedGroups} 項路況`,
+            ]
+              .filter(Boolean)
+              .join("、")}
+            ・<span className="font-medium text-primary">{passedOpen ? "收起" : "顯示"}</span>
           </span>
         </ToggleRow>
       )}
