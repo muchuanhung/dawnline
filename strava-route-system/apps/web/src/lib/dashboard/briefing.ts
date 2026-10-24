@@ -373,11 +373,10 @@ const WEATHER_RANK = (hazards: Hazard[]) =>
 function weatherRankAt(
   route: Route,
   lookup: WeatherLookup,
-  departure: Date,
-  pace: Pace,
+  options: ApplyWeatherOptions & { departureTime: Date },
   now: Date
 ): number | null {
-  const enriched = withObservedRainFor(applyWeather(route, lookup, { departureTime: departure, pace }), departure, now);
+  const enriched = withObservedRainFor(applyWeather(route, lookup, options), options.departureTime, now);
   const comparable =
     enriched.segments.length > 0 && enriched.segments.every((s) => s.hasWeather && !s.weatherStale && !s.outOfCoverage);
   if (!comparable) return null;
@@ -399,7 +398,7 @@ export function suggestDeparture(
   const ranked: { departure: Date; rank: number | null }[] = [];
   for (let i = 0; i <= steps; i++) {
     const departure = new Date(now.getTime() + i * SUGGEST_STEP_MIN * 60_000);
-    const rank = weatherRankAt(route, lookup, departure, pace, now);
+    const rank = weatherRankAt(route, lookup, { departureTime: departure, pace }, now);
     ranked.push({ departure, rank });
     // 最好的等級就是 0：第一段 0 的區間結束後，後面不可能更好也不會更早
     const firstZero = ranked.findIndex((r) => r.rank === 0);
