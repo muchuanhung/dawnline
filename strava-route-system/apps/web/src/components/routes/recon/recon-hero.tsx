@@ -514,6 +514,8 @@ export function ReconHero({
   onCloseZone,
   radar,
   polyline,
+  youKm = null,
+  onPlaceYou,
 }: {
   verdict: ReconVerdict;
   /** 判讀尚未回來 */
@@ -539,6 +541,10 @@ export function ReconHero({
   radar: RouteRadarState;
   /** 路線折線，雷達圖上畫路線與目前位置 */
   polyline: RoutePolylineKm | null;
+  /** 途中模式的目前里程，軌道上畫「你」 */
+  youKm?: number | null;
+  /** 定位失敗時，讓使用者在軌道上放置自己的位置 */
+  onPlaceYou?: (km: number) => void;
 }) {
   const [view, setView] = useState<HeroView>("cctv");
   const [radarOpen, setRadarOpen] = useState(false);
@@ -591,6 +597,8 @@ export function ReconHero({
         onMove={onMove}
         onSelectMarker={onSelectMarker}
         onSelectZone={onSelectZone}
+        youKm={youKm}
+        onPlaceYou={onPlaceYou}
       />
       {activeZone && (
         <ZoneCallout zone={activeZone} etaOf={etaOf} onClose={onCloseZone} />

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, LocateFixed } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CctvMarker, VerdictLevel } from "@/lib/routes/recon-geo";
 import {
@@ -39,6 +39,8 @@ const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
  * 拖曳與 ‹ › 只停在鏡頭與示警路段的起點（停點），中間的公里數不停；停到示警路段時展開說明。
  * 示警再密也只是一段顏色，不會被拇指蓋住。沒有任何停點的路線才連續拖曳。
  * 軌道下方的小點是鏡頭位置；刻度只標整數公里（見 lib/routes/route-track）。
+ * 途中模式另畫「你」的標記，和游標分開：游標拖去看前方時，「你」留在原地，可一鍵回到你的位置。
+ * 定位失敗（placing）時軌道就是手動定位的方式：把手放大、改為連續拖曳，放開即以該里程為你的位置。
  */
 export function RouteTrack({
   totalKm,
@@ -50,6 +52,8 @@ export function RouteTrack({
   onMove,
   onSelectMarker,
   onSelectZone,
+  youKm = null,
+  onPlaceYou,
 }: {
   totalKm: number;
   positionKm: number;
@@ -65,7 +69,12 @@ export function RouteTrack({
   onSelectMarker: (marker: CctvMarker) => void;
   /** 停到示警路段 */
   onSelectZone: (zone: TrackZone) => void;
+  /** 途中模式的目前里程（判讀起點）；null 為整條路線判讀 */
+  youKm?: number | null;
+  /** 定位失敗、需要使用者放置位置時提供：放開把手即回報里程 */
+  onPlaceYou?: (km: number) => void;
 }) {
+  const placing = onPlaceYou != null;
   const trackRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
   const ticks = useMemo(() => trackTicks(totalKm), [totalKm]);
@@ -91,19 +100,24 @@ export function RouteTrack({
     [positionKm, totalKm]
   );
 
-  /** 拖曳中：有停點就跳到最近的停點（換站時才更新），沒有就連續移動 */
+  /** 拖曳中：有停點就跳到最近的停點（換站時才更新），沒有停點或正在放置你的位置時連續移動 */
   const dragTo = (clientX: number) => {
     const km = kmAt(clientX);
-    const stop = nearestStop(stops, km);
+    const stop = placing ? null : nearestStop(stops, km);
     if (!stop) onMove(km);
     else if (stopKey(stop) !== currentKey) selectStop(stop);
   };
 
   const keyStep = Math.max(0.1, Math.round(totalKm) / 100);
   const onKeyDown = (e: React.KeyboardEvent) => {
+    if (placing && e.key === "Enter") {
+      e.preventDefault();
+      onPlaceYou?.(positionKm);
+      return;
+    }
     const forward = e.key === "ArrowRight" || e.key === "ArrowUp";
     const back = e.key === "ArrowLeft" || e.key === "ArrowDown";
-    if (stops.length > 0) {
+    if (stops.length > 0 && !placing) {
       const stop = forward
         ? stepStop(stops, current, positionKm, 1)
         : back
@@ -160,7 +174,11 @@ export function RouteTrack({
       {unknownHere && <span className="text-muted-foreground">・此段未判定</span>}
     </>
   );
-  const valueText = zoneText ?? (unknownHere ? `${kmText}，此段未判定` : kmText);
+  const valueText = placing
+    ? `${kmText}，拖到你現在的位置後放開，或按 Enter 確定`
+    : (zoneText ?? (unknownHere ? `${kmText}，此段未判定` : kmText));
+  // 游標拖離你的位置時，提供一鍵回去（避免把游標里程誤認成目前位置）
+  const awayFromYou = youKm != null && !placing && Math.abs(positionKm - youKm) >= 0.05;
 
   return (
     <div className="space-y-1 pt-3 pb-2">
@@ -183,7 +201,10 @@ export function RouteTrack({
           onPointerMove={(e) => {
             if (dragging) dragTo(e.clientX);
           }}
-          onPointerUp={() => setDragging(false)}
+          onPointerUp={(e) => {
+            setDragging(false);
+            if (placing) onPlaceYou?.(kmAt(e.clientX));
+          }}
           onPointerCancel={() => setDragging(false)}
           className="relative h-14 cursor-pointer touch-none select-none rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
@@ -216,9 +237,28 @@ export function RouteTrack({
               />
             );
           })}
+          {youKm != null && (
+            <span
+              className="pointer-events-none absolute top-0 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center"
+              style={{ left: `${at(youKm) * 100}%` }}
+              aria-hidden
+            >
+              <span className="rounded-md bg-primary px-1.5 text-[11px] font-bold leading-4 text-primary-foreground">你</span>
+              <span className="size-0 border-x-4 border-t-[5px] border-x-transparent border-t-primary" />
+            </span>
+          )}
+          {/* 放置模式：把手放大、外圈脈動，提示「拖這個」 */}
+          {placing && !dragging && (
+            <span
+              className="pointer-events-none absolute top-1/2 size-12 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-primary motion-safe:animate-ping"
+              style={{ left: pct }}
+              aria-hidden
+            />
+          )}
           <div
             className={cn(
-              "absolute top-1/2 size-7 -translate-x-1/2 -translate-y-1/2 rounded-full border-[3px] border-foreground bg-card shadow-md transition-transform",
+              "absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-card shadow-md transition-transform",
+              placing ? "size-9 border-4 border-primary" : "size-7 border-[3px] border-foreground",
               dragging && "scale-110 ring-8 ring-foreground/10"
             )}
             style={{ left: pct }}
@@ -257,7 +297,11 @@ export function RouteTrack({
           <span className="size-11" aria-hidden />
         )}
         <p className="text-sm text-foreground">
-          {caption}
+          {placing ? (
+            <span className="font-medium text-primary">拖到你現在的位置，放開就只看前方</span>
+          ) : (
+            caption
+          )}
         </p>
         {stops.length >= 2 ? (
           <button
@@ -273,6 +317,18 @@ export function RouteTrack({
           <span className="size-11" aria-hidden />
         )}
       </div>
+      {awayFromYou && (
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={() => onMove(youKm)}
+            className="flex min-h-9 cursor-pointer items-center gap-1.5 rounded-full px-3 text-sm font-medium text-primary hover:bg-muted"
+          >
+            <LocateFixed className="size-4" aria-hidden />
+            回到你的位置 <span className="font-mono tabular-nums">{youKm.toFixed(1)} km</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

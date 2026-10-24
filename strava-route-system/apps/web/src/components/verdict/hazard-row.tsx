@@ -9,7 +9,7 @@ import { CATEGORY_LABEL, type RouteEvent } from "@/lib/routes/road-events";
  * eta 為預估到達時間（已格式化），由呼叫端依出發時間與均速算好傳入。
  */
 
-const KIND_ICON: Record<HazardKind, React.ComponentType<{ className?: string }>> = {
+export const KIND_ICON: Record<HazardKind, React.ComponentType<{ className?: string }>> = {
   rain: CloudRain,
   wind: Wind,
   storm: CloudLightning,

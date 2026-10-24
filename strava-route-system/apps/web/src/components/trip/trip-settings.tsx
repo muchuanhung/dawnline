@@ -29,6 +29,7 @@ function offsetOf(departure: Date | null, now: Date): number | null {
  * 行程設定：出發時間與運動類型，存在網址（?depart=&activity=），可分享、可上一頁。
  * 今日判讀與路線頁共用；改變後伺服器依新設定重新判讀。
  * 目前生效的設定另記在 sessionStorage，從導覽列切頁回來時沿用（見 TripNavLink）。
+ * 路線頁途中模式（fromKm）：出發時間由目前位置反推，改為唯讀顯示，避免與「現在」矛盾；運動類型照常可改。
  */
 export function TripSettings({
   departure,
@@ -37,6 +38,7 @@ export function TripSettings({
   defaultActivity,
   explicitActivity,
   explicitDeparture,
+  fromKm = null,
   className,
 }: {
   /** 判讀實際用的出發時間（ISO） */
@@ -50,6 +52,8 @@ export function TripSettings({
   explicitActivity: Activity | null;
   /** 網址上有指定出發時間；沒有時為現在 */
   explicitDeparture: string | null;
+  /** 途中模式的目前里程；有值時出發時間唯讀 */
+  fromKm?: number | null;
   className?: string;
 }) {
   const router = useRouter();
@@ -74,24 +78,32 @@ export function TripSettings({
 
   return (
     <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-2", pending && "opacity-60", className)}>
-      <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
-        出發
-        <select
-          className={SELECT}
-          value={offset ?? "custom"}
-          onChange={(e) => {
-            const h = Number(e.target.value);
-            update("depart", h === 0 ? null : departureAfter(new Date(), h).toISOString());
-          }}
-        >
-          {offset === null && <option value="custom">{formatClock(new Date(departure), now)}</option>}
-          {DEPARTURE_OFFSETS_H.map((h) => (
-            <option key={h} value={h}>
-              {h === 0 ? "現在" : `${h} 小時後`}
-            </option>
-          ))}
-        </select>
-      </label>
+      {fromKm != null ? (
+        <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+          出發
+          <span className="font-mono font-medium text-foreground">{formatClock(new Date(departure), now)}</span>
+          （依你的位置反推）
+        </span>
+      ) : (
+        <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
+          出發
+          <select
+            className={SELECT}
+            value={offset ?? "custom"}
+            onChange={(e) => {
+              const h = Number(e.target.value);
+              update("depart", h === 0 ? null : departureAfter(new Date(), h).toISOString());
+            }}
+          >
+            {offset === null && <option value="custom">{formatClock(new Date(departure), now)}</option>}
+            {DEPARTURE_OFFSETS_H.map((h) => (
+              <option key={h} value={h}>
+                {h === 0 ? "現在" : `${h} 小時後`}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
         運動
         <select
@@ -108,10 +120,19 @@ export function TripSettings({
         </select>
       </label>
       <p className="w-full text-xs text-muted-foreground">
-        依 <span className="font-mono">{formatClock(new Date(departure), now)}</span> 出發、{ACTIVITY[activity].label}均速{" "}
+        {fromKm != null ? (
+          <>
+            依你在 <span className="font-mono">{fromKm.toFixed(1)} km</span>、
+          </>
+        ) : (
+          <>
+            依 <span className="font-mono">{formatClock(new Date(departure), now)}</span> 出發、
+          </>
+        )}
+        {ACTIVITY[activity].label}均速{" "}
         {speedKmh} km/h
         {ACTIVITY[activity].climbMinPer100m > 0 && `、每爬升 100 m 加 ${ACTIVITY[activity].climbMinPer100m} 分鐘`}{" "}
-        估算各段抵達時間，再對照該時段的預報。
+        估算{fromKm != null ? "前方" : ""}各段抵達時間，再對照該時段的預報。
       </p>
     </div>
   );
