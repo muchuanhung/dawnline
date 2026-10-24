@@ -4,7 +4,8 @@ import type { Ref } from "react";
 import type { Route } from "@/lib/routes/route-data";
 import { RouteHeader } from "@/components/routes/route-header";
 import { ReconView } from "@/components/routes/recon-view";
-import { RideAhead } from "@/components/routes/ride-ahead";
+import { RideAhead, needsPlacement } from "@/components/routes/ride-ahead";
+import { usePositionOnRoute } from "@/hooks/usePositionOnRoute";
 import { TripSettings } from "@/components/trip/trip-settings";
 import type { RouteRecon } from "@/hooks/useRouteRecon";
 import { routeTotalKm } from "@/lib/routes/recon-geo";
@@ -30,6 +31,9 @@ export function RouteReconBody({
 }) {
   const { briefing, cctv, radar, polyline, aheadKm, setAheadKm } = recon;
   const suggestion = briefing.briefing?.departureSuggestion;
+  // 定位狀態放在這一層：判讀範圍卡顯示狀態，定位失敗時軌道也要用 choose 讓使用者放置位置
+  const position = usePositionOnRoute({ routeId: route.id, polyline, riding: aheadKm != null, onKm: setAheadKm });
+  const placing = needsPlacement(position.state);
 
   return (
     <>
@@ -47,17 +51,12 @@ export function RouteReconBody({
         cctvOffline={cctv.offline}
         radar={radar}
         briefing={briefing}
+        onPlaceYou={placing || aheadKm != null ? position.choose : undefined}
+        placing={placing}
         afterHero={
-          <div className="space-y-3">
-            <RideAhead
-              routeId={route.id}
-              polyline={polyline}
-              totalKm={routeTotalKm(route)}
-              fromKm={aheadKm}
-              onChange={setAheadKm}
-            />
-            {/* 途中模式的出發時間是由目前位置反推的，不提供出發時間設定，避免與「現在」矛盾 */}
-            {briefing.briefing && aheadKm == null && (
+          <RideAhead position={position} totalKm={routeTotalKm(route)} fromKm={aheadKm} onChange={setAheadKm}>
+            {/* 途中模式的出發時間由目前位置反推，TripSettings 改為唯讀顯示，避免與「現在」矛盾 */}
+            {briefing.briefing && (
               <TripSettings
                 departure={briefing.briefing.departure}
                 activity={briefing.briefing.activity}
@@ -65,9 +64,10 @@ export function RouteReconBody({
                 defaultActivity={briefing.briefing.defaultActivity}
                 explicitActivity={trip.activity}
                 explicitDeparture={trip.depart}
+                fromKm={briefing.briefing.fromKm}
               />
             )}
-          </div>
+          </RideAhead>
         }
       />
     </>

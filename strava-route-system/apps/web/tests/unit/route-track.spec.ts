@@ -3,6 +3,7 @@ import type { CctvMarker, Hazard, RouteStage } from "@/lib/routes/recon-geo";
 import {
   currentStop,
   dedupeMarkers,
+  hazardGroups,
   hazardZones,
   markerOrdinal,
   nearestMarkerStop,
@@ -235,6 +236,36 @@ test.describe("hazardZones 示警路段", () => {
 
   test("沒有示警時沒有示警路段", () => {
     expect(hazardZones([], 10)).toEqual([]);
+  });
+});
+
+test.describe("hazardGroups 沿途示警依路段分組", () => {
+  test("同一處的危險與注意併成一列，等級取最嚴重、危險排前面", () => {
+    const groups = hazardGroups([
+      hazard("wind", 30, "caution", 31),
+      hazard("rain", 30, "risky", 31.4),
+      hazard("gauge", 30, "risky", 30.5),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ startKm: 30, endKm: 31.4, level: "risky" });
+    expect(groups[0]!.hazards.map((h) => h.id)).toEqual(["rain", "gauge", "wind"]);
+  });
+
+  test("不相接的示警各自一列，依里程排序", () => {
+    const groups = hazardGroups([hazard("b", 47.8, "risky"), hazard("a", 41.2, "caution", 44)]);
+    expect(groups.map((g) => [g.startKm, g.endKm, g.level])).toEqual([
+      [41.2, 44, "caution"],
+      [47.8, 47.8, "risky"],
+    ]);
+  });
+
+  test("單點示警落在路段終點上併入該段", () => {
+    const groups = hazardGroups([hazard("zone", 10, "caution", 12), hazard("point", 12, "caution")]);
+    expect(groups).toHaveLength(1);
+  });
+
+  test("沒有示警時為空", () => {
+    expect(hazardGroups([])).toEqual([]);
   });
 });
 

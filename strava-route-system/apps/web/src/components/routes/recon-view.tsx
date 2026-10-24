@@ -25,7 +25,7 @@ import {
 } from "@/lib/routes/route-track";
 import { etaLabel, paceFor } from "@/lib/routes/trip";
 import { roadEventsOf, verdictOf, type RouteBriefingState } from "@/hooks/useRouteBriefing";
-import { HazardList } from "./recon/hazard-list";
+import { HazardTimeline } from "./recon/hazard-timeline";
 import { ElevationScrubber } from "./recon/elevation-scrubber";
 import { ReconHero } from "./recon/recon-hero";
 import { OfflineNotice } from "./recon/offline-notice";
@@ -52,6 +52,10 @@ interface ReconViewProps {
   briefing: RouteBriefingState;
   /** 緊接在主視覺下方的行程控制（途中定位、出發時間與運動類型），讓判定與影像留在第一眼 */
   afterHero?: ReactNode;
+  /** 途中模式定位失敗時提供：使用者在軌道上拖到自己的位置後放開，以該里程只看前方 */
+  onPlaceYou?: (km: number) => void;
+  /** 整條軌道都是放置模式（定位失敗或按了手動定位）；否則只有拖「你」的圖釘會改位置 */
+  placing?: boolean;
 }
 
 /**
@@ -69,6 +73,8 @@ export function ReconView({
   radar = NO_RADAR,
   briefing,
   afterHero,
+  onPlaceYou,
+  placing = false,
 }: ReconViewProps) {
   const routePolyline = useMemo(() => buildRoutePolylineKm(route), [route]);
 
@@ -113,7 +119,7 @@ export function ReconView({
   // 判讀未回來時軌道不上安全色；過期快照的路段一律不上安全色（未判定 ≠ 安全），示警路段照舊標出
   const zoneStages = trip ? stages : NO_STAGES;
   const eventsComplete = trip ? trip.eventsFailed !== null && trip.eventsFailed.length === 0 && !briefing.expired : false;
-  // 途中模式的目前里程：之前的路段不上色，游標也移到這裡
+  // 途中模式的目前里程：之前的路段不上色，游標也移到這裡；軌道另畫「你」，游標拖走後仍分得清
   const fromKm = trip?.fromKm ?? null;
   const zones = useMemo(
     () => trackZones(totalKm, verdictHazards, zoneStages, { eventsComplete, fromKm }),
@@ -177,13 +183,20 @@ export function ReconView({
         onSelectMarker={selectMarker}
         onSelectZone={selectZone}
         onCloseZone={closeZone}
+        youKm={fromKm}
+        onPlaceYou={onPlaceYou}
+        placing={placing}
       />
 
       {afterHero}
 
-      <HazardList
+      <HazardTimeline
         hazards={verdictHazards}
+        passedHazards={trip?.passedHazards}
         roadEvents={roadEvents}
+        passedRoadEvents={trip?.passedRoadEvents}
+        fromKm={fromKm}
+        totalKm={totalKm}
         positionKm={positionKm}
         activeZone={activeZone}
         onJump={jumpNearKm}

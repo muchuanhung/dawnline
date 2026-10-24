@@ -15,7 +15,7 @@ import Spinner from "@/components/ui/Spinner";
 import { UnknownReasons } from "@/components/verdict/unknown-reasons";
 import {
   HAZARD_ROW_GRID,
-  HazardRowContent,
+  HazardGroupRowContent,
 } from "@/components/verdict/hazard-row";
 import { cn } from "@/lib/utils";
 import type {
@@ -24,7 +24,7 @@ import type {
   VerdictLevel,
 } from "@/lib/routes/recon-geo";
 import type { RoutePolylineKm } from "@/lib/routes/recon-geo";
-import type { TrackZone } from "@/lib/routes/route-track";
+import { hazardGroups, type TrackZone } from "@/lib/routes/route-track";
 import { latestObserved, type RouteRadar, type RouteRadarState } from "@/hooks/useRouteRadar";
 import type { RadarZoom, ViewInsets } from "@/lib/cwb/radar";
 import {
@@ -98,10 +98,11 @@ function RadarPanel({
         className="absolute inset-0 h-full w-full"
       />
       {!frameLoaded && (
-        <p role="status" className="absolute inset-0 flex items-center justify-center gap-2 bg-[#0b1220]/70 text-sm text-white">
+        // div, not p: Spinner renders divs, which are invalid inside <p> (hydration warning)
+        <div role="status" className="absolute inset-0 flex items-center justify-center gap-2 bg-[#0b1220]/70 text-sm text-white">
           <Spinner size="sm" dotClassName="bg-white" />
           雷達圖載入中
-        </p>
+        </div>
       )}
       <div className="absolute inset-x-0 bottom-0 space-y-2 bg-gradient-to-t from-black/90 via-black/70 to-transparent px-3 pb-2 pt-8">
         <div className="flex items-end justify-between gap-3">
@@ -422,7 +423,8 @@ function NoCctvStage({
   return (
     <div>
       <RouteVerdictBar verdict={verdict} />
-      <p
+      {/* div, not p: the loading Spinner renders divs, which are invalid inside <p> */}
+      <div
         className="flex items-center gap-2 px-4 pt-3 text-sm text-muted-foreground"
         role={cctvLoading ? "status" : undefined}
       >
@@ -437,7 +439,7 @@ function NoCctvStage({
             {cctvNote}
           </>
         )}
-      </p>
+      </div>
       {/* 沿途沒有影像但有雷達：判定在上、雷達回放在下，互不遮蓋 */}
       {radarData && !cctvLoading && (
         <RadarPanel
@@ -479,10 +481,11 @@ function ZoneCallout({
           <X className="size-4" aria-hidden />
         </button>
       </div>
+      {/* 同一處的多個指標併成一列（與沿途示警時間軸一致），里程與時間只寫一次 */}
       <ul className="divide-y divide-border/60 border-t border-border/60 px-1">
-        {zone.hazards.map((h) => (
-          <li key={h.id} className={HAZARD_ROW_GRID}>
-            <HazardRowContent hazard={h} eta={etaOf?.(h.startKm)} />
+        {hazardGroups(zone.hazards).map((g) => (
+          <li key={`${g.startKm}-${g.hazards[0]!.id}`} className={HAZARD_ROW_GRID}>
+            <HazardGroupRowContent group={g} eta={etaOf?.(g.startKm)} />
           </li>
         ))}
       </ul>
@@ -514,6 +517,9 @@ export function ReconHero({
   onCloseZone,
   radar,
   polyline,
+  youKm = null,
+  onPlaceYou,
+  placing = false,
 }: {
   verdict: ReconVerdict;
   /** 判讀尚未回來 */
@@ -539,6 +545,11 @@ export function ReconHero({
   radar: RouteRadarState;
   /** 路線折線，雷達圖上畫路線與目前位置 */
   polyline: RoutePolylineKm | null;
+  /** 途中模式的目前里程，軌道上畫「你」 */
+  youKm?: number | null;
+  /** 定位失敗時，讓使用者在軌道上放置自己的位置 */
+  onPlaceYou?: (km: number) => void;
+  placing?: boolean;
 }) {
   const [view, setView] = useState<HeroView>("cctv");
   const [radarOpen, setRadarOpen] = useState(false);
@@ -591,6 +602,9 @@ export function ReconHero({
         onMove={onMove}
         onSelectMarker={onSelectMarker}
         onSelectZone={onSelectZone}
+        youKm={youKm}
+        onPlaceYou={onPlaceYou}
+        placing={placing}
       />
       {activeZone && (
         <ZoneCallout zone={activeZone} etaOf={etaOf} onClose={onCloseZone} />

@@ -293,6 +293,12 @@ export interface RouteBriefing {
   demo: boolean;
   /** 途中模式：判讀起點的里程（目前位置）；null 為從起點出發的整條路線判讀 */
   fromKm: number | null;
+  /**
+   * 途中模式：已經過（整段在 fromKm 之前）的示警與路況事件，只供畫面淡化顯示，不列入判定與統計。
+   * 整條路線判讀時為空陣列；舊的離線快照沒有這兩個欄位。
+   */
+  passedHazards?: Hazard[];
+  passedRoadEvents?: RouteEvent[];
   /** 這份判讀依據的時間（ISO）；畫面標示資料時間用，離線或快取命中時不會跟著現在走 */
   generatedAt: string;
 }
@@ -338,6 +344,9 @@ export function briefRoute(
   const hazards = [...computeHazards(enriched, stages).filter(isWeatherHazard), ...eventHazards(roadEvents)].sort(
     (a, b) => a.startKm - b.startKm
   );
+  const passedRoadEvents = aheadFrom != null ? matched.filter((e) => e.km < aheadFrom) : [];
+  const passedHazards =
+    aheadFrom != null ? passedHazardsOf(route, lookup, weatherOptions, passedRoadEvents, aheadFrom, now) : [];
 
   // 超出預報時段的路段數值不可當真，不列入統計
   const withWeather = enriched.segments.filter((s) => s.hasWeather && !s.outOfCoverage);
@@ -367,8 +376,28 @@ export function briefRoute(
     defaultActivity,
     demo: route.demo === true,
     fromKm: aheadFrom,
+    passedHazards,
+    passedRoadEvents,
     generatedAt: now.toISOString(),
   };
+}
+
+/**
+ * 途中模式已經過的示警：整條路線依同一組出發時間與 pace 套天氣，只留整段在 fromKm 之前的天氣示警，
+ * 加上已經過的路況事件示警。跨過 fromKm 的示警已由前方判讀（從 fromKm 起算）列出，這裡不重複。
+ */
+function passedHazardsOf(
+  route: Route,
+  lookup: WeatherLookup,
+  weatherOptions: TimedWeatherOptions,
+  passedEvents: RouteEvent[],
+  fromKm: number,
+  now: Date
+): Hazard[] {
+  // Same stage rules as the ahead briefing (incl. which stages may use live rain)
+  const { enriched, stages } = weatherStages(route, lookup, weatherOptions, now);
+  const weather = computeHazards(enriched, stages).filter((h) => isWeatherHazard(h) && h.endKm < fromKm);
+  return [...weather, ...eventHazards(passedEvents)].sort((a, b) => a.startKm - b.startKm);
 }
 
 export interface DepartureSuggestion {

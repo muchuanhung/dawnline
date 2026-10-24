@@ -223,6 +223,30 @@ test.describe("briefRoute fromKm（途中模式）", () => {
     const ahead = briefRoute(route, lookup, { now, events: [accident], fromKm: 4 });
     expect(ahead.verdict.level).toBe("clear");
     expect(ahead.roadEvents).toEqual([]);
+    // 已經過的事件另外回傳，只供畫面淡化顯示
+    expect(ahead.passedRoadEvents?.map((e) => e.id)).toEqual(["acc"]);
+    expect(ahead.passedHazards?.map((h) => h.kind)).toEqual(["event"]);
+  });
+
+  test("已經過的天氣示警另外回傳，不影響判定", () => {
+    const lookup = lookupOf({ 士林區: weather(70), 北投區: weather(10) });
+    const ahead = briefRoute(route, lookup, { now: at("08:00"), fromKm: 6 });
+    expect(ahead.verdict.level).toBe("clear");
+    expect(ahead.passedHazards?.map((h) => [h.kind, h.level, h.startKm])).toEqual([["rain", "risky", 0]]);
+  });
+
+  test("跨過目前里程的示警只列在前方，不重複列為已經過", () => {
+    const lookup = lookupOf({ 士林區: weather(70), 北投區: weather(10) });
+    const ahead = briefRoute(route, lookup, { now: at("08:00"), fromKm: 4 });
+    expect(ahead.hazards.map((h) => h.startKm)).toEqual([4]);
+    expect(ahead.passedHazards).toEqual([]);
+  });
+
+  test("整條路線判讀時沒有已經過的項目", () => {
+    const lookup = lookupOf({ 士林區: weather(70), 北投區: weather(10) });
+    const whole = briefRoute(route, lookup, { now: at("08:00") });
+    expect(whole.passedHazards).toEqual([]);
+    expect(whole.passedRoadEvents).toEqual([]);
   });
 
   test("超過總里程時以終點計；0 或未提供時為整條路線", () => {
