@@ -12,7 +12,8 @@
  * - 災害(6) → 判「危險」
  * - 交通事故(1)、特殊管制(4)、天氣(5)、異常告警(8) → 判「注意」
  * - 施工(2)、壅塞(3)、活動(7) → 列出但不影響判定
- * - 其他的施工（298：多為道管中心的道路維護許可，無到期時間、數量大）→ 收合成一行，避免洗版
+ * - 其他的施工（298：多為道管中心的道路維護許可，無到期時間、數量大）→ 收合成一行，避免洗版；
+ *   同一處常有多張許可（不同 EventID、說明都是「道路維護」），展開時再併成一列標 ×N
  */
 
 import { mapLatLonToKm, type Hazard, type RoutePolylineKm } from "@/lib/routes/recon-geo";
@@ -147,12 +148,16 @@ export function matchEventsToRoute(
   const [minLon, maxLon] = [Math.min(...lons) - padLon, Math.max(...lons) + padLon];
 
   const out: RouteEvent[] = [];
+  // 同一 EventID 只取一次（縣市資料重疊或來源重複送時不重複列出）
+  const seen = new Set<string>();
   for (const e of events) {
+    if (seen.has(e.id)) continue;
     if (e.lat < minLat || e.lat > maxLat || e.lon < minLon || e.lon > maxLon) continue;
     if (!isActive(e, now)) continue;
     const hit = mapLatLonToKm(e.lat, e.lon, polyline.points, polyline.cumulativeKm);
     if (!hit || hit.distKm > maxDistKm) continue;
     const category = categoryOf(e.type);
+    seen.add(e.id);
     out.push({
       ...e,
       category,
@@ -185,4 +190,35 @@ export function groupRouteEvents(routeEvents: RouteEvent[]) {
     notices: routeEvents.filter((e) => !e.affectsVerdict && !e.routine),
     routine: routeEvents.filter((e) => !e.affectsVerdict && e.routine),
   };
+}
+
+/** 一筆路況在清單上顯示的說明：有說明用說明（施工多為用途，如「道路維護」），否則用標題 */
+export function eventText(e: RoadEvent): string {
+  return e.description || e.title;
+}
+
+/** 例行施工同一處的判斷距離：清單里程顯示到 0.1 km，差不到這個距離的看起來就是同一處 */
+export const ROUTINE_SPOT_KM = 0.1;
+
+/** 例行施工的一處：同一處、說明相同的多筆事件併成一列 */
+export interface RoutineSpot {
+  km: number;
+  text: string;
+  events: RouteEvent[];
+}
+
+/**
+ * 例行施工依「同一處＋同說明」併列：道管中心同一路口常同時有多張許可，
+ * 各自是不同事件，但畫面上只看得到同一句「道路維護」，逐筆列出像是重複。
+ * 依里程排序後，與該處第一筆相距 ROUTINE_SPOT_KM 內且說明相同者併入。
+ */
+export function routineSpots(routine: RouteEvent[]): RoutineSpot[] {
+  const spots: RoutineSpot[] = [];
+  for (const e of [...routine].sort((a, b) => a.km - b.km)) {
+    const text = eventText(e);
+    const spot = spots.find((s) => s.text === text && Math.abs(e.km - s.km) <= ROUTINE_SPOT_KM + 1e-9);
+    if (spot) spot.events.push(e);
+    else spots.push({ km: e.km, text, events: [e] });
+  }
+  return spots;
 }

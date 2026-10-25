@@ -3,10 +3,12 @@ import { buildRoutePolylineKm } from "@/lib/routes/recon-geo";
 import {
   categoryOf,
   eventHazards,
+  eventText,
   groupRouteEvents,
   isActive,
   matchEventsToRoute,
   parseTdxEvent,
+  routineSpots,
   type RoadEvent,
 } from "@/lib/routes/road-events";
 import { makeRoute } from "../fixtures/route";
@@ -127,5 +129,45 @@ test.describe("eventHazards", () => {
     );
     const byLabel = Object.fromEntries(eventHazards(matched).map((h) => [h.label, h.level]));
     expect(byLabel).toEqual({ "災害：淹水": "risky", "天氣：濃霧": "caution", "管制：預警性封閉": "caution" });
+  });
+});
+
+test.describe("同一處的例行施工", () => {
+  const polyline = buildRoutePolylineKm(makeRoute());
+  const routineAt = (id: string, km: number, description = "道路維護") =>
+    event({ id, type: 2, subType: 298, title: "其他的施工", description, lat: latAtKm(km) });
+
+  test("同一 EventID 重複送來只對應一次", () => {
+    const matched = matchEventsToRoute([routineAt("a", 5), routineAt("a", 5)], polyline, { now: NOW });
+    expect(matched.map((e) => e.id)).toEqual(["a"]);
+  });
+
+  test("不同事件、同一處且說明相同 → 併成一列並保留各筆", () => {
+    const matched = matchEventsToRoute(
+      [routineAt("a", 2), routineAt("b", 2.04), routineAt("c", 2.06), routineAt("d", 13.6), routineAt("e", 13.62)],
+      polyline,
+      { now: NOW }
+    );
+    const spots = routineSpots(groupRouteEvents(matched).routine);
+    expect(spots.map((s) => [s.text, s.events.map((e) => e.id)])).toEqual([
+      ["道路維護", ["a", "b", "c"]],
+      ["道路維護", ["d", "e"]],
+    ]);
+    expect(spots[0]!.km).toBeCloseTo(2, 1);
+  });
+
+  test("同一處但說明不同、或相距超過 0.1 km → 分開列", () => {
+    const matched = matchEventsToRoute(
+      [routineAt("a", 2), routineAt("b", 2, "民生需求-新建房屋"), routineAt("c", 2.4)],
+      polyline,
+      { now: NOW }
+    );
+    const spots = routineSpots(groupRouteEvents(matched).routine);
+    expect(spots.map((s) => s.events.map((e) => e.id))).toEqual([["a"], ["b"], ["c"]]);
+  });
+
+  test("沒有說明時以標題比對與顯示", () => {
+    const e = routineAt("a", 2, "");
+    expect(eventText(e)).toBe("其他的施工");
   });
 });

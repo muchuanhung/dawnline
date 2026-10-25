@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ChevronRight, Construction, LocateFixed } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Hazard } from "@/lib/routes/recon-geo";
-import { CATEGORY_LABEL, groupRouteEvents, type RouteEvent } from "@/lib/routes/road-events";
+import { CATEGORY_LABEL, eventText, groupRouteEvents, routineSpots, type RouteEvent } from "@/lib/routes/road-events";
 import { hazardGroups, type HazardGroup, type TrackZone } from "@/lib/routes/route-track";
 import type { RouteEventsState } from "@/hooks/useRouteBriefing";
 import { HazardGroupBody } from "@/components/verdict/hazard-row";
@@ -102,7 +102,20 @@ function GroupRow({
   );
 }
 
-function NoticeRow({ event, eta, faded, onSelect }: { event: RouteEvent; eta?: string; faded?: boolean; onSelect: () => void }) {
+function NoticeRow({
+  event,
+  count = 1,
+  eta,
+  faded,
+  onSelect,
+}: {
+  event: RouteEvent;
+  /** 同一處併列的筆數（例行施工）；大於 1 時標 ×N */
+  count?: number;
+  eta?: string;
+  faded?: boolean;
+  onSelect: () => void;
+}) {
   return (
     <li className={cn(faded && "opacity-50")}>
       <button
@@ -118,7 +131,12 @@ function NoticeRow({ event, eta, faded, onSelect }: { event: RouteEvent; eta?: s
         <span className="flex min-w-0 items-start gap-1.5 py-2.5 pr-1 text-sm text-muted-foreground">
           <Construction className="mt-0.5 size-4 shrink-0" aria-hidden />
           <span className="min-w-0">
-            {CATEGORY_LABEL[event.category]}：{event.description || event.title}
+            {CATEGORY_LABEL[event.category]}：{eventText(event)}
+            {count > 1 && (
+              <span className="ml-1.5 tabular-nums" aria-label={`共 ${count} 筆`}>
+                ×{count}
+              </span>
+            )}
           </span>
         </span>
       </button>
@@ -216,6 +234,7 @@ export function HazardTimeline({
   const riding = fromKm != null;
 
   const { notices, routine } = groupRouteEvents(roadEvents?.events ?? []);
+  const spots = routineSpots(routine);
   const ahead = itemsOf(hazards, notices);
   const passed = riding ? itemsOf(passedHazards, groupRouteEvents(passedRoadEvents).notices) : [];
   const groupCount = ahead.filter((it) => it.kind === "group").length;
@@ -306,14 +325,26 @@ export function HazardTimeline({
         </PlainRow>
       </ol>
 
-      {routine.length > 0 && (
+      {spots.length > 0 && (
         <div>
           <ToggleRow open={routineOpen} onToggle={() => setRoutineOpen((v) => !v)}>
             <span>
-              另有 <span className="tabular-nums">{routine.length}</span> 處例行施工（多為道路維護）
+              另有 <span className="tabular-nums">{spots.length}</span> 處例行施工（多為道路維護）
             </span>
           </ToggleRow>
-          {routineOpen && <ol>{routine.map((e) => renderItem({ kind: "notice", km: e.km, event: e }, false))}</ol>}
+          {routineOpen && (
+            <ol>
+              {spots.map((spot) => (
+                <NoticeRow
+                  key={`r-${spot.events[0]!.id}`}
+                  event={spot.events[0]!}
+                  count={spot.events.length}
+                  eta={etaOf?.(spot.km)}
+                  onSelect={() => onJump(spot.km)}
+                />
+              ))}
+            </ol>
+          )}
         </div>
       )}
 
