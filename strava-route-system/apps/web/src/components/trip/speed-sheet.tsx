@@ -9,11 +9,11 @@ import { cn } from "@/lib/utils";
 import { saveSpeed } from "@/lib/routes/speed-storage";
 import {
   ACTIVITY,
-  climbHoursFor,
   SPEED_LEVELS,
   SPEED_RANGE,
   formatDuration,
   speedLevelLabel,
+  tripDuration,
   type Activity,
 } from "@/lib/routes/trip";
 
@@ -30,7 +30,7 @@ export function SpeedSheet({
   onOpenChange,
   activity,
   speedKmh,
-  ascentM,
+  profile,
   totalKm,
   elevationGainM,
 }: {
@@ -39,8 +39,8 @@ export function SpeedSheet({
   activity: Activity;
   /** 目前生效的平地均速 */
   speedKmh: number;
-  /** 高程剖面的累計爬升（m），試算爬升加時用 */
-  ascentM: number;
+  /** 高程剖面，試算上下坡加減時間用（與判讀同一套 paceFor） */
+  profile: readonly (readonly [number, number])[];
   totalKm: number;
   elevationGainM: number;
 }) {
@@ -58,7 +58,7 @@ export function SpeedSheet({
       key={`${activity}|${speedKmh}|${open}`}
       activity={activity}
       speedKmh={speedKmh}
-      ascentM={ascentM}
+      profile={profile}
       totalKm={totalKm}
       elevationGainM={elevationGainM}
       onDone={() => onOpenChange(false)}
@@ -95,15 +95,15 @@ export function SpeedSheet({
 function SpeedSheetBody({
   activity,
   speedKmh,
-  ascentM,
+  profile,
   totalKm,
   elevationGainM,
   onDone,
 }: {
   activity: Activity;
   speedKmh: number;
-  /** 高程剖面的累計爬升（m），試算爬升加時用 */
-  ascentM: number;
+  /** 高程剖面，試算上下坡加減時間用（與判讀同一套 paceFor） */
+  profile: readonly (readonly [number, number])[];
   totalKm: number;
   elevationGainM: number;
   onDone: () => void;
@@ -114,8 +114,7 @@ function SpeedSheetBody({
   const [draft, setDraft] = useState(speedKmh);
   const { min, max, step } = SPEED_RANGE[activity];
   const defaultSpeed = ACTIVITY[activity].speedKmh;
-  const flatHours = totalKm / draft;
-  const climbHours = climbHoursFor(activity, ascentM, draft);
+  const { flatHours, climbHours } = tripDuration(activity, profile, totalKm, draft);
   const pct = (v: number) => ((v - min) / (max - min)) * 100;
 
   const apply = (value: number | null) => {
@@ -171,7 +170,8 @@ function SpeedSheetBody({
           <dd className="font-mono font-medium">{formatDuration(flatHours)}</dd>
         </div>
         <div className="flex justify-between">
-          <dt className="text-muted-foreground">爬升 {elevationGainM} m</dt>
+          {/* 上坡加、下坡扣（依運動類型）後的淨增加時間 */}
+          <dt className="text-muted-foreground">坡度（爬升 {elevationGainM} m）</dt>
           <dd className="font-mono font-medium">＋{formatDuration(climbHours)}</dd>
         </div>
         <div className="flex justify-between border-t border-border pt-1.5 font-semibold">

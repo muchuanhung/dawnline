@@ -7,6 +7,7 @@ import {
   ACTIVITIES,
   ACTIVITY,
   climbMinFor,
+  descentMinFor,
   DEPARTURE_OFFSETS_H,
   departureAfter,
   formatClock,
@@ -64,7 +65,7 @@ export function TripSettings({
    * 沒有外層面板時（今日判讀），由這裡自己開均速設定面板，試算用這條路線的距離與爬升。
    * 兩者都沒提供時不顯示「調整速度」。
    */
-  speedRoute?: { totalKm: number; ascentM: number; elevationGainM: number };
+  speedRoute?: { totalKm: number; profile: readonly (readonly [number, number])[]; elevationGainM: number };
   className?: string;
 }) {
   const router = useRouter();
@@ -143,7 +144,8 @@ export function TripSettings({
         )}
         {ACTIVITY[activity].label}均速{" "}
         {speedKmh} km/h
-        {climbMinFor(activity, speedKmh) > 0 && `、每爬升 100 m 加 ${formatClimbMin(climbMinFor(activity, speedKmh))} 分鐘`}{" "}
+        {climbMinFor(activity, speedKmh) > 0 && `、每爬升 100 m 加 ${formatClimbMin(climbMinFor(activity, speedKmh))} 分鐘`}
+        {descentMinFor(activity, speedKmh) > 0 && `、每下降 100 m 減 ${formatClimbMin(descentMinFor(activity, speedKmh))} 分鐘`}{" "}
         估算{fromKm != null ? "前方" : ""}各段抵達時間，再對照該時段的預報。
         {editSpeed && (
           <button type="button" onClick={editSpeed} className="ml-1 font-medium text-primary underline-offset-2 hover:underline">
@@ -157,7 +159,7 @@ export function TripSettings({
           onOpenChange={setSpeedOpen}
           activity={activity}
           speedKmh={speedKmh}
-          ascentM={speedRoute.ascentM}
+          profile={speedRoute.profile}
           totalKm={speedRoute.totalKm}
           elevationGainM={speedRoute.elevationGainM}
         />

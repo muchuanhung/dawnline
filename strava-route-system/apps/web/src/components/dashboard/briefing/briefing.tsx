@@ -8,7 +8,6 @@ import { RouteSwitcher } from "./route-switcher";
 import { TripSettings } from "@/components/trip/trip-settings";
 import {
   activityOfRouteType,
-  profileAscentM,
   speedFor,
   type Activity,
   type SpeedPrefs,
@@ -58,10 +57,10 @@ export async function Briefing({
           defaultActivity={defaultActivity}
           explicitActivity={trip.activity}
           explicitDeparture={trip.departure?.toISOString() ?? null}
-          // 只傳距離與總爬升（不傳整條高程剖面），均速面板試算用
+          // 均速面板試算用：與判讀同一套 paceFor，需要高程剖面
           speedRoute={{
             totalKm: routeTotalKm(current),
-            ascentM: profileAscentM(current.elevationProfile),
+            profile: current.elevationProfile,
             elevationGainM: current.elevationGain,
           }}
         />

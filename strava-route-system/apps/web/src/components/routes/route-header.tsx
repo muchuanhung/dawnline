@@ -59,7 +59,7 @@ export function RouteHeader({ route, departureLabel, estimate }: RouteHeaderProp
         爬升 <Stat value={`${route.elevationGain}`} unit="m" />
         <Sep />
         預估 <Stat value={estimate?.totalLabel ?? route.estimatedTime} />
-        {estimate?.climbLabel && <span>（含爬升 {estimate.climbLabel}）</span>}
+        {estimate?.climbLabel && <span>（坡度 +{estimate.climbLabel}）</span>}
         {suggestTime && (
           <>
             <Sep />

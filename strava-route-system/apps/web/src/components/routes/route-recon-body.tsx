@@ -10,7 +10,7 @@ import { TripSettings } from "@/components/trip/trip-settings";
 import { SpeedSheet } from "@/components/trip/speed-sheet";
 import type { RouteRecon } from "@/hooks/useRouteRecon";
 import { routeTotalKm } from "@/lib/routes/recon-geo";
-import { formatDuration, profileAscentM, routeEstimate, speedLevelLabel, type PageTrip } from "@/lib/routes/trip";
+import { formatDuration, routeEstimate, speedLevelLabel, type PageTrip } from "@/lib/routes/trip";
 import { departureLabelOf } from "@/lib/dashboard/advice";
 
 /**
@@ -89,7 +89,7 @@ export function RouteReconBody({
         onOpenChange={setSpeedOpen}
         activity={activity}
         speedKmh={speedKmh}
-        ascentM={profileAscentM(route.elevationProfile)}
+        profile={route.elevationProfile}
         totalKm={totalKm}
         elevationGainM={route.elevationGain}
       />
