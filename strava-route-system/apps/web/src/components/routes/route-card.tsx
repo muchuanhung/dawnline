@@ -17,12 +17,14 @@ interface RouteCardProps {
   index: number;
   /** null／未提供代表尚未取得判讀，不顯示標籤（route.status 為 GPX 寫死值）；unknown 顯示「未判定」 */
   statusOverride?: CardStatus | null;
+  /** 依目前運動類型與均速（含爬升）算的預估時間；未提供時退回 GPX 解析時的粗估 */
+  timeLabel?: string;
 }
 
 /** 卡片標籤的顏色與文字；未判定用灰色，不能像安全那樣給綠色 */
 const UNKNOWN_STATUS = { color: "#9ca3af", label: "未判定" };
 
-export function RouteCard({ route, isSelected, onSelect, index, statusOverride }: RouteCardProps) {
+export function RouteCard({ route, isSelected, onSelect, index, statusOverride, timeLabel }: RouteCardProps) {
   const status = statusOverride ?? null;
   const statusColor = status ? (status === "unknown" ? UNKNOWN_STATUS.color : getStatusColor(status)) : undefined;
   const diffColor = getDifficultyColor(route.difficulty);
@@ -78,7 +80,7 @@ export function RouteCard({ route, isSelected, onSelect, index, statusOverride }
         </span>
         <span className="flex items-center gap-1">
           <Clock className="h-3 w-3" />
-          {route.estimatedTime}
+          {timeLabel ?? route.estimatedTime}
         </span>
       </div>
 

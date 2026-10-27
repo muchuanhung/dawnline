@@ -171,6 +171,23 @@ test.describe("briefRoute", () => {
     expect(hiking.verdict.level).toBe("risky");
   });
 
+  test("自訂平地均速：健行 6 km/h 在雨前抵達；不合法或不屬於這個運動的值用預設", () => {
+    // 北投區 8 km 起：健行 4 km/h → 10:00 落在 70%；6 km/h → 09:20 仍在 10%
+    const route = makeRoute({ distance: 10, segments: [segment("士林區", [0, 2]), segment("北投區", [8, 10])] });
+    const lookup = lookupOf({
+      士林區: weather(10, { rainfallBuckets: MORNING_THEN_RAIN }),
+      北投區: weather(10, { rainfallBuckets: MORNING_THEN_RAIN }),
+    });
+    const fast = briefRoute(route, lookup, { now: AT_8AM, activity: "hiking", speedKmh: 6 });
+    expect(fast.speedKmh).toBe(6);
+    expect(fast.verdict.level).toBe("clear");
+    // 20 km/h 超出健行範圍（2–6）→ 退回 4 km/h
+    const invalid = briefRoute(route, lookup, { now: AT_8AM, activity: "hiking", speedKmh: 20 });
+    expect(invalid.speedKmh).toBe(4);
+    expect(invalid.verdict.level).toBe("risky");
+    expect(briefRoute(route, lookup, { now: AT_8AM, speedKmh: 25 }).speedKmh).toBe(25);
+  });
+
   test("未指定運動類型時依路線類型", () => {
     const route = { ...makeRoute({ segments: [segment("士林區", [0, 20])] }), type: "跑步" as const };
     expect(briefRoute(route, lookupOf({ 士林區: weather(10) }), { now: AT_8AM }).activity).toBe("running");

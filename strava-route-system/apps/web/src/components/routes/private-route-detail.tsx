@@ -9,7 +9,7 @@ import { RouteReconBody } from "@/components/routes/route-recon-body";
 import { RouteStickyBar } from "@/components/routes/route-sticky-bar";
 import { usePrivateRoute } from "@/hooks/usePrivateRoutes";
 import { useRouteRecon } from "@/hooks/useRouteRecon";
-import type { Activity } from "@/lib/routes/trip";
+import type { PageTrip } from "@/lib/routes/trip";
 import { cn } from "@/lib/utils";
 
 const PRIVATE_BRIEFING_ENDPOINT = "/api/routes/private/briefing";
@@ -25,7 +25,7 @@ export function PrivateRouteDetail({
 }: {
   routeId: string;
   /** 網址上的行程設定（出發時間 ISO、運動類型），未指定為 null */
-  trip: { depart: string | null; activity: Activity | null };
+  trip: PageTrip;
   /** 嵌在「我的路線」右欄時不顯示返回連結、不限寬 */
   embedded?: boolean;
 }) {

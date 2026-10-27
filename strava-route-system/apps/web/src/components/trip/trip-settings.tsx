@@ -1,17 +1,20 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { cn } from "@/lib/utils";
 import {
   ACTIVITIES,
   ACTIVITY,
+  climbMinFor,
+  descentMinFor,
   DEPARTURE_OFFSETS_H,
   departureAfter,
   formatClock,
   type Activity,
 } from "@/lib/routes/trip";
 import { saveTrip } from "@/lib/routes/trip-storage";
+import { SpeedSheet } from "@/components/trip/speed-sheet";
 
 const SELECT =
   "h-9 rounded-lg border border-border bg-card px-2 text-sm font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -39,6 +42,8 @@ export function TripSettings({
   explicitActivity,
   explicitDeparture,
   fromKm = null,
+  onEditSpeed,
+  speedRoute,
   className,
 }: {
   /** 判讀實際用的出發時間（ISO） */
@@ -54,6 +59,13 @@ export function TripSettings({
   explicitDeparture: string | null;
   /** 途中模式的目前里程；有值時出發時間唯讀 */
   fromKm?: number | null;
+  /** 打開外層的均速設定面板（路線頁：與路線卡的速度按鈕共用同一個面板） */
+  onEditSpeed?: () => void;
+  /**
+   * 沒有外層面板時（今日判讀），由這裡自己開均速設定面板，試算用這條路線的距離與爬升。
+   * 兩者都沒提供時不顯示「調整速度」。
+   */
+  speedRoute?: { totalKm: number; profile: readonly (readonly [number, number])[]; elevationGainM: number };
   className?: string;
 }) {
   const router = useRouter();
@@ -62,6 +74,8 @@ export function TripSettings({
   const [pending, startTransition] = useTransition();
   const now = new Date();
   const offset = offsetOf(explicitDeparture ? new Date(explicitDeparture) : null, now);
+  const [speedOpen, setSpeedOpen] = useState(false);
+  const editSpeed = onEditSpeed ?? (speedRoute ? () => setSpeedOpen(true) : undefined);
 
   // Remember what the page currently shows so the nav links can restore it
   useEffect(() => {
@@ -130,9 +144,31 @@ export function TripSettings({
         )}
         {ACTIVITY[activity].label}均速{" "}
         {speedKmh} km/h
-        {ACTIVITY[activity].climbMinPer100m > 0 && `、每爬升 100 m 加 ${ACTIVITY[activity].climbMinPer100m} 分鐘`}{" "}
+        {climbMinFor(activity, speedKmh) > 0 && `、每爬升 100 m 加 ${formatClimbMin(climbMinFor(activity, speedKmh))} 分鐘`}
+        {descentMinFor(activity, speedKmh) > 0 && `、每下降 100 m 減 ${formatClimbMin(descentMinFor(activity, speedKmh))} 分鐘`}{" "}
         估算{fromKm != null ? "前方" : ""}各段抵達時間，再對照該時段的預報。
+        {editSpeed && (
+          <button type="button" onClick={editSpeed} className="ml-1 font-medium text-primary underline-offset-2 hover:underline">
+            調整速度
+          </button>
+        )}
       </p>
+      {!onEditSpeed && speedRoute && (
+        <SpeedSheet
+          open={speedOpen}
+          onOpenChange={setSpeedOpen}
+          activity={activity}
+          speedKmh={speedKmh}
+          profile={speedRoute.profile}
+          totalKm={speedRoute.totalKm}
+          elevationGainM={speedRoute.elevationGainM}
+        />
+      )}
     </div>
   );
+}
+
+/** 爬升加時（分鐘）最多顯示一位小數 */
+function formatClimbMin(min: number): string {
+  return String(Math.round(min * 10) / 10);
 }

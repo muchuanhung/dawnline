@@ -6,7 +6,8 @@ import { AppShell } from "@/components/app-shell/app-shell";
 import { Briefing } from "@/components/dashboard/briefing/briefing";
 import { BriefingLoading } from "@/components/dashboard/briefing/briefing-loading";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
-import { formatClock, parseActivity, parseDeparture } from "@/lib/routes/trip";
+import { cookies } from "next/headers";
+import { formatClock, parseActivity, parseDeparture, parseSpeedPrefs, SPEED_COOKIE } from "@/lib/routes/trip";
 
 export const metadata: Metadata = { title: "今日判讀" };
 
@@ -21,7 +22,9 @@ export default async function DashboardPage({
   const { route, depart, activity } = await searchParams;
   const now = new Date();
   const departure = parseDeparture(depart, now);
-  const trip = { departure, activity: parseActivity(activity) };
+  // 自訂平地均速存在 cookie，不放網址
+  const speeds = parseSpeedPrefs((await cookies()).get(SPEED_COOKIE)?.value);
+  const trip = { departure, activity: parseActivity(activity), speeds };
 
   return (
     <AppShell current="dashboard">

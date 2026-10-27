@@ -25,7 +25,7 @@ import {
   type VerdictLevel,
 } from "@/lib/routes/recon-geo";
 import { normalizeCountyForCWB } from "@/lib/cwb/county-map";
-import { ACTIVITY, activityOfRouteType, formatClock, paceFor, type Activity } from "@/lib/routes/trip";
+import { activityOfRouteType, formatClock, paceFor, speedFor, type Activity } from "@/lib/routes/trip";
 import { summarizeRainfall, type LatLon, type StationRain } from "@/lib/cwb/rainfall-stations";
 import {
   DEFAULT_CYCLING_SPEED_KMH,
@@ -311,6 +311,8 @@ export interface BriefRouteOptions {
   departure?: Date;
   /** 運動類型；未指定時依路線類型 */
   activity?: Activity;
+  /** 使用者自訂的平地均速（km/h），套用在最終的運動類型；不合法或未指定時用預設均速 */
+  speedKmh?: number | null;
   /** 路況事件取不到的縣市；null 代表整個事件服務失敗 */
   eventsFailed?: string[] | null;
   /** 是否試算建議出發時段；只有畫面會顯示的路線才開（今日判讀目前路線、路線頁） */
@@ -325,13 +327,13 @@ export interface BriefRouteOptions {
 export function briefRoute(
   route: Route,
   lookup: WeatherLookup,
-  { events = [], now = new Date(), departure = now, activity, eventsFailed, suggest = false, fromKm }: BriefRouteOptions = {}
+  { events = [], now = new Date(), departure = now, activity, speedKmh: customSpeed, eventsFailed, suggest = false, fromKm }: BriefRouteOptions = {}
 ): RouteBriefing {
   const defaultActivity = activityOfRouteType(route.type);
   const tripActivity = activity ?? defaultActivity;
-  const speedKmh = ACTIVITY[tripActivity].speedKmh;
+  const speedKmh = speedFor(tripActivity, customSpeed);
   // 爬升修正依完整路線的高程計算；途中模式也用同一個 pace，ETA 才會是 hoursTo(k) − hoursTo(fromKm)
-  const pace = paceFor(tripActivity, route.elevationProfile);
+  const pace = paceFor(tripActivity, route.elevationProfile, speedKmh);
   const totalKm = routeTotalKm(route);
   const aheadFrom = fromKm != null && Number.isFinite(fromKm) && fromKm > 0 ? Math.min(fromKm, totalKm) : null;
   const tripDeparture = aheadFrom != null ? departureForPosition(now, aheadFrom, pace) : departure;

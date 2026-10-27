@@ -34,8 +34,10 @@ export function DepartureSuggestionRow({
   const now = new Date();
   const clock = (d: Date) => formatClock(d, now);
   const shown = alignedWindow(s);
-  const range =
-    shown.from.getTime() === shown.to.getTime() ? clock(shown.from) : `${clock(shown.from)}–${clock(shown.to)}`;
+  const fromLabel = clock(shown.from);
+  // 起訖同一天（例如都是「明日」）時，結束時間不再重複日期前綴
+  const toLabel = sameDayPrefix(fromLabel, clock(shown.to));
+  const single = shown.from.getTime() === shown.to.getTime();
   const levelText = LEVEL_TEXT[s.level ?? "none"];
   const chosenInWindow = trip.depart ? inWindow(trip.depart, s) : s.nowIsBest;
   const target = s.nowIsBest ? null : shown.from.toISOString();
@@ -51,19 +53,51 @@ export function DepartureSuggestionRow({
     );
   }
 
+  // 時間一段一段不拆行（whitespace-nowrap），只在段與段之間換行
+  const range = (
+    <>
+      <span className="whitespace-nowrap">{fromLabel}</span>
+      {!single && (
+        <>
+          –<span className="whitespace-nowrap">{toLabel}</span>
+        </>
+      )}
+    </>
+  );
+
+  // 方案 C：左邊三行（標題／時段／示警），右邊短按鈕；手機與桌機同一個版型，時段不從中間斷行
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-muted/50 px-3 py-2 text-sm">
-      <Clock className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-      <p className="min-w-0 flex-1">
-        <span className="text-muted-foreground">現在起 {SUGGEST_HORIZON_H} 小時內最佳出發 </span>
-        <b className="font-mono">{s.nowIsBest && !trip.depart ? `現在（${range}）` : range}</b>
-        <span className="text-muted-foreground">・{levelText}</span>
-      </p>
+    <div className="flex items-center gap-3 rounded-lg bg-muted/50 px-3 py-2.5 text-sm">
+      <div className="min-w-0 flex-1">
+        <p className="text-xs text-muted-foreground">{SUGGEST_HORIZON_H} 小時內最佳出發</p>
+        <p className="font-mono text-base font-semibold">
+          {s.nowIsBest && !trip.depart ? (
+            <>
+              <span className="whitespace-nowrap">現在</span>（{range}）
+            </>
+          ) : (
+            range
+          )}
+        </p>
+        <p className="text-xs text-muted-foreground">{levelText}</p>
+      </div>
       {!chosenInWindow && (
-        <Link href={href} className="shrink-0 font-medium text-primary hover:underline">
-          {target ? `改 ${clock(shown.from)} 出發` : "改回現在出發"}
+        <Link
+          href={href}
+          aria-label={target ? `改成 ${fromLabel} 出發` : "改回現在出發"}
+          className="shrink-0 whitespace-nowrap rounded-lg bg-primary px-3 py-2 font-medium text-primary-foreground hover:bg-primary/90"
+        >
+          {target ? "改這時間" : "改回現在"}
         </Link>
       )}
     </div>
   );
+}
+
+/** 「明日 06:30」與「明日 11:00」→ 結束時間只留「11:00」；不同天時照原樣 */
+function sameDayPrefix(from: string, to: string): string {
+  const space = from.indexOf(" ");
+  if (space < 0) return to;
+  const prefix = from.slice(0, space + 1);
+  return to.startsWith(prefix) ? to.slice(prefix.length) : to;
 }

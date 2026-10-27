@@ -16,6 +16,8 @@ export async function GET(request: Request) {
       departure: parseDeparture(params.get("depart"), new Date()) ?? undefined,
       activity: parseActivity(params.get("activity")) ?? undefined,
       fromKm: parseFromKm(params.get("from")) ?? undefined,
+      // 自訂平地均速；briefRoute 依最終運動類型驗證範圍
+      speedKmh: params.get("speed") ? Number(params.get("speed")) : undefined,
     });
     if (!briefing) return NextResponse.json({ error: "找不到路線" }, { status: 404 });
     return NextResponse.json(briefing, { headers: { "Cache-Control": "no-store" } });

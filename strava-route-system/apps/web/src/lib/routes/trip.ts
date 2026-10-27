@@ -9,28 +9,149 @@ import { DEFAULT_CYCLING_SPEED_KMH, estimateArrivalTime, type Pace } from "@/lib
 export type Activity = "cycling" | "running" | "hiking";
 
 /**
- * 均速含停等，規則式估算。健行另依爬升加時間（Naismith 規則：每爬升 600 m 加 1 小時，即每 100 m 加 10 分鐘）；
- * 自行車、跑步不另加（均速已含一般起伏）。
+ * 均速為平路含停等的規則式估算；另依高程加減時間：
+ * - 健行：Naismith 規則，每爬升 600 m 加 1 小時，即每 100 m 加 10 分鐘；下坡不扣。
+ * - 自行車：每爬升 100 m 加 3 分鐘、每下降 100 m 扣 2 分鐘，下坡最快算到 35 km/h。
+ *   爬坡：休閒車友的垂直爬升率（VAM）約 700–800 m/h，爬 100 m 約 8 分鐘，
+ *   同一段在常見 6% 坡度約 1.7 km、平路 20 km/h 要 5 分鐘，差額約 3 分鐘。
+ *   下坡：同樣 100 m 下降約 1.7 km，以 35 km/h 下滑不到 3 分鐘，比平路快約 2 分鐘。
+ *   以風櫃嘴（25 km、爬升 610 m 來回）校準，20 km/h 約 1 小時 25 分，接近 Strava 的估計。
+ * - 跑步：越野跑常用的「努力公里」（ITRA km-effort）每爬升 100 m 折合 1 km 平路，
+ *   以 10 km/h 計為 6 分鐘 → 每 100 m 加 6 分鐘；下坡不扣（跑者下坡多半不會快很多）。
  */
-export const ACTIVITY: Record<Activity, { label: string; speedKmh: number; climbMinPer100m: number }> = {
-  cycling: { label: "自行車", speedKmh: DEFAULT_CYCLING_SPEED_KMH, climbMinPer100m: 0 },
-  running: { label: "跑步", speedKmh: 10, climbMinPer100m: 0 },
-  hiking: { label: "健行", speedKmh: 4, climbMinPer100m: 10 },
+export const ACTIVITY: Record<
+  Activity,
+  { label: string; speedKmh: number; climbMinPer100m: number; descentMinPer100m: number; maxDescentKmh: number }
+> = {
+  cycling: {
+    label: "自行車",
+    speedKmh: DEFAULT_CYCLING_SPEED_KMH,
+    climbMinPer100m: 3,
+    descentMinPer100m: 2,
+    maxDescentKmh: 35,
+  },
+  running: { label: "跑步", speedKmh: 10, climbMinPer100m: 6, descentMinPer100m: 0, maxDescentKmh: 10 },
+  hiking: { label: "健行", speedKmh: 4, climbMinPer100m: 10, descentMinPer100m: 0, maxDescentKmh: 4 },
 };
 
 /**
- * 行進速度：不加爬升時就是均速；加爬升時回傳「起點到某里程所需小時數」＝ 距離 ÷ 均速 ＋ 累計爬升 × 每 100 m 分鐘數。
- * profile 為 [里程 km, 海拔 m]，依里程排序；里程落在兩點之間時線性內插。
+ * 使用者自訂的平地均速：滑桿範圍與刻度（程度）。超出範圍視為打錯，退回預設均速。
+ * 「一般」等於 ACTIVITY 的預設均速。
  */
-export function paceFor(activity: Activity, profile: readonly (readonly [number, number])[]): Pace {
-  const { speedKmh, climbMinPer100m } = ACTIVITY[activity];
-  if (climbMinPer100m === 0 || profile.length < 2) return speedKmh;
+export const SPEED_RANGE: Record<Activity, { min: number; max: number; step: number }> = {
+  cycling: { min: 12, max: 35, step: 1 },
+  running: { min: 6, max: 15, step: 0.5 },
+  hiking: { min: 2, max: 6, step: 0.5 },
+};
+
+export const SPEED_LEVELS: Record<Activity, readonly { label: string; speedKmh: number }[]> = {
+  cycling: [
+    { label: "輕鬆", speedKmh: 15 },
+    { label: "一般", speedKmh: 20 },
+    { label: "進階", speedKmh: 25 },
+    { label: "競速", speedKmh: 30 },
+  ],
+  running: [
+    { label: "輕鬆", speedKmh: 8 },
+    { label: "一般", speedKmh: 10 },
+    { label: "進階", speedKmh: 12 },
+  ],
+  hiking: [
+    { label: "輕鬆", speedKmh: 3 },
+    { label: "一般", speedKmh: 4 },
+    { label: "進階", speedKmh: 5 },
+  ],
+};
+
+/** 各運動自訂的平地均速；沒有的運動用預設均速 */
+export type SpeedPrefs = Partial<Record<Activity, number>>;
+
+/** 自訂均速存在 cookie（伺服器頁面與今日判讀也讀得到），格式 cycling:25,hiking:3.5 */
+export const SPEED_COOKIE = "dawnline-speed";
+
+/** 自訂均速：在範圍內才接受，並對齊刻度；其餘（含等於預設值）回 null 代表用預設 */
+export function parseSpeed(activity: Activity, value: unknown): number | null {
+  const n = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN;
+  const { min, max, step } = SPEED_RANGE[activity];
+  if (!Number.isFinite(n) || n < min || n > max) return null;
+  const snapped = Math.round(n / step) * step;
+  return snapped === ACTIVITY[activity].speedKmh ? null : snapped;
+}
+
+export function parseSpeedPrefs(value: string | null | undefined): SpeedPrefs {
+  const prefs: SpeedPrefs = {};
+  for (const part of (value ?? "").split(",")) {
+    const [key, raw] = part.split(":");
+    const activity = parseActivity(key?.trim());
+    const speed = activity ? parseSpeed(activity, raw) : null;
+    if (activity && speed != null) prefs[activity] = speed;
+  }
+  return prefs;
+}
+
+export function serializeSpeedPrefs(prefs: SpeedPrefs): string {
+  return ACTIVITIES.filter((a) => prefs[a] != null)
+    .map((a) => `${a}:${prefs[a]}`)
+    .join(",");
+}
+
+/** 實際採用的平地均速：自訂（合法時）優先，否則為預設 */
+export function speedFor(activity: Activity, custom?: number | null): number {
+  return (custom != null ? parseSpeed(activity, custom) : null) ?? ACTIVITY[activity].speedKmh;
+}
+
+/** 速度標籤：剛好在某個程度上顯示程度名稱，否則為「自訂」 */
+export function speedLevelLabel(activity: Activity, speedKmh: number): string {
+  return SPEED_LEVELS[activity].find((l) => l.speedKmh === speedKmh)?.label ?? "自訂";
+}
+
+/**
+ * 每爬升 100 m 加的分鐘數，隨平地均速等比例縮放（騎得快的人爬坡通常也快）：
+ * 等同「每 100 m 爬升折合固定的平路距離」，預設均速時就是 ACTIVITY 的 climbMinPer100m。
+ */
+export function climbMinFor(activity: Activity, speedKmh: number = ACTIVITY[activity].speedKmh): number {
+  const { speedKmh: base, climbMinPer100m } = ACTIVITY[activity];
+  return (climbMinPer100m * base) / speedKmh;
+}
+
+/** 每下降 100 m 扣的分鐘數，與 climbMinFor 同樣隨均速縮放；0 代表下坡不扣 */
+export function descentMinFor(activity: Activity, speedKmh: number = ACTIVITY[activity].speedKmh): number {
+  const { speedKmh: base, descentMinPer100m } = ACTIVITY[activity];
+  return (descentMinPer100m * base) / speedKmh;
+}
+
+/**
+ * 行進速度：不考慮高程時就是均速；否則回傳「起點到某里程所需小時數」。
+ * 逐段計算：每段 ＝ 距離 ÷ 均速，上坡加 爬升 × climbMinFor，下坡扣 下降 × descentMinFor，
+ * 但下坡段不會快過 maxDescentKmh（均速更快時以均速為上限）。
+ * profile 為 [里程 km, 海拔 m]，依里程排序；里程落在兩點之間時線性內插，超出剖面的部分以均速計。
+ * speedKmh 為平地均速（使用者自訂或預設）。
+ */
+export function paceFor(
+  activity: Activity,
+  profile: readonly (readonly [number, number])[],
+  speedKmh: number = ACTIVITY[activity].speedKmh
+): Pace {
+  const climbMin = climbMinFor(activity, speedKmh);
+  const descentMin = descentMinFor(activity, speedKmh);
+  if ((climbMin === 0 && descentMin === 0) || profile.length < 2) return speedKmh;
+  const maxKmh = Math.max(ACTIVITY[activity].maxDescentKmh, speedKmh);
   const kms = profile.map((p) => p[0]);
-  const ascent: number[] = [0];
-  for (let i = 1; i < profile.length; i++) ascent.push(ascent[i - 1]! + Math.max(0, profile[i]![1] - profile[i - 1]![1]));
-  const ascentAt = (km: number) => {
-    if (km <= kms[0]!) return 0;
-    if (km >= kms[kms.length - 1]!) return ascent[ascent.length - 1]!;
+  // hours[i]：從剖面第一點到第 i 點的小時數
+  const hours: number[] = [0];
+  for (let i = 1; i < profile.length; i++) {
+    const d = Math.max(0, kms[i]! - kms[i - 1]!);
+    const dh = profile[i]![1] - profile[i - 1]![1];
+    const flat = d / speedKmh;
+    const seg =
+      dh >= 0 ? flat + ((dh / 100) * climbMin) / 60 : Math.max(d / maxKmh, flat - ((-dh / 100) * descentMin) / 60);
+    hours.push(hours[i - 1]! + seg);
+  }
+  const first = kms[0]!;
+  const last = kms[kms.length - 1]!;
+  return (km: number) => {
+    if (km <= first) return km / speedKmh;
+    if (km >= last) return first / speedKmh + hours[hours.length - 1]! + (km - last) / speedKmh;
     let lo = 0;
     let hi = kms.length - 1;
     while (hi - lo > 1) {
@@ -40,9 +161,44 @@ export function paceFor(activity: Activity, profile: readonly (readonly [number,
     }
     const span = kms[hi]! - kms[lo]!;
     const f = span > 0 ? (km - kms[lo]!) / span : 0;
-    return ascent[lo]! + Math.max(0, profile[hi]![1] - profile[lo]![1]) * f;
+    return first / speedKmh + hours[lo]! + (hours[hi]! - hours[lo]!) * f;
   };
-  return (km: number) => km / speedKmh + (ascentAt(km) / 100) * (climbMinPer100m / 60);
+}
+
+/** 整條路線的預估時間，拆成平地與坡度（上坡加、下坡扣後的淨增加）兩部分（小時）；畫面顯示「預估 X（坡度 +Y）」用 */
+export function tripDuration(
+  activity: Activity,
+  profile: readonly (readonly [number, number])[],
+  totalKm: number,
+  speedKmh: number = ACTIVITY[activity].speedKmh
+): { flatHours: number; climbHours: number } {
+  const pace = paceFor(activity, profile, speedKmh);
+  const flatHours = totalKm / speedKmh;
+  const total = typeof pace === "number" ? flatHours : pace(totalKm);
+  return { flatHours, climbHours: Math.max(0, total - flatHours) };
+}
+
+/**
+ * 某條路線在目前行程設定下的預估時間：運動類型依網址或路線類型，平地均速依 cookie 自訂或預設。
+ * 路線卡、路線清單卡片共用，與伺服器 briefRoute 算 ETA 的公式相同。
+ */
+export function routeEstimate(
+  route: Pick<Route, "type" | "distance" | "elevationProfile">,
+  trip: Pick<PageTrip, "activity" | "speeds">
+): { activity: Activity; speedKmh: number; flatHours: number; climbHours: number } {
+  const activity = trip.activity ?? activityOfRouteType(route.type);
+  const speedKmh = speedFor(activity, trip.speeds?.[activity]);
+  const profile = route.elevationProfile ?? [];
+  const totalKm = route.distance ?? profile[profile.length - 1]?.[0] ?? 0;
+  return { activity, speedKmh, ...tripDuration(activity, profile, totalKm, speedKmh) };
+}
+
+/** 時長：1h 41m／25m（與路線卡既有格式相同） */
+export function formatDuration(hours: number): string {
+  const minutes = Math.round(hours * 60);
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
 export const ACTIVITIES = Object.keys(ACTIVITY) as Activity[];
@@ -106,6 +262,13 @@ export function formatClock(date: Date, now: Date): string {
 /** 某里程的預估到達時間（台灣時間字串），與判讀挑預報時段用同一組出發時間與行進速度 */
 export function etaLabel(km: number, departure: string, pace: Pace, now: Date): string {
   return formatClock(estimateArrivalTime(km, new Date(departure), pace), now);
+}
+
+/** 頁面層的行程設定：網址上的出發時間、運動類型，加上 cookie 裡的自訂均速 */
+export interface PageTrip {
+  depart: string | null;
+  activity: Activity | null;
+  speeds?: SpeedPrefs;
 }
 
 export interface TripParams {

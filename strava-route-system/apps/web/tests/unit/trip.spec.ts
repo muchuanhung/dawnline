@@ -2,6 +2,16 @@ import { test, expect } from "@playwright/test";
 import {
   ACTIVITY,
   activityOfRouteType,
+  climbMinFor,
+  descentMinFor,
+  formatDuration,
+  parseSpeed,
+  parseSpeedPrefs,
+  serializeSpeedPrefs,
+  speedFor,
+  speedLevelLabel,
+  tripDuration,
+  routeEstimate,
   departureAfter,
   etaLabel,
   formatClock,
@@ -58,7 +68,7 @@ test.describe("行程設定", () => {
     expect(etaLabel(30, depart, 4, NOW)).toBe("15:30");
   });
 
-  test("健行依爬升加時間（每 100 m 加 10 分鐘）；自行車、跑步不加", () => {
+  test("健行依爬升加時間（每 100 m 加 10 分鐘）", () => {
     // 0–6 km 爬升 600 m，6–10 km 下降 300 m（下降不加時間）
     const profile: [number, number][] = [[0, 100], [6, 700], [10, 400]];
     const depart = "2026-10-01T00:00:00.000Z";
@@ -66,9 +76,112 @@ test.describe("行程設定", () => {
     expect(etaLabel(6, depart, hiking, NOW)).toBe("10:30"); // 6/4 = 1.5 h + 600 m = 1 h
     expect(etaLabel(3, depart, hiking, NOW)).toBe("09:15"); // 0.75 h + 300 m 內插 = 0.5 h
     expect(etaLabel(10, depart, hiking, NOW)).toBe("11:30"); // 2.5 h + 1 h
-    expect(paceFor("cycling", profile)).toBe(20);
-    expect(paceFor("running", profile)).toBe(10);
     expect(paceFor("hiking", [])).toBe(4);
+  });
+
+  test("自行車每爬升 100 m 加 3 分鐘、每下降 100 m 扣 2 分鐘；跑步爬升加 6 分鐘、下坡不扣", () => {
+    const profile: [number, number][] = [[0, 100], [6, 700], [10, 400]];
+    const depart = "2026-10-01T00:00:00.000Z"; // 08:00 出發
+    const cycling = paceFor("cycling", profile);
+    expect(etaLabel(6, depart, cycling, NOW)).toBe("08:36"); // 6/20 h = 18 分 + 600 m × 3 = 18 分
+    // 6–10 km：平路 12 分 − 300 m × 2 = 6 分，但不快過 35 km/h（4 km ≈ 6.9 分）→ 42.9 分
+    expect(etaLabel(10, depart, cycling, NOW)).toBe("08:42");
+    const running = paceFor("running", profile);
+    expect(etaLabel(6, depart, running, NOW)).toBe("09:12"); // 36 分 + 600 m × 6 = 36 分
+    expect(etaLabel(10, depart, running, NOW)).toBe("09:36"); // 下坡 4 km 照均速 24 分
+  });
+
+  test("下坡扣時間不會快過 35 km/h", () => {
+    // 2 km 掉 400 m：平路 6 分 − 400 m × 2 = −2 分 → 以 35 km/h 計約 3.4 分
+    const hours = (paceFor("cycling", [[0, 500], [2, 100]]) as (km: number) => number)(2);
+    expect(hours * 60).toBeCloseTo((2 / 35) * 60, 6);
+  });
+
+  test("有爬升的路線比平路晚到；平路結果不變", () => {
+    const depart = "2026-10-01T00:00:00.000Z";
+    const flat: [number, number][] = [[0, 50], [12.7, 50], [25.4, 50]];
+    const climb: [number, number][] = [[0, 50], [12.7, 678], [25.4, 50]];
+    for (const activity of ["cycling", "running"] as const) {
+      const flatHours = (paceFor(activity, flat) as (km: number) => number)(25.4);
+      const climbHours = (paceFor(activity, climb) as (km: number) => number)(25.4);
+      expect(flatHours).toBeCloseTo(25.4 / ACTIVITY[activity].speedKmh, 6);
+      expect(climbHours).toBeGreaterThan(flatHours);
+    }
+    // 沒有高程資料時退回均速
+    expect(paceFor("cycling", [])).toBe(20);
+    expect(etaLabel(25.4, depart, paceFor("cycling", flat), NOW)).toBe(etaLabel(25.4, depart, 20, NOW));
+  });
+
+  test("風櫃嘴（25.4 km、爬升 628 m 來回）自行車約 1 小時 22 分（原本 1 小時 16 分、只加爬升時 1 小時 41 分）", () => {
+    const fengguizui: [number, number][] = [[0, 20], [12.7, 648], [25.4, 20]];
+    const hours = (paceFor("cycling", fengguizui) as (km: number) => number)(25.4);
+    // 上坡 38.1 分 + 628 m × 3 分 ≈ 18.8 分；下坡 38.1 分 − 628 m × 2 分 ≈ 12.6 分
+    expect(Math.round(hours * 60)).toBe(82);
+    expect(Math.round((25.4 / ACTIVITY.cycling.speedKmh) * 60)).toBe(76);
+  });
+
+  test("自訂均速：範圍內才接受並對齊刻度，等於預設值視為沒自訂", () => {
+    expect(parseSpeed("cycling", 25)).toBe(25);
+    expect(parseSpeed("cycling", "24.6")).toBe(25);
+    expect(parseSpeed("cycling", 20)).toBeNull();
+    expect(parseSpeed("cycling", 80)).toBeNull();
+    expect(parseSpeed("hiking", 3.4)).toBe(3.5);
+    expect(parseSpeed("hiking", 20)).toBeNull();
+    expect(parseSpeed("running", "abc")).toBeNull();
+    expect(parseSpeed("running", "")).toBeNull();
+    expect(speedFor("cycling", 30)).toBe(30);
+    expect(speedFor("cycling", 99)).toBe(20);
+    expect(speedFor("hiking")).toBe(4);
+  });
+
+  test("自訂均速 cookie：解析時丟掉不合法的項目，序列化順序固定", () => {
+    expect(parseSpeedPrefs("cycling:25,hiking:3.5")).toEqual({ cycling: 25, hiking: 3.5 });
+    expect(parseSpeedPrefs("cycling:500,swimming:2,running")).toEqual({});
+    expect(parseSpeedPrefs(undefined)).toEqual({});
+    expect(serializeSpeedPrefs({ hiking: 5, cycling: 25 })).toBe("cycling:25,hiking:5");
+    expect(serializeSpeedPrefs({})).toBe("");
+  });
+
+  test("程度標籤：剛好在刻度上顯示程度，否則為自訂", () => {
+    expect(speedLevelLabel("cycling", 20)).toBe("一般");
+    expect(speedLevelLabel("cycling", 30)).toBe("競速");
+    expect(speedLevelLabel("cycling", 23)).toBe("自訂");
+    expect(speedLevelLabel("hiking", 3)).toBe("輕鬆");
+  });
+
+  test("上下坡加減時間隨平地均速等比例縮放", () => {
+    expect(climbMinFor("cycling")).toBe(3);
+    expect(climbMinFor("cycling", 30)).toBe(2);
+    expect(descentMinFor("cycling", 30)).toBeCloseTo(4 / 3, 6);
+    expect(descentMinFor("running")).toBe(0);
+    expect(climbMinFor("hiking", 5)).toBe(8);
+    // 平地 30 km/h、爬升 600 m：0–6 km = 12 分 + 600 m × 2 分 = 12 分 → 24 分
+    const profile: [number, number][] = [[0, 100], [6, 700]];
+    expect(etaLabel(6, "2026-10-01T00:00:00.000Z", paceFor("cycling", profile, 30), NOW)).toBe("08:24");
+  });
+
+  test("整條路線預估拆成平地與坡度：風櫃嘴自行車 20 → 30 km/h", () => {
+    const fengguizui: [number, number][] = [[0, 20], [12.7, 648], [25.4, 20]];
+    const normal = tripDuration("cycling", fengguizui, 25.4);
+    expect(formatDuration(normal.flatHours)).toBe("1h 16m");
+    expect(formatDuration(normal.climbHours)).toBe("6m");
+    expect(formatDuration(normal.flatHours + normal.climbHours)).toBe("1h 22m");
+    // 30 km/h：下坡被 35 km/h 上限卡住，扣得比較少
+    const fast = tripDuration("cycling", fengguizui, 25.4, 30);
+    expect(formatDuration(fast.flatHours)).toBe("51m");
+    expect(formatDuration(fast.climbHours)).toBe("9m");
+    expect(tripDuration("cycling", [], 25.4).climbHours).toBe(0);
+  });
+
+  test("路線預估：依路線類型挑運動、套用該運動的自訂均速", () => {
+    const route = { type: "自行車" as const, distance: 25.4, elevationProfile: [[0, 20], [12.7, 648], [25.4, 20]] as [number, number][] };
+    const normal = routeEstimate(route, { activity: null });
+    expect(normal.activity).toBe("cycling");
+    expect(formatDuration(normal.flatHours + normal.climbHours)).toBe("1h 22m");
+    // 只設了健行的均速，不影響自行車
+    expect(routeEstimate(route, { activity: null, speeds: { hiking: 5 } }).speedKmh).toBe(20);
+    expect(routeEstimate(route, { activity: null, speeds: { cycling: 30 } }).speedKmh).toBe(30);
+    expect(routeEstimate(route, { activity: "hiking", speeds: { hiking: 5 } }).speedKmh).toBe(5);
   });
 
   test("連結帶著行程設定", () => {

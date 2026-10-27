@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import type { Route } from "@/lib/routes/route-data";
 import { buildRoutePolylineKm } from "@/lib/routes/recon-geo";
-import type { Activity } from "@/lib/routes/trip";
+import { activityOfRouteType, parseSpeed, type PageTrip } from "@/lib/routes/trip";
 import { useRouteCCTV } from "@/hooks/useRouteCCTV";
 import { useRouteRadar } from "@/hooks/useRouteRadar";
 import { useRouteBriefing, verdictOf } from "@/hooks/useRouteBriefing";
@@ -15,7 +15,7 @@ import { statusOfVerdict } from "@/components/routes/route-header";
  */
 export function useRouteRecon(
   route: Route | null | undefined,
-  trip: { depart: string | null; activity: Activity | null },
+  trip: PageTrip,
   endpoint = "/api/routes/briefing"
 ) {
   // 途中模式的目前里程，綁定路線：換路線後自動失效，不會把 A 路線的里程套到 B 路線
@@ -34,7 +34,16 @@ export function useRouteRecon(
   // 雷達回波只供顯示，不進判讀
   const radar = useRouteRadar(route ?? null, polyline);
   // 判定、示警、建議時段全由伺服器算，前端只顯示
-  const briefing = useRouteBriefing(routeId, trip, aheadKm, aheadOfRoute?.at ?? null, endpoint);
+  // 自訂均速依「這條路線最終的運動類型」挑；換成預設值或沒自訂時不送 speed
+  const activity = trip.activity ?? activityOfRouteType(route?.type);
+  const speed = parseSpeed(activity, trip.speeds?.[activity]);
+  const briefing = useRouteBriefing(
+    routeId,
+    { depart: trip.depart, activity: trip.activity, speed },
+    aheadKm,
+    aheadOfRoute?.at ?? null,
+    endpoint
+  );
   const verdict = verdictOf(briefing);
   // 還沒有判讀（載入中、失敗）時為 null，懸浮列與路線卡顯示未判定，不當成安全
   const status = briefing.briefing ? statusOfVerdict(verdict.level) : null;
