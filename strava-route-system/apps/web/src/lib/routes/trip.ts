@@ -9,12 +9,16 @@ import { DEFAULT_CYCLING_SPEED_KMH, estimateArrivalTime, type Pace } from "@/lib
 export type Activity = "cycling" | "running" | "hiking";
 
 /**
- * 均速含停等，規則式估算。健行另依爬升加時間（Naismith 規則：每爬升 600 m 加 1 小時，即每 100 m 加 10 分鐘）；
- * 自行車、跑步不另加（均速已含一般起伏）。
+ * 均速為平路含停等的規則式估算；三種運動都另依累計爬升加時間（下坡不扣，偏保守）：
+ * - 健行：Naismith 規則，每爬升 600 m 加 1 小時，即每 100 m 加 10 分鐘。
+ * - 自行車：休閒車友爬坡的垂直爬升率（VAM）約 700 m/h，爬 100 m 約 8.6 分鐘；
+ *   同一段在常見 6% 坡度約 1.7 km，平路 20 km/h 騎完要 5 分鐘，差額約 3.6 分鐘 → 每 100 m 加 4 分鐘。
+ * - 跑步：越野跑常用的「努力公里」（ITRA km-effort）每爬升 100 m 折合 1 km 平路，
+ *   以 10 km/h 計為 6 分鐘 → 每 100 m 加 6 分鐘。
  */
 export const ACTIVITY: Record<Activity, { label: string; speedKmh: number; climbMinPer100m: number }> = {
-  cycling: { label: "自行車", speedKmh: DEFAULT_CYCLING_SPEED_KMH, climbMinPer100m: 0 },
-  running: { label: "跑步", speedKmh: 10, climbMinPer100m: 0 },
+  cycling: { label: "自行車", speedKmh: DEFAULT_CYCLING_SPEED_KMH, climbMinPer100m: 4 },
+  running: { label: "跑步", speedKmh: 10, climbMinPer100m: 6 },
   hiking: { label: "健行", speedKmh: 4, climbMinPer100m: 10 },
 };
 

@@ -58,7 +58,7 @@ test.describe("行程設定", () => {
     expect(etaLabel(30, depart, 4, NOW)).toBe("15:30");
   });
 
-  test("健行依爬升加時間（每 100 m 加 10 分鐘）；自行車、跑步不加", () => {
+  test("健行依爬升加時間（每 100 m 加 10 分鐘）", () => {
     // 0–6 km 爬升 600 m，6–10 km 下降 300 m（下降不加時間）
     const profile: [number, number][] = [[0, 100], [6, 700], [10, 400]];
     const depart = "2026-10-01T00:00:00.000Z";
@@ -66,9 +66,39 @@ test.describe("行程設定", () => {
     expect(etaLabel(6, depart, hiking, NOW)).toBe("10:30"); // 6/4 = 1.5 h + 600 m = 1 h
     expect(etaLabel(3, depart, hiking, NOW)).toBe("09:15"); // 0.75 h + 300 m 內插 = 0.5 h
     expect(etaLabel(10, depart, hiking, NOW)).toBe("11:30"); // 2.5 h + 1 h
-    expect(paceFor("cycling", profile)).toBe(20);
-    expect(paceFor("running", profile)).toBe(10);
     expect(paceFor("hiking", [])).toBe(4);
+  });
+
+  test("自行車每爬升 100 m 加 4 分鐘、跑步加 6 分鐘；下坡不加", () => {
+    const profile: [number, number][] = [[0, 100], [6, 700], [10, 400]];
+    const depart = "2026-10-01T00:00:00.000Z"; // 08:00 出發
+    const cycling = paceFor("cycling", profile);
+    expect(etaLabel(6, depart, cycling, NOW)).toBe("08:42"); // 6/20 h = 18 分 + 600 m × 4 = 24 分
+    expect(etaLabel(10, depart, cycling, NOW)).toBe("08:54"); // 30 分 + 24 分（下坡 300 m 不加）
+    const running = paceFor("running", profile);
+    expect(etaLabel(6, depart, running, NOW)).toBe("09:12"); // 36 分 + 600 m × 6 = 36 分
+  });
+
+  test("有爬升的路線比平路晚到；平路結果不變", () => {
+    const depart = "2026-10-01T00:00:00.000Z";
+    const flat: [number, number][] = [[0, 50], [12.7, 50], [25.4, 50]];
+    const climb: [number, number][] = [[0, 50], [12.7, 678], [25.4, 50]];
+    for (const activity of ["cycling", "running"] as const) {
+      const flatHours = (paceFor(activity, flat) as (km: number) => number)(25.4);
+      const climbHours = (paceFor(activity, climb) as (km: number) => number)(25.4);
+      expect(flatHours).toBeCloseTo(25.4 / ACTIVITY[activity].speedKmh, 6);
+      expect(climbHours).toBeGreaterThan(flatHours);
+    }
+    // 沒有高程資料時退回均速
+    expect(paceFor("cycling", [])).toBe(20);
+    expect(etaLabel(25.4, depart, paceFor("cycling", flat), NOW)).toBe(etaLabel(25.4, depart, 20, NOW));
+  });
+
+  test("風櫃嘴（25.4 km、爬升 628 m）自行車約 1 小時 41 分（原本 1 小時 16 分）", () => {
+    const fengguizui: [number, number][] = [[0, 20], [12.7, 648], [25.4, 20]];
+    const hours = (paceFor("cycling", fengguizui) as (km: number) => number)(25.4);
+    expect(Math.round(hours * 60)).toBe(101); // 76 分 + 628 m × 4 分 / 100 m ≈ 25 分
+    expect(Math.round((25.4 / ACTIVITY.cycling.speedKmh) * 60)).toBe(76);
   });
 
   test("連結帶著行程設定", () => {
