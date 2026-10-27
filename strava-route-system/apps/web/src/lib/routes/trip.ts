@@ -134,6 +134,18 @@ export function paceFor(
   return (km: number) => km / speedKmh + (ascentAt(km) / 100) * (climbMinPer100m / 60);
 }
 
+/** 高程剖面的累計爬升（m），與 paceFor 相同算法（只計上坡） */
+export function profileAscentM(profile: readonly (readonly [number, number])[]): number {
+  let ascent = 0;
+  for (let i = 1; i < profile.length; i++) ascent += Math.max(0, profile[i]![1] - profile[i - 1]![1]);
+  return ascent;
+}
+
+/** 爬升加的時間（小時）；均速設定面板試算用，只需要總爬升，不必把整條高程剖面傳到前端 */
+export function climbHoursFor(activity: Activity, ascentM: number, speedKmh: number = ACTIVITY[activity].speedKmh): number {
+  return ((ascentM / 100) * climbMinFor(activity, speedKmh)) / 60;
+}
+
 /** 整條路線的預估時間，拆成平地與爬升兩部分（小時）；畫面顯示「預估 X（含爬升 Y）」用 */
 export function tripDuration(
   activity: Activity,

@@ -6,7 +6,15 @@ import { BriefingLoading } from "./briefing-loading";
 import { HazardSummary } from "./hazard-summary";
 import { RouteSwitcher } from "./route-switcher";
 import { TripSettings } from "@/components/trip/trip-settings";
-import { activityOfRouteType, speedFor, type Activity, type SpeedPrefs, type TripParams } from "@/lib/routes/trip";
+import {
+  activityOfRouteType,
+  profileAscentM,
+  speedFor,
+  type Activity,
+  type SpeedPrefs,
+  type TripParams,
+} from "@/lib/routes/trip";
+import { routeTotalKm } from "@/lib/routes/recon-geo";
 
 type Trip = { departure: Date | null; activity: Activity | null; speeds?: SpeedPrefs };
 
@@ -50,6 +58,12 @@ export async function Briefing({
           defaultActivity={defaultActivity}
           explicitActivity={trip.activity}
           explicitDeparture={trip.departure?.toISOString() ?? null}
+          // 只傳距離與總爬升（不傳整條高程剖面），均速面板試算用
+          speedRoute={{
+            totalKm: routeTotalKm(current),
+            ascentM: profileAscentM(current.elevationProfile),
+            elevationGainM: current.elevationGain,
+          }}
         />
         {/* 名稱規則與 briefRoute 相同（中文名優先） */}
         <RouteSwitcher

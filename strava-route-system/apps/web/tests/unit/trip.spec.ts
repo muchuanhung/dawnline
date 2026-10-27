@@ -11,6 +11,8 @@ import {
   speedLevelLabel,
   tripDuration,
   routeEstimate,
+  climbHoursFor,
+  profileAscentM,
   departureAfter,
   etaLabel,
   formatClock,
@@ -169,6 +171,14 @@ test.describe("行程設定", () => {
     expect(routeEstimate(route, { activity: null, speeds: { hiking: 5 } }).speedKmh).toBe(20);
     expect(routeEstimate(route, { activity: null, speeds: { cycling: 30 } }).speedKmh).toBe(30);
     expect(routeEstimate(route, { activity: "hiking", speeds: { hiking: 5 } }).speedKmh).toBe(5);
+  });
+
+  test("面板試算只用總爬升，結果與逐里程的 pace 相同", () => {
+    const profile: [number, number][] = [[0, 20], [12.7, 648], [25.4, 20]];
+    expect(profileAscentM(profile)).toBe(628);
+    for (const speed of [20, 30]) {
+      expect(climbHoursFor("cycling", 628, speed)).toBeCloseTo(tripDuration("cycling", profile, 25.4, speed).climbHours, 9);
+    }
   });
 
   test("連結帶著行程設定", () => {

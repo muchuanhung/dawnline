@@ -9,11 +9,11 @@ import { cn } from "@/lib/utils";
 import { saveSpeed } from "@/lib/routes/speed-storage";
 import {
   ACTIVITY,
+  climbHoursFor,
   SPEED_LEVELS,
   SPEED_RANGE,
   formatDuration,
   speedLevelLabel,
-  tripDuration,
   type Activity,
 } from "@/lib/routes/trip";
 
@@ -30,7 +30,7 @@ export function SpeedSheet({
   onOpenChange,
   activity,
   speedKmh,
-  profile,
+  ascentM,
   totalKm,
   elevationGainM,
 }: {
@@ -39,7 +39,8 @@ export function SpeedSheet({
   activity: Activity;
   /** 目前生效的平地均速 */
   speedKmh: number;
-  profile: readonly (readonly [number, number])[];
+  /** 高程剖面的累計爬升（m），試算爬升加時用 */
+  ascentM: number;
   totalKm: number;
   elevationGainM: number;
 }) {
@@ -57,7 +58,7 @@ export function SpeedSheet({
       key={`${activity}|${speedKmh}|${open}`}
       activity={activity}
       speedKmh={speedKmh}
-      profile={profile}
+      ascentM={ascentM}
       totalKm={totalKm}
       elevationGainM={elevationGainM}
       onDone={() => onOpenChange(false)}
@@ -94,14 +95,15 @@ export function SpeedSheet({
 function SpeedSheetBody({
   activity,
   speedKmh,
-  profile,
+  ascentM,
   totalKm,
   elevationGainM,
   onDone,
 }: {
   activity: Activity;
   speedKmh: number;
-  profile: readonly (readonly [number, number])[];
+  /** 高程剖面的累計爬升（m），試算爬升加時用 */
+  ascentM: number;
   totalKm: number;
   elevationGainM: number;
   onDone: () => void;
@@ -112,7 +114,8 @@ function SpeedSheetBody({
   const [draft, setDraft] = useState(speedKmh);
   const { min, max, step } = SPEED_RANGE[activity];
   const defaultSpeed = ACTIVITY[activity].speedKmh;
-  const { flatHours, climbHours } = tripDuration(activity, profile, totalKm, draft);
+  const flatHours = totalKm / draft;
+  const climbHours = climbHoursFor(activity, ascentM, draft);
   const pct = (v: number) => ((v - min) / (max - min)) * 100;
 
   const apply = (value: number | null) => {
