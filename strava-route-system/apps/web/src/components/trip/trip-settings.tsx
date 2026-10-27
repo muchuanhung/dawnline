@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import {
   ACTIVITIES,
   ACTIVITY,
+  climbMinFor,
   DEPARTURE_OFFSETS_H,
   departureAfter,
   formatClock,
@@ -39,6 +40,7 @@ export function TripSettings({
   explicitActivity,
   explicitDeparture,
   fromKm = null,
+  onEditSpeed,
   className,
 }: {
   /** 判讀實際用的出發時間（ISO） */
@@ -54,6 +56,8 @@ export function TripSettings({
   explicitDeparture: string | null;
   /** 途中模式的目前里程；有值時出發時間唯讀 */
   fromKm?: number | null;
+  /** 打開均速設定面板；未提供時（今日判讀）不顯示「調整速度」 */
+  onEditSpeed?: () => void;
   className?: string;
 }) {
   const router = useRouter();
@@ -130,9 +134,19 @@ export function TripSettings({
         )}
         {ACTIVITY[activity].label}均速{" "}
         {speedKmh} km/h
-        {ACTIVITY[activity].climbMinPer100m > 0 && `、每爬升 100 m 加 ${ACTIVITY[activity].climbMinPer100m} 分鐘`}{" "}
+        {climbMinFor(activity, speedKmh) > 0 && `、每爬升 100 m 加 ${formatClimbMin(climbMinFor(activity, speedKmh))} 分鐘`}{" "}
         估算{fromKm != null ? "前方" : ""}各段抵達時間，再對照該時段的預報。
+        {onEditSpeed && (
+          <button type="button" onClick={onEditSpeed} className="ml-1 font-medium text-primary underline-offset-2 hover:underline">
+            調整速度
+          </button>
+        )}
       </p>
     </div>
   );
+}
+
+/** 爬升加時（分鐘）最多顯示一位小數 */
+function formatClimbMin(min: number): string {
+  return String(Math.round(min * 10) / 10);
 }

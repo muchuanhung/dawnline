@@ -63,12 +63,13 @@ const EMPTY: FetchState = { briefing: null, loading: false, error: false, savedA
  */
 export function useRouteBriefing(
   routeId: string | null | undefined,
-  trip: TripParams = {},
+  trip: TripParams & { speed?: number | null } = {},
   fromKm: number | null = null,
   refreshAt: number | null = null,
   endpoint = "/api/routes/briefing"
 ): RouteBriefingState {
-  const { depart, activity } = trip;
+  // speed：自訂平地均速（不放進 withTrip，連結不帶；只隨判讀請求送出）
+  const { depart, activity, speed = null } = trip;
   const [state, setState] = useState<FetchState>(EMPTY);
   const tripKeyRef = useRef<string | null>(null);
   // 上一份成功取得的判讀；key 不含里程，途中模式里程變了仍可沿用
@@ -87,8 +88,8 @@ export function useRouteBriefing(
     }
     let cancelled = false;
     // 進出途中模式也算換判讀範圍（整條 vs 前方），要清空
-    const tripKey = `${routeId}|${depart ?? ""}|${activity ?? ""}|${fromKm != null}`;
-    const dataKey = `${routeId}|${depart ?? ""}|${activity ?? ""}`;
+    const tripKey = `${routeId}|${depart ?? ""}|${activity ?? ""}|${speed ?? ""}|${fromKm != null}`;
+    const dataKey = `${routeId}|${depart ?? ""}|${activity ?? ""}|${speed ?? ""}`;
     const keep = tripKeyRef.current === tripKey;
     tripKeyRef.current = tripKey;
     setState((s) => ({
@@ -98,7 +99,8 @@ export function useRouteBriefing(
       savedAt: keep ? s.savedAt : null,
       dataAt: keep ? s.dataAt : null,
     }));
-    const url = withTrip(`${endpoint}?route=${encodeURIComponent(routeId)}`, { depart, activity });
+    const tripUrl = withTrip(`${endpoint}?route=${encodeURIComponent(routeId)}`, { depart, activity });
+    const url = speed != null ? `${tripUrl}&speed=${speed}` : tripUrl;
     fetch(fromKm != null ? `${url}&from=${fromKm.toFixed(2)}` : url)
       .then(async (res) => {
         if (!res.ok) throw new Error(`路線判讀 ${res.status}`);
@@ -121,7 +123,7 @@ export function useRouteBriefing(
     return () => {
       cancelled = true;
     };
-  }, [routeId, depart, activity, fromKm, refreshAt, endpoint, reload]);
+  }, [routeId, depart, activity, speed, fromKm, refreshAt, endpoint, reload]);
 
   // 回到前景：先更新現在時間（背景中計時器會被節流），判讀太舊或上次失敗就重抓一次
   useEffect(() => {

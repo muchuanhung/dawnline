@@ -1,15 +1,23 @@
 "use client";
 
-import type { Ref } from "react";
+import { useState, type Ref } from "react";
 import type { Route } from "@/lib/routes/route-data";
 import { RouteHeader } from "@/components/routes/route-header";
 import { ReconView } from "@/components/routes/recon-view";
 import { RideAhead, needsPlacement } from "@/components/routes/ride-ahead";
 import { usePositionOnRoute } from "@/hooks/usePositionOnRoute";
 import { TripSettings } from "@/components/trip/trip-settings";
+import { SpeedSheet } from "@/components/trip/speed-sheet";
 import type { RouteRecon } from "@/hooks/useRouteRecon";
 import { routeTotalKm } from "@/lib/routes/recon-geo";
-import type { Activity } from "@/lib/routes/trip";
+import {
+  activityOfRouteType,
+  formatDuration,
+  speedFor,
+  speedLevelLabel,
+  tripDuration,
+  type PageTrip,
+} from "@/lib/routes/trip";
 import { departureLabelOf } from "@/lib/dashboard/advice";
 
 /**
@@ -24,7 +32,7 @@ export function RouteReconBody({
 }: {
   route: Route;
   /** 網址上的行程設定（出發時間 ISO、運動類型），未指定為 null */
-  trip: { depart: string | null; activity: Activity | null };
+  trip: PageTrip;
   recon: RouteRecon;
   /** 路線卡外層；手機往下捲過它後顯示懸浮路線列 */
   headerRef?: Ref<HTMLDivElement>;
@@ -34,6 +42,14 @@ export function RouteReconBody({
   // 定位狀態放在這一層：判讀範圍卡顯示狀態，定位失敗時軌道也要用 choose 讓使用者放置位置
   const position = usePositionOnRoute({ routeId: route.id, polyline, riding: aheadKm != null, onKm: setAheadKm });
   const placing = needsPlacement(position.state);
+  // 均速設定面板：路線卡的速度按鈕與行程設定的「調整速度」共用
+  const [speedOpen, setSpeedOpen] = useState(false);
+  // 與伺服器 briefRoute 相同的解析：網址運動類型 → 依路線類型；cookie 自訂均速 → 預設
+  const activity = trip.activity ?? activityOfRouteType(route.type);
+  const speedKmh = speedFor(activity, trip.speeds?.[activity]);
+  const totalKm = routeTotalKm(route);
+  const { flatHours, climbHours } = tripDuration(activity, route.elevationProfile, totalKm, speedKmh);
+  const climbMinutes = Math.round(climbHours * 60);
 
   return (
     <>
@@ -41,6 +57,12 @@ export function RouteReconBody({
         <RouteHeader
           route={route}
           departureLabel={departureLabelOf(suggestion ?? null, new Date())}
+          estimate={{
+            totalLabel: formatDuration(flatHours + climbHours),
+            climbLabel: climbMinutes > 0 ? formatDuration(climbHours) : null,
+            speedLabel: `${speedLevelLabel(activity, speedKmh)} ${speedKmh} km/h`,
+            onEdit: () => setSpeedOpen(true),
+          }}
         />
       </div>
       <ReconView
@@ -54,7 +76,7 @@ export function RouteReconBody({
         onPlaceYou={placing || aheadKm != null ? position.choose : undefined}
         placing={placing}
         afterHero={
-          <RideAhead position={position} totalKm={routeTotalKm(route)} fromKm={aheadKm} onChange={setAheadKm}>
+          <RideAhead position={position} totalKm={totalKm} fromKm={aheadKm} onChange={setAheadKm}>
             {/* 途中模式的出發時間由目前位置反推，TripSettings 改為唯讀顯示，避免與「現在」矛盾 */}
             {briefing.briefing && (
               <TripSettings
@@ -65,10 +87,20 @@ export function RouteReconBody({
                 explicitActivity={trip.activity}
                 explicitDeparture={trip.depart}
                 fromKm={briefing.briefing.fromKm}
+                onEditSpeed={() => setSpeedOpen(true)}
               />
             )}
           </RideAhead>
         }
+      />
+      <SpeedSheet
+        open={speedOpen}
+        onOpenChange={setSpeedOpen}
+        activity={activity}
+        speedKmh={speedKmh}
+        profile={route.elevationProfile}
+        totalKm={totalKm}
+        elevationGainM={route.elevationGain}
       />
     </>
   );

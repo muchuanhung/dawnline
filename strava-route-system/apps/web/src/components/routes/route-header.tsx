@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { Pencil } from "lucide-react";
 import { DemoNotice } from "@/components/verdict/demo-notice";
 import type { Route } from "@/lib/routes/route-data";
 import type { VerdictLevel } from "@/lib/routes/recon-geo";
@@ -17,13 +18,18 @@ interface RouteHeaderProps {
   route: Route;
   /** 伺服器試算未來 12 小時天氣最佳的出發時間（已格式化）；null 不顯示 */
   departureLabel?: string | null;
+  /**
+   * 依運動類型與平地均速（含爬升修正）估的整條路線時間；與判讀算 ETA 同一套公式。
+   * speedLabel 如「一般 20 km/h」，點了打開均速設定面板。未提供時退回 GPX 解析時的粗估。
+   */
+  estimate?: { totalLabel: string; climbLabel: string | null; speedLabel: string; onEdit: () => void };
 }
 
 /**
  * 精簡標頭：名稱、經過縣市、類型與一行數據。
  * 判定與路線位置改由下方主視覺（影像＋里程軌道）呈現，這裡不再畫路線形狀圖。
  */
-export function RouteHeader({ route, departureLabel }: RouteHeaderProps) {
+export function RouteHeader({ route, departureLabel, estimate }: RouteHeaderProps) {
   const suggestTime = departureLabel ?? null;
   const TypeIcon = ROUTE_TYPE_ICONS[route.type];
   const areas = formatRouteAreas(routeAreas(route.segments));
@@ -52,7 +58,8 @@ export function RouteHeader({ route, departureLabel }: RouteHeaderProps) {
         <Sep />
         爬升 <Stat value={`${route.elevationGain}`} unit="m" />
         <Sep />
-        預估 <Stat value={route.estimatedTime} />
+        預估 <Stat value={estimate?.totalLabel ?? route.estimatedTime} />
+        {estimate?.climbLabel && <span>（含爬升 {estimate.climbLabel}）</span>}
         {suggestTime && (
           <>
             <Sep />
@@ -60,6 +67,18 @@ export function RouteHeader({ route, departureLabel }: RouteHeaderProps) {
           </>
         )}
       </p>
+
+      {estimate && (
+        <button
+          type="button"
+          onClick={estimate.onEdit}
+          className="inline-flex items-center gap-1 rounded-lg bg-secondary/60 px-2.5 py-1 text-xs font-medium text-primary hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {estimate.speedLabel}
+          <Pencil className="h-3 w-3" aria-hidden />
+          <span className="sr-only">調整速度</span>
+        </button>
+      )}
 
       {route.demo && <DemoNotice />}
     </motion.div>

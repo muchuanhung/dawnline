@@ -6,9 +6,9 @@ import { BriefingLoading } from "./briefing-loading";
 import { HazardSummary } from "./hazard-summary";
 import { RouteSwitcher } from "./route-switcher";
 import { TripSettings } from "@/components/trip/trip-settings";
-import { ACTIVITY, activityOfRouteType, type Activity, type TripParams } from "@/lib/routes/trip";
+import { activityOfRouteType, speedFor, type Activity, type SpeedPrefs, type TripParams } from "@/lib/routes/trip";
 
-type Trip = { departure: Date | null; activity: Activity | null };
+type Trip = { departure: Date | null; activity: Activity | null; speeds?: SpeedPrefs };
 
 /**
  * 今日判讀主體。行程設定與路線切換列只需要路線清單（已快取），先輸出；
@@ -38,6 +38,7 @@ export async function Briefing({
   // Same defaults as briefRoute, so the settings row can render before the briefing arrives
   const defaultActivity = activityOfRouteType(current.type);
   const activity = trip.activity ?? defaultActivity;
+  const speedKmh = speedFor(activity, trip.speeds?.[activity]);
 
   return (
     <div className="space-y-6">
@@ -45,7 +46,7 @@ export async function Briefing({
         <TripSettings
           departure={(trip.departure ?? new Date()).toISOString()}
           activity={activity}
-          speedKmh={ACTIVITY[activity].speedKmh}
+          speedKmh={speedKmh}
           defaultActivity={defaultActivity}
           explicitActivity={trip.activity}
           explicitDeparture={trip.departure?.toISOString() ?? null}
@@ -58,18 +59,30 @@ export async function Briefing({
         />
       </div>
       {/* key 換了就是新的判讀：只有這一塊顯示載入中 */}
-      <Suspense key={[current.id, tripParams.depart, tripParams.activity].join("|")} fallback={<BriefingLoading />}>
-        <BriefingResult routeId={current.id} trip={trip} tripParams={tripParams} />
+      <Suspense key={[current.id, tripParams.depart, tripParams.activity, speedKmh].join("|")} fallback={<BriefingLoading />}>
+        <BriefingResult routeId={current.id} trip={trip} tripParams={tripParams} speedKmh={speedKmh} />
       </Suspense>
     </div>
   );
 }
 
 /** 判讀卡與沿途示警：只判讀目前這一條路線（判讀輸入讀 Firestore，由排程每 10 分鐘更新） */
-async function BriefingResult({ routeId, trip, tripParams }: { routeId: string; trip: Trip; tripParams: TripParams }) {
+async function BriefingResult({
+  routeId,
+  trip,
+  tripParams,
+  speedKmh,
+}: {
+  routeId: string;
+  trip: Trip;
+  tripParams: TripParams;
+  /** 已依運動類型解析的平地均速（自訂或預設） */
+  speedKmh: number;
+}) {
   const featured = await getRouteBriefing(routeId, {
     departure: trip.departure ?? undefined,
     activity: trip.activity ?? undefined,
+    speedKmh,
   });
   if (!featured) return null;
 

@@ -29,7 +29,7 @@ import {
   validateGpxFile,
   type PrivateRoute,
 } from "@/lib/routes/private-routes";
-import type { Activity } from "@/lib/routes/trip";
+import type { PageTrip } from "@/lib/routes/trip";
 
 const dateFormat = new Intl.DateTimeFormat("zh-TW", { dateStyle: "medium" });
 const MAX_MB = Math.round(GPX_MAX_BYTES / 1024 / 1024);
@@ -51,7 +51,7 @@ export function PrivateRoutesContent({
 }: {
   initialRouteId?: string;
   /** 網址上的行程設定（出發時間 ISO、運動類型），未指定為 null */
-  trip: { depart: string | null; activity: Activity | null };
+  trip: PageTrip;
 }) {
   const { routes, limit, loading, error, upload, remove, refetch } = usePrivateRoutes();
   const inputRef = useRef<HTMLInputElement>(null);

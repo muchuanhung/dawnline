@@ -19,7 +19,7 @@ import { RouteFilters } from "@/components/routes/route-filters";
 import { ALL_TYPES, effectiveTypeFilter, matchesTypeFilter, routeTypesOf } from "@/lib/routes/route-types";
 import { RouteStickyBar } from "@/components/routes/route-sticky-bar";
 import { RouteReconBody } from "@/components/routes/route-recon-body";
-import type { Activity } from "@/lib/routes/trip";
+import type { PageTrip } from "@/lib/routes/trip";
 
 /**
  * 路線（客戶端）：路線清單＋偵察畫面（逐段示警、坡度、CCTV）。
@@ -31,7 +31,7 @@ export function RoutesClient({
 }: {
   initialRouteId?: string;
   /** 網址上的行程設定（出發時間 ISO、運動類型），未指定為 null */
-  trip: { depart: string | null; activity: Activity | null };
+  trip: PageTrip;
 }) {
   const { routes, loading, error } = useRoutesFromStorage();
   const [selectedId, setSelectedId] = useState(initialRouteId ?? "");

@@ -32,6 +32,8 @@ import {
 export interface TripOptions {
   departure?: Date;
   activity?: Activity;
+  /** 使用者自訂的平地均速；briefRoute 依最終運動類型驗證，不合法時用預設 */
+  speedKmh?: number | null;
   /** 途中模式：目前在路線上的里程；只對 getRouteBriefing 的單一路線有意義 */
   fromKm?: number;
 }
@@ -212,6 +214,7 @@ async function briefRoutes(routes: Route[], trip: TripOptions = {}, suggestFor?:
       now,
       departure: trip.departure ?? now,
       activity: trip.activity,
+      speedKmh: trip.speedKmh,
       eventsFailed,
       suggest: route.id === suggestFor,
       // 里程只對應這條路線，不能套到其他路線

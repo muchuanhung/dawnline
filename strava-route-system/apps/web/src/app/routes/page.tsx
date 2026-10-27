@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { AppShell } from "@/components/app-shell/app-shell";
 import { RoutesClient } from "@/components/routes/routes-client";
-import { parseActivity, parseDeparture } from "@/lib/routes/trip";
+import { cookies } from "next/headers";
+import { parseActivity, parseDeparture, parseSpeedPrefs, SPEED_COOKIE } from "@/lib/routes/trip";
 
 export const metadata: Metadata = { title: "路線" };
 
@@ -16,6 +17,8 @@ export default async function RoutesPage({
   const trip = {
     depart: parseDeparture(depart, new Date())?.toISOString() ?? null,
     activity: parseActivity(activity),
+    // 自訂平地均速存在 cookie，不放網址（跨頁、下次開都沿用）
+    speeds: parseSpeedPrefs((await cookies()).get(SPEED_COOKIE)?.value),
   };
   return (
     <AppShell current="routes">
