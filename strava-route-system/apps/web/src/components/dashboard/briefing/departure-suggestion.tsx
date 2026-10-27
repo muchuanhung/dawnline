@@ -65,32 +65,31 @@ export function DepartureSuggestionRow({
     </>
   );
 
-  // 手機：標題、時段＋示警、改時間連結各一行；桌機（sm 以上）連結移到右側
+  // 方案 C：左邊三行（標題／時段／示警），右邊短按鈕；手機與桌機同一個版型，時段不從中間斷行
   return (
-    <div className="flex items-start gap-3 rounded-lg bg-muted/50 px-3 py-2 text-sm">
-      <Clock className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
-      <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-        <div className="min-w-0">
-          <p className="text-xs text-muted-foreground">現在起 {SUGGEST_HORIZON_H} 小時內最佳出發</p>
-          <p>
-            <b className="font-mono">
-              {s.nowIsBest && !trip.depart ? (
-                <>
-                  <span className="whitespace-nowrap">現在</span>（{range}）
-                </>
-              ) : (
-                range
-              )}
-            </b>
-            <span className="text-muted-foreground">・{levelText}</span>
-          </p>
-        </div>
-        {!chosenInWindow && (
-          <Link href={href} className="shrink-0 self-start font-medium text-primary hover:underline sm:self-auto">
-            {target ? `改 ${fromLabel} 出發` : "改回現在出發"}
-          </Link>
-        )}
+    <div className="flex items-center gap-3 rounded-lg bg-muted/50 px-3 py-2.5 text-sm">
+      <div className="min-w-0 flex-1">
+        <p className="text-xs text-muted-foreground">{SUGGEST_HORIZON_H} 小時內最佳出發</p>
+        <p className="font-mono text-base font-semibold">
+          {s.nowIsBest && !trip.depart ? (
+            <>
+              <span className="whitespace-nowrap">現在</span>（{range}）
+            </>
+          ) : (
+            range
+          )}
+        </p>
+        <p className="text-xs text-muted-foreground">{levelText}</p>
       </div>
+      {!chosenInWindow && (
+        <Link
+          href={href}
+          aria-label={target ? `改成 ${fromLabel} 出發` : "改回現在出發"}
+          className="shrink-0 whitespace-nowrap rounded-lg bg-primary px-3 py-2 font-medium text-primary-foreground hover:bg-primary/90"
+        >
+          {target ? "改這時間" : "改回現在"}
+        </Link>
+      )}
     </div>
   );
 }
