@@ -238,10 +238,10 @@ sudo docker run --rm amazon/aws-cli s3 cp s3://dawnline-gpx/backups/velorder-<�
 
 ## 8. 驗證
 
-自己的電腦：
+自己的電腦（`/health` 只接受 GET，`curl -I` 送 HEAD 會得到 405，所以用 `-si`）：
 
 ```bash
-curl -I https://dawnline-api.message-board.bid/health                                        # HTTP/2 200，帶 strict-transport-security
+curl -si https://dawnline-api.message-board.bid/health | head -12                            # HTTP/2 200，帶 strict-transport-security
 curl -s https://dawnline-api.message-board.bid/health                                        # {"status":"ok","database":"ok"}
 curl -sI http://dawnline-api.message-board.bid/health | head -1                              # 301
 curl -s -o /dev/null -w '%{http_code}\n' https://dawnline-api.message-board.bid/api/v1/me    # 401（沒登入）
