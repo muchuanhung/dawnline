@@ -147,6 +147,21 @@ export function tripDuration(
   return { flatHours, climbHours: Math.max(0, total - flatHours) };
 }
 
+/**
+ * 某條路線在目前行程設定下的預估時間：運動類型依網址或路線類型，平地均速依 cookie 自訂或預設。
+ * 路線卡、路線清單卡片共用，與伺服器 briefRoute 算 ETA 的公式相同。
+ */
+export function routeEstimate(
+  route: Pick<Route, "type" | "distance" | "elevationProfile">,
+  trip: Pick<PageTrip, "activity" | "speeds">
+): { activity: Activity; speedKmh: number; flatHours: number; climbHours: number } {
+  const activity = trip.activity ?? activityOfRouteType(route.type);
+  const speedKmh = speedFor(activity, trip.speeds?.[activity]);
+  const profile = route.elevationProfile ?? [];
+  const totalKm = route.distance ?? profile[profile.length - 1]?.[0] ?? 0;
+  return { activity, speedKmh, ...tripDuration(activity, profile, totalKm, speedKmh) };
+}
+
 /** 時長：1h 41m／25m（與路線卡既有格式相同） */
 export function formatDuration(hours: number): string {
   const minutes = Math.round(hours * 60);

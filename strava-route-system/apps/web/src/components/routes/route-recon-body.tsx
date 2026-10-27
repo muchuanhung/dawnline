@@ -10,14 +10,7 @@ import { TripSettings } from "@/components/trip/trip-settings";
 import { SpeedSheet } from "@/components/trip/speed-sheet";
 import type { RouteRecon } from "@/hooks/useRouteRecon";
 import { routeTotalKm } from "@/lib/routes/recon-geo";
-import {
-  activityOfRouteType,
-  formatDuration,
-  speedFor,
-  speedLevelLabel,
-  tripDuration,
-  type PageTrip,
-} from "@/lib/routes/trip";
+import { formatDuration, routeEstimate, speedLevelLabel, type PageTrip } from "@/lib/routes/trip";
 import { departureLabelOf } from "@/lib/dashboard/advice";
 
 /**
@@ -45,10 +38,8 @@ export function RouteReconBody({
   // 均速設定面板：路線卡的速度按鈕與行程設定的「調整速度」共用
   const [speedOpen, setSpeedOpen] = useState(false);
   // 與伺服器 briefRoute 相同的解析：網址運動類型 → 依路線類型；cookie 自訂均速 → 預設
-  const activity = trip.activity ?? activityOfRouteType(route.type);
-  const speedKmh = speedFor(activity, trip.speeds?.[activity]);
+  const { activity, speedKmh, flatHours, climbHours } = routeEstimate(route, trip);
   const totalKm = routeTotalKm(route);
-  const { flatHours, climbHours } = tripDuration(activity, route.elevationProfile, totalKm, speedKmh);
   const climbMinutes = Math.round(climbHours * 60);
 
   return (

@@ -10,6 +10,7 @@ import {
   speedFor,
   speedLevelLabel,
   tripDuration,
+  routeEstimate,
   departureAfter,
   etaLabel,
   formatClock,
@@ -157,6 +158,17 @@ test.describe("行程設定", () => {
     expect(formatDuration(fast.flatHours)).toBe("51m");
     expect(formatDuration(fast.climbHours)).toBe("17m");
     expect(tripDuration("cycling", [], 25.4).climbHours).toBe(0);
+  });
+
+  test("路線預估：依路線類型挑運動、套用該運動的自訂均速", () => {
+    const route = { type: "自行車" as const, distance: 25.4, elevationProfile: [[0, 20], [12.7, 648], [25.4, 20]] as [number, number][] };
+    const normal = routeEstimate(route, { activity: null });
+    expect(normal.activity).toBe("cycling");
+    expect(formatDuration(normal.flatHours + normal.climbHours)).toBe("1h 41m");
+    // 只設了健行的均速，不影響自行車
+    expect(routeEstimate(route, { activity: null, speeds: { hiking: 5 } }).speedKmh).toBe(20);
+    expect(routeEstimate(route, { activity: null, speeds: { cycling: 30 } }).speedKmh).toBe(30);
+    expect(routeEstimate(route, { activity: "hiking", speeds: { hiking: 5 } }).speedKmh).toBe(5);
   });
 
   test("連結帶著行程設定", () => {
