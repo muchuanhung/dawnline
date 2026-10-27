@@ -12,6 +12,7 @@ app/
 alembic/     0001 members、sessions；0002 routes；0003 segments、cctv；0004 members 改名 users；0005 routes 加 route_type（raw DDL，InnoDB／utf8mb4）
 tests/       pytest，SQLite + 假 verifier，不連 MySQL、不連 Firebase
 docs/        deploy-aws.md
+deploy/      nginx.conf（EC2 上的 /etc/nginx/conf.d/dawnline-api.conf）
 ```
 
 ## 端點
@@ -104,4 +105,4 @@ alembic revision -m "說明"    # 新增一支（本專案 migration 一律手�
 
 ## 部署
 
-EC2（Docker）+ RDS MySQL，見 [docs/deploy-aws.md](docs/deploy-aws.md)。
+單台 EC2：Nginx（Let's Encrypt HTTPS）+ Docker（API、MySQL），見 [docs/deploy-aws.md](docs/deploy-aws.md)，Nginx 設定在 [deploy/nginx.conf](deploy/nginx.conf)。
