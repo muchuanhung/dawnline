@@ -226,7 +226,9 @@ export function PrivateRoutesContent({
                   onClick={() => (window.matchMedia(DESKTOP_QUERY).matches ? select(UPLOAD_ITEM) : openPicker())}
                   className={cn(
                     "flex w-full items-center gap-2 rounded-xl border border-dashed border-border p-3.5 text-left text-sm font-semibold text-muted-foreground transition-colors hover:border-primary/50 hover:bg-secondary/60 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60",
-                    showUploadPanel && "lg:border-solid lg:border-primary lg:bg-accent lg:text-accent-foreground"
+                    showUploadPanel && "lg:border-solid lg:border-primary lg:bg-accent lg:text-accent-foreground",
+                    // 上傳中雖然停用，進度文字仍要清楚
+                    uploading && "disabled:cursor-progress disabled:opacity-100"
                   )}
                 >
                   {uploading ? <Spinner size="sm" dotClassName="bg-primary" /> : <Plus className="size-4" aria-hidden />}
@@ -351,7 +353,11 @@ function UploadPanel({ canUpload, progress, error, full, used, limit, onPick, on
           e.preventDefault();
           onFile(e.dataTransfer.files?.[0]);
         }}
-        className="flex w-full flex-col items-center justify-center rounded-xl border border-dashed border-border bg-background/60 p-10 text-center transition-colors hover:bg-background disabled:cursor-not-allowed disabled:opacity-60"
+        className={cn(
+          "flex w-full flex-col items-center justify-center rounded-xl border border-dashed border-border bg-background/60 p-10 text-center transition-colors hover:bg-background disabled:cursor-not-allowed disabled:opacity-60",
+          // 上傳中雖然停用，進度條與文字仍要清楚
+          uploading && "disabled:cursor-progress disabled:opacity-100"
+        )}
       >
         {uploading ? (
           <Spinner size="lg" dotClassName="bg-primary" />
