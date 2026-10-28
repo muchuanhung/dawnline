@@ -145,6 +145,26 @@ def test_delete_frees_quota_and_removes_file(api, s3):
     assert api.get(f"/api/v1/routes/{first['id']}/gpx").status_code == 404
 
 
+def test_rename(api, s3):
+    route = upload(api, s3).json()
+    res = api.patch(f"/api/v1/routes/{route['id']}", json={"name": "  陽金 晨騎  "})
+    assert res.status_code == 200, res.text
+    assert res.json()["name"] == "陽金 晨騎"
+    assert res.json()["id"] == route["id"]
+    assert api.get("/api/v1/routes").json()["routes"][0]["name"] == "陽金 晨騎"
+
+
+def test_rename_truncates_and_rejects_blank(api, s3):
+    route = upload(api, s3).json()
+    res = api.patch(f"/api/v1/routes/{route['id']}", json={"name": "長" * 150})
+    assert res.status_code == 200
+    assert res.json()["name"] == "長" * 100
+    res = api.patch(f"/api/v1/routes/{route['id']}", json={"name": "   "})
+    assert res.status_code == 422
+    assert res.json()["error"]["code"] == "invalid_name"
+    assert api.patch(f"/api/v1/routes/{route['id']}", json={"name": ""}).status_code == 422
+
+
 def test_download_url(api, s3):
     route = upload(api, s3).json()
     res = api.get(f"/api/v1/routes/{route['id']}/gpx")
@@ -159,6 +179,7 @@ def test_other_users_route_is_404(api, s3):
     login(api, "valid:uid-2")
     assert api.get(f"/api/v1/routes/{route['id']}/gpx").status_code == 404
     assert api.delete(f"/api/v1/routes/{route['id']}").status_code == 404
+    assert api.patch(f"/api/v1/routes/{route['id']}", json={"name": "x"}).status_code == 404
     assert api.get("/api/v1/routes").json()["routes"] == []
 
 

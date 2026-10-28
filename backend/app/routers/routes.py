@@ -9,6 +9,7 @@ from app.schemas.route import (
     RouteCreate,
     RouteList,
     RouteOut,
+    RouteUpdate,
     UploadCreate,
     UploadOut,
 )
@@ -73,6 +74,14 @@ def download_gpx(
         route.s3_key, f"{route.name}.gpx", settings.s3_download_expires_seconds
     )
     return DownloadOut(url=url)
+
+
+@router.patch("/{route_id}", response_model=RouteOut)
+def rename_route(route_id: str, body: RouteUpdate, user: CurrentUser, db: DbSession):
+    """改名：只改 DB 的 name，S3 檔案與 id 不變（下載檔名跟著新名稱）。"""
+    route = route_service.rename_route(db, user, route_id, body.name)
+    db.commit()
+    return _route_out(route)
 
 
 @router.delete("/{route_id}", status_code=status.HTTP_204_NO_CONTENT)

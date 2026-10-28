@@ -1,4 +1,4 @@
-"""使用者上傳的 GPX 路線：配額、建立上傳、完成上傳、列表、刪除。router 只負責 HTTP。
+"""使用者上傳的 GPX 路線：配額、建立上傳、完成上傳、列表、改名、刪除。router 只負責 HTTP。
 
 流程：create_upload 發 presigned POST（不寫 DB）→ 瀏覽器直傳 S3 →
 complete_upload 從 S3 讀檔解析，成功才 insert routes（status=ready），失敗刪檔。
@@ -120,6 +120,17 @@ def get_route(db: Session, user: User, public_id: str) -> Route:
     route = db.scalar(_active_routes(user).where(Route.public_id == public_id))
     if route is None:
         raise ApiError(404, "route_not_found", "找不到這條路線")
+    return route
+
+
+def rename_route(db: Session, user: User, public_id: str, name: str) -> Route:
+    """改名；去掉前後空白、截到 NAME_MAX，全空白視為無效。"""
+    route = get_route(db, user, public_id)
+    cleaned = name.strip()[:NAME_MAX]
+    if not cleaned:
+        raise ApiError(422, "invalid_name", "路線名稱不能是空白")
+    route.name = cleaned
+    db.flush()
     return route
 
 

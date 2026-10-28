@@ -21,6 +21,12 @@ class RouteCreate(CamelModel):
     name: str | None = Field(default=None, max_length=200)
 
 
+class RouteUpdate(CamelModel):
+    """改名；空白與超過長度由 service 處理（與上傳時的命名規則一致）。"""
+
+    name: str = Field(min_length=1, max_length=200)
+
+
 class RouteOut(CamelModel):
     """id 是 public_id（ULID）；不回傳內部流水號與 s3_key。"""
 
