@@ -7,8 +7,10 @@ import {
   deletePrivateRoute,
   fetchPrivateRouteDetail,
   listPrivateRoutes,
+  renamePrivateRoute,
   uploadGpx,
   type PrivateRoute,
+  type UploadProgress,
 } from "@/lib/routes/private-routes";
 import type { Route } from "@/lib/routes/route-data";
 
@@ -20,7 +22,7 @@ interface State {
 }
 
 /**
- * 私人路線列表、上傳與刪除。
+ * 私人路線列表、上傳、改名與刪除。
  * 後端 session（rc_session）過期時回 401：重新用 Firebase ID token 換 session 後重試一次。
  */
 /** 後端 session 過期（401）時重新換 session 後重試一次；列表與詳情共用 */
@@ -61,9 +63,18 @@ export function usePrivateRoutes() {
   }, [sessionReady, user, refetch]);
 
   const upload = useCallback(
-    async (file: File) => {
-      const route = await withSessionRetry(() => uploadGpx(file));
+    async (file: File, onProgress?: (progress: UploadProgress) => void) => {
+      const route = await withSessionRetry(() => uploadGpx(file, onProgress));
       setState((s) => ({ ...s, routes: [route, ...s.routes] }));
+      return route;
+    },
+    [withSessionRetry]
+  );
+
+  const rename = useCallback(
+    async (id: string, name: string) => {
+      const route = await withSessionRetry(() => renamePrivateRoute(id, name));
+      setState((s) => ({ ...s, routes: s.routes.map((r) => (r.id === id ? route : r)) }));
       return route;
     },
     [withSessionRetry]
@@ -77,7 +88,7 @@ export function usePrivateRoutes() {
     [withSessionRetry]
   );
 
-  return { ...state, refetch, upload, remove };
+  return { ...state, refetch, upload, rename, remove };
 }
 
 /**
