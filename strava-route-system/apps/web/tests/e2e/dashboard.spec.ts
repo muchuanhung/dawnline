@@ -75,7 +75,10 @@ test.describe("未登入", () => {
     await page.goto("/dashboard");
     const notice = page.getByRole("region", { name: "未登入" });
     await expect(notice).toContainText("登入後可收藏路線");
-    await expect(notice.getByRole("link", { name: "登入" })).toHaveAttribute("href", "/login");
+    // 桌機（此 project）只有頂部帳號選單一個登入按鈕；提示裡的按鈕只在手機顯示
+    await expect(notice.getByRole("link", { name: "登入" })).toBeHidden();
+    await expect(page.getByRole("link", { name: "登入" })).toHaveCount(1);
+    await expect(page.getByRole("link", { name: "登入" })).toHaveAttribute("href", "/login");
 
     await expect(page.getByRole("heading", { level: 2, name: VERDICT_WORD })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText(/^資料時間/)).toBeVisible();
