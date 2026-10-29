@@ -252,7 +252,7 @@ Workflow：[`.github/workflows/backend-deploy.yml`](../../.github/workflows/back
 
 1. **確認 EC2 已接上 SSM**：Systems Manager → Fleet Manager，看得到這台且 Ping status 為 Online。看不到時在 EC2 上 `sudo snap services amazon-ssm-agent`，沒裝就 `sudo snap install amazon-ssm-agent --classic`。role 已有 `AmazonSSMManagedInstanceCore`。
 2. **EC2 role 加 ECR 讀取**：IAM → Roles → `dawnline-ec2-role` → Add permissions → Attach `AmazonEC2ContainerRegistryReadOnly`。
-3. **建 ECR repository**：ECR → Create repository，名稱 `dawnline-api`，Private，Tag immutability 關閉，加密 AES-256。建好後 Lifecycle policy → 貼 [`backend/deploy/ecr-lifecycle.json`](../deploy/ecr-lifecycle.json)（保留 10 版）。
+3. **建 ECR repository**：ECR → Create repository，名稱 `dawnline-api`，Private，Tag immutability 關閉，加密 AES-256。建好後 Lifecycle policy → Create rule，填：Rule priority `1`、Image tag status **Any**、Match criteria **Image count**、Count `10`、Rule action **Expire**（只保留最新 10 版；設定內容同 [`backend/deploy/ecr-lifecycle.json`](../deploy/ecr-lifecycle.json)）。不要選 Days since image created，那會把超過天數的映像全部刪掉，連正在跑的那版也是。
 4. **GitHub OIDC provider**：IAM → Identity providers → Add provider → OpenID Connect，URL `https://token.actions.githubusercontent.com`，Audience `sts.amazonaws.com`。
 5. **部署用 role**：IAM → Roles → Create role → Custom trust policy，貼 [`backend/deploy/iam/gha-trust-policy.json`](../deploy/iam/gha-trust-policy.json)（換掉 `<ACCOUNT_ID>`），不加 managed policy，名稱 `dawnline-gha-deploy`。建好後 Add permissions → Create inline policy → JSON，貼 [`backend/deploy/iam/gha-deploy-policy.json`](../deploy/iam/gha-deploy-policy.json)（換掉 `<ACCOUNT_ID>`、`<INSTANCE_ID>`），名稱 `dawnline-gha-deploy`。
 6. **GitHub 設定**（repo → Settings）：
