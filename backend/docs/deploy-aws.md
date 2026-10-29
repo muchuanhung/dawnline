@@ -313,7 +313,8 @@ free -m
 - **上傳時 CORS 錯誤**：S3 CORS 的 `AllowedOrigins` 沒有目前的網址。
 - **上傳回 500，log 有 NoCredentialsError**：metadata hop limit 還是 1，或 `api.env` 放了 access key。
 - **`/api/v1/...` 回 404**：Vercel 沒設 `BACKEND_API_URL`，或設了沒重新部署。
-- **Backend deploy 在 configure-aws-credentials 失敗（Not authorized to perform sts:AssumeRoleWithWebIdentity）**：trust policy 的 `sub` 與實際不符。部署 job 用 environment `production`，sub 是 `repo:muchuanhung/dawnline:environment:production`；監控用 main，sub 是 `...:ref:refs/heads/main`。
+- **Backend deploy 在 configure-aws-credentials 失敗（Not authorized to perform sts:AssumeRoleWithWebIdentity）**：trust policy 的 `sub` 與實際不符。GitHub 的 sub 帶帳號與 repo 的數字 ID：部署 job 是 `repo:muchuanhung@61078091/dawnline@1098354055:environment:production`，監控是 `...:ref:refs/heads/main`。實際值看 CloudTrail（東京）Event history → `AssumeRoleWithWebIdentity` → `userIdentity.userName`。
+- **錯誤是 The web identity token provided could not be validated**：IAM Identity providers 裡沒有 `token.actions.githubusercontent.com`（第 8 節步驟 4）。
 - **SSM 回 InvalidInstanceId**：Fleet Manager 看不到這台（agent 沒跑，或 role 缺 `AmazonSSMManagedInstanceCore`），或 `EC2_INSTANCE_ID` 填錯。
 - **deploy.sh 在 ECR 登入失敗**：`dawnline-ec2-role` 沒掛 `AmazonEC2ContainerRegistryReadOnly`，或 metadata hop limit 不是 2。
 - **映像在 EC2 上 `exec format error`**：EC2 是 arm64（Graviton），要設 `EC2_PLATFORM=linux/arm64`。

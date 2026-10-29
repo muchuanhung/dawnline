@@ -13,9 +13,8 @@
         },
         "StringLike": {
           "token.actions.githubusercontent.com:sub": [
-            "repo:muchuanhung/dawnline:environment:production",
-            "repo:muchuanhung/dawnline:environment:Production",
-            "repo:muchuanhung/dawnline:ref:refs/heads/main"
+            "repo:muchuanhung@61078091/dawnline@1098354055:environment:*",
+            "repo:muchuanhung@61078091/dawnline@1098354055:ref:refs/heads/main"
           ]
         }
       }
