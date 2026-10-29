@@ -37,7 +37,7 @@ GitHub Actions ──OIDC──> IAM role dawnline-gha-deploy
 | --- | --- |
 | 區域 | `ap-northeast-1`（東京） |
 | OS | Ubuntu（SSH 帳號 `ubuntu`） |
-| 規格 | 1 GB 記憶體級距，另加 2 GB swap（Nginx、留言板、API、MySQL 同機） |
+| 規格 | 1 GB 記憶體級距，另加 1 GB swap（Nginx、留言板、API、MySQL 同機） |
 | IP | Elastic IP；DNS `dawnline-api.message-board.bid` 的 A 記錄指向它 |
 | IAM role | `dawnline-ec2-role`：`AmazonSSMManagedInstanceCore` + `AmazonEC2ContainerRegistryReadOnly` + inline policy `dawnline-gpx-s3`（見第 5 節） |
 | Metadata | hop limit **2**（容器內才拿得到 role 憑證） |
