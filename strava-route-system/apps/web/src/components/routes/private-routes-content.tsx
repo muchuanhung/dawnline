@@ -2,10 +2,11 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { Download, FileUp, MoreVertical, Mountain, Plus, Route as RouteIcon, Search, Trash2 } from "lucide-react";
+import { Download, FileUp, MoreVertical, Mountain, Pencil, Plus, Route as RouteIcon, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import Spinner from "@/components/ui/Spinner";
+import { Progress } from "@/components/ui/progress";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,6 +17,7 @@ import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } f
 import { PrivateRouteDetail } from "@/components/routes/private-route-detail";
 import { routeCardClassName } from "@/components/routes/route-card-style";
 import { SwipeActions } from "@/components/routes/swipe-actions";
+import { RenameRouteSheet } from "@/components/routes/rename-route-sheet";
 import { RoutesTabs } from "@/components/routes/routes-tabs";
 import { RouteFilters } from "@/components/routes/route-filters";
 import { ALL_TYPES, effectiveTypeFilter, matchesTypeFilter, routeTypesOf } from "@/lib/routes/route-types";
@@ -24,10 +26,16 @@ import { usePrivateRoutes } from "@/hooks/usePrivateRoutes";
 import { cn } from "@/lib/utils";
 import type { Route } from "@/lib/routes/route-data";
 import {
+  BackendError,
   GPX_MAX_BYTES,
   privateRouteDownloadUrl,
+  quotaHint,
+  uploadErrorMessage,
+  uploadProgressLabel,
+  uploadProgressValue,
   validateGpxFile,
   type PrivateRoute,
+  type UploadProgress,
 } from "@/lib/routes/private-routes";
 import type { PageTrip } from "@/lib/routes/trip";
 
@@ -53,9 +61,13 @@ export function PrivateRoutesContent({
   /** 網址上的行程設定（出發時間 ISO、運動類型），未指定為 null */
   trip: PageTrip;
 }) {
-  const { routes, limit, loading, error, upload, remove, refetch } = usePrivateRoutes();
+  const { routes, limit, loading, error, upload, rename, remove, refetch } = usePrivateRoutes();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(false);
+  // 上傳中的步驟與百分比；null 為沒有在上傳
+  const [progress, setProgress] = useState<UploadProgress | null>(null);
+  // 最近一次上傳失敗的訊息，桌機上傳面板上保留顯示（toast 會自己消失）
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const uploading = progress != null;
   const [busyId, setBusyId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState(ALL_TYPES);
@@ -63,6 +75,7 @@ export function PrivateRoutesContent({
   // 手機：目前左滑打開的路線（同時只開一張）與待確認刪除的路線
   const [swipedId, setSwipedId] = useState<string | null>(null);
   const [confirmRoute, setConfirmRoute] = useState<PrivateRoute | null>(null);
+  const [renameTarget, setRenameTarget] = useState<PrivateRoute | null>(null);
   const full = limit != null && routes.length >= limit;
   const canUpload = !uploading && !loading && !full && error == null;
 
@@ -88,19 +101,25 @@ export function PrivateRoutesContent({
     if (!file || !canUpload) return;
     const invalid = validateGpxFile(file);
     if (invalid) {
+      setUploadError(invalid);
       toast.error(invalid);
       return;
     }
-    setUploading(true);
+    setUploadError(null);
+    setProgress({ stage: "preparing", percent: null });
     try {
-      const route = await upload(file);
+      const route = await upload(file, setProgress);
       toast.success(`已上傳「${route.name}」`);
       // 上傳完直接看新路線的判讀
       if (route.status === "ready") select(route.id);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "上傳失敗");
+      const message = uploadErrorMessage(err);
+      setUploadError(message);
+      toast.error(message);
+      // 額度已滿等情況代表前端列表過時（例如另一個分頁上傳過），重讀一次
+      if (err instanceof BackendError && err.code === "route_limit_reached") refetch();
     } finally {
-      setUploading(false);
+      setProgress(null);
       // 清掉選取，同一個檔案才能再選一次
       if (inputRef.current) inputRef.current.value = "";
     }
@@ -115,6 +134,13 @@ export function PrivateRoutesContent({
     } finally {
       setBusyId(null);
     }
+  }
+
+  /** 改名成功才關面板；失敗丟回給面板顯示錯誤 */
+  async function handleRename(route: PrivateRoute, name: string) {
+    await rename(route.id, name);
+    setRenameTarget(null);
+    toast.success("已改名");
   }
 
   /** 桌機用瀏覽器確認框；手機從底部滑出確認面板，按鈕比較好點 */
@@ -200,16 +226,39 @@ export function PrivateRoutesContent({
                   disabled={full || uploading}
                   onClick={() => (window.matchMedia(DESKTOP_QUERY).matches ? select(UPLOAD_ITEM) : openPicker())}
                   className={cn(
-                    "flex w-full items-center gap-2 rounded-xl border border-dashed border-border p-3.5 text-left text-sm font-semibold text-muted-foreground transition-colors hover:border-primary/50 hover:bg-secondary/60 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60",
-                    showUploadPanel && "lg:border-solid lg:border-primary lg:bg-accent lg:text-accent-foreground"
+                    "relative flex w-full items-center gap-2 overflow-hidden rounded-xl border border-dashed border-border p-3.5 text-left text-sm font-semibold text-muted-foreground transition-colors hover:border-primary/50 hover:bg-secondary/60 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60",
+                    showUploadPanel && "lg:border-solid lg:border-primary lg:bg-accent lg:text-accent-foreground",
+                    // 手機上傳中雖然停用，進度文字仍要清楚；桌機照一般停用樣式
+                    uploading && "disabled:cursor-progress max-lg:disabled:opacity-100"
                   )}
                 >
-                  {uploading ? <Spinner size="sm" dotClassName="bg-primary" /> : <Plus className="size-4" aria-hidden />}
-                  <span className="mr-auto">{uploading ? "上傳中…" : full ? "已達路線上限" : "上傳新路線"}</span>
+                  {/* 進度只在手機顯示（文字＋底部進度條）；桌機右側面板已有進度，這格維持「上傳新路線」（停用） */}
+                  <Plus className="size-4" aria-hidden />
+                  <span className="mr-auto">
+                    {progress ? (
+                      <>
+                        <span className="lg:hidden" aria-live="polite">
+                          {uploadProgressLabel(progress)}
+                        </span>
+                        <span className="hidden lg:inline">上傳新路線</span>
+                      </>
+                    ) : full ? (
+                      "已達路線上限"
+                    ) : (
+                      "上傳新路線"
+                    )}
+                  </span>
                   {limit != null && (
                     <span className="text-xs font-normal tabular-nums text-muted-foreground">
                       {routes.length} / {limit}
                     </span>
+                  )}
+                  {progress && (
+                    <Progress
+                      aria-label="上傳進度"
+                      value={uploadProgressValue(progress)}
+                      className="absolute inset-x-0 bottom-0 h-1 rounded-none lg:hidden"
+                    />
                   )}
                 </button>
               </li>
@@ -235,6 +284,10 @@ export function PrivateRoutesContent({
                     onSwipeOpenChange={(open) => setSwipedId(open ? route.id : null)}
                     onSelect={() => select(route.id)}
                     onDownload={() => handleDownload(route)}
+                    onRename={() => {
+                      setSwipedId(null);
+                      setRenameTarget(route);
+                    }}
                     onDelete={() => requestDelete(route)}
                   />
                 ))
@@ -254,7 +307,8 @@ export function PrivateRoutesContent({
         {loading ? null : showUploadPanel ? (
           <UploadPanel
             canUpload={canUpload}
-            uploading={uploading}
+            progress={progress}
+            error={uploadError}
             full={full}
             used={routes.length}
             limit={limit}
@@ -262,9 +316,12 @@ export function PrivateRoutesContent({
             onFile={handleFile}
           />
         ) : (
-          <PrivateRouteDetail key={selectedRoute.id} routeId={selectedRoute.id} trip={trip} embedded />
+          // key 含名稱：改名後重新載入詳情，標題跟著更新（GPX 解析有伺服器端快取）
+          <PrivateRouteDetail key={`${selectedRoute.id}:${selectedRoute.name}`} routeId={selectedRoute.id} trip={trip} embedded />
         )}
       </div>
+
+      <RenameRouteSheet route={renameTarget} onOpenChange={(open) => !open && setRenameTarget(null)} onRename={handleRename} />
 
       {/* 手機刪除確認 */}
       <Drawer open={confirmRoute != null} onOpenChange={(open) => !open && setConfirmRoute(null)}>
@@ -289,7 +346,10 @@ export function PrivateRoutesContent({
 
 interface UploadProps {
   canUpload: boolean;
-  uploading: boolean;
+  /** 上傳中的步驟與百分比；null 為沒有在上傳 */
+  progress: UploadProgress | null;
+  /** 最近一次上傳失敗的訊息 */
+  error: string | null;
   full: boolean;
   used: number;
   limit: number | null;
@@ -297,8 +357,9 @@ interface UploadProps {
   onFile: (file: File | undefined) => void;
 }
 
-/** 完整上傳面板：拖放區＋額度＋規則 */
-function UploadPanel({ canUpload, uploading, full, used, limit, onPick, onFile }: UploadProps) {
+/** 完整上傳面板：拖放區＋進度＋錯誤＋額度＋規則 */
+function UploadPanel({ canUpload, progress, error, full, used, limit, onPick, onFile }: UploadProps) {
+  const uploading = progress != null;
   return (
     <section aria-label="上傳路線" className="rounded-2xl border border-border bg-card p-5">
       <button
@@ -312,18 +373,32 @@ function UploadPanel({ canUpload, uploading, full, used, limit, onPick, onFile }
           e.preventDefault();
           onFile(e.dataTransfer.files?.[0]);
         }}
-        className="flex w-full flex-col items-center justify-center rounded-xl border border-dashed border-border bg-background/60 p-10 text-center transition-colors hover:bg-background disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        {uploading ? (
-          <Spinner size="lg" dotClassName="bg-primary" />
-        ) : (
-          <FileUp className="size-10 text-muted-foreground/60" aria-hidden />
+        className={cn(
+          "flex w-full flex-col items-center justify-center rounded-xl border border-dashed border-border bg-background/60 p-10 text-center transition-colors hover:bg-background disabled:cursor-not-allowed disabled:opacity-60",
+          // 上傳中雖然停用，進度條與文字仍要清楚
+          uploading && "disabled:cursor-progress disabled:opacity-100"
         )}
-        <span className="mt-3 text-sm font-semibold text-foreground">
-          {uploading ? "上傳中…" : full ? "已達路線上限，請先刪除舊路線" : "拖曳 GPX 到這裡，或點一下選擇檔案"}
+      >
+        {/* 上傳中不放 spinner：圖示改主色，進度由下方進度條表示 */}
+        <FileUp className={cn("size-10", uploading ? "text-primary" : "text-muted-foreground/60")} aria-hidden />
+        <span className="mt-3 text-sm font-semibold text-foreground" aria-live="polite">
+          {progress ? uploadProgressLabel(progress) : full ? "已達路線上限，請先刪除舊路線" : "拖曳 GPX 到這裡，或點一下選擇檔案"}
         </span>
-        <span className="mt-1 text-xs text-muted-foreground">單檔 {MAX_MB} MB 以內</span>
+        {progress ? (
+          <Progress
+            aria-label="上傳進度"
+            value={uploadProgressValue(progress)}
+            className="mt-3 max-w-xs"
+          />
+        ) : (
+          <span className="mt-1 text-xs text-muted-foreground">單檔 {MAX_MB} MB 以內</span>
+        )}
       </button>
+      {error && !uploading && (
+        <p role="alert" className="mt-3 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {error}
+        </p>
+      )}
       {limit != null && <Quota used={used} limit={limit} className="mt-5" />}
       <p className="mt-4 text-xs text-muted-foreground">刪除路線時檔案一併刪除，無法復原</p>
     </section>
@@ -342,12 +417,14 @@ function PageTitle({ used, limit, className }: { used: number; limit: number | n
           </span>
         )}
       </div>
+      {limit != null && quotaHint(used, limit) && <p className="text-xs text-muted-foreground">{quotaHint(used, limit)}</p>}
       <RoutesTabs current="mine" />
     </div>
   );
 }
 
 function Quota({ used, limit, className }: { used: number; limit: number; className?: string }) {
+  const hint = quotaHint(used, limit);
   return (
     <div className={className}>
       <div className="flex items-baseline justify-between text-xs">
@@ -366,6 +443,7 @@ function Quota({ used, limit, className }: { used: number; limit: number; classN
       >
         <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, (used / limit) * 100)}%` }} />
       </div>
+      {hint && <p className="mt-1.5 text-xs text-muted-foreground">{hint}</p>}
     </div>
   );
 }
@@ -373,7 +451,7 @@ function Quota({ used, limit, className }: { used: number; limit: number; classN
 /**
  * 清單項目：外框樣式與公開路線頁的 RouteCard 共用。
  * 整張卡可點：桌機切換右側判讀，手機進詳情頁（連結保留，新分頁開啟也能用）。
- * 下載、刪除：桌機收在 ⋮ 選單；手機左滑露出。
+ * 改名、下載、刪除：桌機收在 ⋮ 選單；手機左滑露出（三顆按鈕共用 SWIPE_ACTIONS_WIDTH）。
  */
 function PrivateRouteItem({
   route,
@@ -383,6 +461,7 @@ function PrivateRouteItem({
   onSwipeOpenChange,
   onSelect,
   onDownload,
+  onRename,
   onDelete,
 }: {
   route: PrivateRoute;
@@ -392,6 +471,7 @@ function PrivateRouteItem({
   onSwipeOpenChange: (open: boolean) => void;
   onSelect: () => void;
   onDownload: () => void;
+  onRename: () => void;
   onDelete: () => void;
 }) {
   const TypeIcon = ROUTE_TYPE_ICONS[route.type as Route["type"]] ?? RouteIcon;
@@ -411,11 +491,19 @@ function PrivateRouteItem({
           <>
             <button
               type="button"
+              onClick={onRename}
+              className="flex flex-1 flex-col items-center justify-center gap-1 bg-secondary text-xs font-medium text-foreground"
+            >
+              <Pencil className="size-5" aria-hidden />
+              改名
+            </button>
+            <button
+              type="button"
               onClick={() => {
                 onSwipeOpenChange(false);
                 onDownload();
               }}
-              className="flex flex-1 flex-col items-center justify-center gap-1 bg-secondary text-xs font-medium text-foreground"
+              className="flex flex-1 flex-col items-center justify-center gap-1 border-l border-border bg-secondary text-xs font-medium text-foreground"
             >
               <Download className="size-5" aria-hidden />
               下載
@@ -478,6 +566,10 @@ function PrivateRouteItem({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={onRename}>
+                  <Pencil aria-hidden />
+                  改名
+                </DropdownMenuItem>
                 <DropdownMenuItem onSelect={onDownload}>
                   <Download aria-hidden />
                   下載 GPX
