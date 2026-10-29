@@ -7,6 +7,7 @@ import {
   routeNameFromFile,
   uploadErrorMessage,
   uploadProgressLabel,
+  uploadProgressValue,
   validateGpxFile,
   validateRouteName,
 } from "@/lib/routes/private-routes";
@@ -93,4 +94,11 @@ test.describe("uploadErrorMessage", () => {
     expect(uploadErrorMessage(new TypeError("Failed to fetch"))).toBe("上傳失敗，請再試一次");
     expect(uploadErrorMessage(null)).toBe("上傳失敗，請再試一次");
   });
+});
+
+test("uploadProgressValue fills the bar only when parsing", () => {
+  expect(uploadProgressValue({ stage: "preparing", percent: null })).toBe(0);
+  expect(uploadProgressValue({ stage: "uploading", percent: 42 })).toBe(42);
+  expect(uploadProgressValue({ stage: "uploading", percent: null })).toBe(0);
+  expect(uploadProgressValue({ stage: "processing", percent: null })).toBe(100);
 });

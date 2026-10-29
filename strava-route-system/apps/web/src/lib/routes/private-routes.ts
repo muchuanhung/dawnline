@@ -81,6 +81,12 @@ export function uploadProgressLabel(progress: UploadProgress): string {
   }
 }
 
+/** 進度條的值（0–100）：準備沒有百分比顯示 0、解析顯示滿格，搭配文字說明目前步驟 */
+export function uploadProgressValue(progress: UploadProgress): number {
+  if (progress.stage === "processing") return 100;
+  return progress.percent ?? 0;
+}
+
 /** 額度提示：還剩 1 條或已滿時才回傳文字，其他情況回 null */
 export function quotaHint(used: number, limit: number): string | null {
   if (used >= limit) return "已達路線上限，請先刪除舊路線再上傳";

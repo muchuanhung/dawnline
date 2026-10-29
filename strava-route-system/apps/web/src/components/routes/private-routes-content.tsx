@@ -32,6 +32,7 @@ import {
   quotaHint,
   uploadErrorMessage,
   uploadProgressLabel,
+  uploadProgressValue,
   validateGpxFile,
   type PrivateRoute,
   type UploadProgress,
@@ -225,15 +226,14 @@ export function PrivateRoutesContent({
                   disabled={full || uploading}
                   onClick={() => (window.matchMedia(DESKTOP_QUERY).matches ? select(UPLOAD_ITEM) : openPicker())}
                   className={cn(
-                    "flex w-full items-center gap-2 rounded-xl border border-dashed border-border p-3.5 text-left text-sm font-semibold text-muted-foreground transition-colors hover:border-primary/50 hover:bg-secondary/60 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60",
+                    "relative flex w-full items-center gap-2 overflow-hidden rounded-xl border border-dashed border-border p-3.5 text-left text-sm font-semibold text-muted-foreground transition-colors hover:border-primary/50 hover:bg-secondary/60 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60",
                     showUploadPanel && "lg:border-solid lg:border-primary lg:bg-accent lg:text-accent-foreground",
                     // 手機上傳中雖然停用，進度文字仍要清楚；桌機照一般停用樣式
                     uploading && "disabled:cursor-progress max-lg:disabled:opacity-100"
                   )}
                 >
-                  {/* 進度只在手機顯示；桌機右側面板已有進度條與文字，這格維持「上傳新路線」（停用） */}
-                  {uploading && <Spinner size="sm" dotClassName="bg-primary" className="lg:hidden" />}
-                  <Plus className={cn("size-4", uploading && "hidden lg:block")} aria-hidden />
+                  {/* 進度只在手機顯示（文字＋底部進度條）；桌機右側面板已有進度，這格維持「上傳新路線」（停用） */}
+                  <Plus className="size-4" aria-hidden />
                   <span className="mr-auto">
                     {progress ? (
                       <>
@@ -252,6 +252,13 @@ export function PrivateRoutesContent({
                     <span className="text-xs font-normal tabular-nums text-muted-foreground">
                       {routes.length} / {limit}
                     </span>
+                  )}
+                  {progress && (
+                    <Progress
+                      aria-label="上傳進度"
+                      value={uploadProgressValue(progress)}
+                      className="absolute inset-x-0 bottom-0 h-1 rounded-none lg:hidden"
+                    />
                   )}
                 </button>
               </li>
@@ -381,10 +388,9 @@ function UploadPanel({ canUpload, progress, error, full, used, limit, onPick, on
           {progress ? uploadProgressLabel(progress) : full ? "已達路線上限，請先刪除舊路線" : "拖曳 GPX 到這裡，或點一下選擇檔案"}
         </span>
         {progress ? (
-          // 準備與解析沒有百分比：準備顯示 0、解析顯示滿格，搭配文字說明目前步驟
           <Progress
             aria-label="上傳進度"
-            value={progress.stage === "processing" ? 100 : (progress.percent ?? 0)}
+            value={uploadProgressValue(progress)}
             className="mt-3 max-w-xs"
           />
         ) : (
