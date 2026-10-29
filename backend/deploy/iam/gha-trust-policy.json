@@ -14,6 +14,7 @@
         "StringLike": {
           "token.actions.githubusercontent.com:sub": [
             "repo:muchuanhung/dawnline:environment:production",
+            "repo:muchuanhung/dawnline:environment:Production",
             "repo:muchuanhung/dawnline:ref:refs/heads/main"
           ]
         }

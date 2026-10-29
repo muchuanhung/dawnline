@@ -256,7 +256,8 @@ Workflow：[`.github/workflows/backend-deploy.yml`](../../.github/workflows/back
 4. **GitHub OIDC provider**：IAM → Identity providers → Add provider → OpenID Connect，URL `https://token.actions.githubusercontent.com`，Audience `sts.amazonaws.com`。
 5. **部署用 role**：IAM → Roles → Create role → Custom trust policy，貼 [`backend/deploy/iam/gha-trust-policy.json`](../deploy/iam/gha-trust-policy.json)（換掉 `<ACCOUNT_ID>`），不加 managed policy，名稱 `dawnline-gha-deploy`。建好後 Add permissions → Create inline policy → JSON，貼 [`backend/deploy/iam/gha-deploy-policy.json`](../deploy/iam/gha-deploy-policy.json)（換掉 `<ACCOUNT_ID>`、`<INSTANCE_ID>`），名稱 `dawnline-gha-deploy`。
 6. **GitHub 設定**（repo → Settings）：
-   - Environments → New environment `production`；Deployment branches 選 Selected branches，只加 `main`。
+   - Environments：用既有的 `Production`（Vercel 建的；GitHub 環境名稱不分大小寫，workflow 寫 `production` 就是它），沒有就 New environment。Deployment branches and tags 選 Selected branches and tags，只加 `main`。
+   - 下面的 Variables 與 Secret 都建在 **Repository** 層級（不是 Environment），因為監控 job 不走 environment。
    - Secrets and variables → Actions → Variables：`AWS_DEPLOY_ROLE_ARN`＝`arn:aws:iam::<ACCOUNT_ID>:role/dawnline-gha-deploy`、`EC2_INSTANCE_ID`＝`<INSTANCE_ID>`；EC2 是 Graviton（`t4g`）時再加 `EC2_PLATFORM`＝`linux/arm64`（預設 `linux/amd64`）。
    - Secrets：`ALERT_WEBHOOK_URL`，與 Vercel 同一個值（Discord webhook 加 `/slack` 結尾）。
 7. **第一次部署**：Actions → Backend deploy → Run workflow（`image_tag` 留空）。成功後 `sudo docker ps` 會看到 `velorder-api` 的映像變成 `<ACCOUNT_ID>.dkr.ecr...dawnline-api:<SHA>`；舊的本機 `velorder-api:latest` 保留作手動回滾。
