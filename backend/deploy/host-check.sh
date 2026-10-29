@@ -14,7 +14,7 @@ check() {
 disk=$(df --output=pcent / | tail -1 | tr -dc '0-9')
 check "$([[ $disk -lt $DISK_MAX_PERCENT ]] && echo ok)" "disk / ${disk}% (limit ${DISK_MAX_PERCENT}%)"
 
-# MemAvailable plus free swap: the instance has 1 GB RAM and 2 GB swap.
+# MemAvailable plus free swap: the instance has 1 GB RAM and 1 GB swap.
 read -r mem_kb swap_kb < <(awk '/^MemAvailable:/{m=$2} /^SwapFree:/{s=$2} END{print m, s}' /proc/meminfo)
 avail_mb=$(((mem_kb + swap_kb) / 1024))
 check "$([[ $avail_mb -ge $MEM_MIN_MB ]] && echo ok)" "memory+swap available ${avail_mb} MB (min ${MEM_MIN_MB} MB)"
