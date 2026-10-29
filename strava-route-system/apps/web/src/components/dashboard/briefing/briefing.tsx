@@ -5,6 +5,7 @@ import { BriefingCard } from "./briefing-card";
 import { BriefingLoading } from "./briefing-loading";
 import { HazardSummary } from "./hazard-summary";
 import { RouteSwitcher } from "./route-switcher";
+import { DataNotice } from "@/components/verdict/data-notice";
 import { TripSettings } from "@/components/trip/trip-settings";
 import {
   activityOfRouteType,
@@ -100,10 +101,13 @@ async function BriefingResult({
   if (!featured) return null;
 
   return (
-    // 桌機左主卡、右沿途示警；手機依序往下
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] lg:items-start">
-      <BriefingCard featured={featured} trip={tripParams} />
-      <HazardSummary briefing={featured} />
+    <div className="space-y-4">
+      {/* 桌機左主卡、右沿途示警；手機依序往下 */}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] lg:items-start">
+        <BriefingCard featured={featured} trip={tripParams} />
+        <HazardSummary briefing={featured} />
+      </div>
+      <DataNotice generatedAt={featured.generatedAt} />
     </div>
   );
 }
