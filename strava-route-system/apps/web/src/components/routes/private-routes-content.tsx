@@ -227,15 +227,26 @@ export function PrivateRoutesContent({
                   className={cn(
                     "flex w-full items-center gap-2 rounded-xl border border-dashed border-border p-3.5 text-left text-sm font-semibold text-muted-foreground transition-colors hover:border-primary/50 hover:bg-secondary/60 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60",
                     showUploadPanel && "lg:border-solid lg:border-primary lg:bg-accent lg:text-accent-foreground",
-                    // 上傳中雖然停用，進度文字仍要清楚
-                    uploading && "disabled:cursor-progress disabled:opacity-100"
+                    // 手機上傳中雖然停用，進度文字仍要清楚；桌機照一般停用樣式
+                    uploading && "disabled:cursor-progress max-lg:disabled:opacity-100"
                   )}
                 >
-                  {/* 桌機右側面板已有進度條，清單這格只留文字；手機沒有面板，保留 spinner */}
+                  {/* 進度只在手機顯示；桌機右側面板已有進度條與文字，這格維持「上傳新路線」（停用） */}
                   {uploading && <Spinner size="sm" dotClassName="bg-primary" className="lg:hidden" />}
                   <Plus className={cn("size-4", uploading && "hidden lg:block")} aria-hidden />
-                  <span className="mr-auto" aria-live="polite">
-                    {progress ? uploadProgressLabel(progress) : full ? "已達路線上限" : "上傳新路線"}
+                  <span className="mr-auto">
+                    {progress ? (
+                      <>
+                        <span className="lg:hidden" aria-live="polite">
+                          {uploadProgressLabel(progress)}
+                        </span>
+                        <span className="hidden lg:inline">上傳新路線</span>
+                      </>
+                    ) : full ? (
+                      "已達路線上限"
+                    ) : (
+                      "上傳新路線"
+                    )}
                   </span>
                   {limit != null && (
                     <span className="text-xs font-normal tabular-nums text-muted-foreground">
