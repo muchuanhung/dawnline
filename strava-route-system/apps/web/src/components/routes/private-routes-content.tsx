@@ -231,7 +231,9 @@ export function PrivateRoutesContent({
                     uploading && "disabled:cursor-progress disabled:opacity-100"
                   )}
                 >
-                  {uploading ? <Spinner size="sm" dotClassName="bg-primary" /> : <Plus className="size-4" aria-hidden />}
+                  {/* 桌機右側面板已有進度條，清單這格只留文字；手機沒有面板，保留 spinner */}
+                  {uploading && <Spinner size="sm" dotClassName="bg-primary" className="lg:hidden" />}
+                  <Plus className={cn("size-4", uploading && "hidden lg:block")} aria-hidden />
                   <span className="mr-auto" aria-live="polite">
                     {progress ? uploadProgressLabel(progress) : full ? "已達路線上限" : "上傳新路線"}
                   </span>
