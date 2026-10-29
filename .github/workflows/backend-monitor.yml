@@ -1,0 +1,156 @@
+name: Backend monitor
+
+# 每 15 分鐘檢查正式環境：對外 /health、TLS 憑證、主機資源與容器、DB 備份新鮮度。
+# 每週一另外把最新備份還原到暫時的 MySQL，確認備份真的能用。
+# 狀態改變時（正常→異常、異常→恢復）才推 ALERT_WEBHOOK_URL，避免每 15 分鐘洗版。
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+    - cron: "40 7 * * 1" # 每週一 15:40（台北），在 06:25 UTC 的 cron.daily 備份之後
+  workflow_dispatch:
+    inputs:
+      restore_test:
+        description: "同時跑備份還原測試"
+        type: boolean
+        default: false
+
+concurrency:
+  group: backend-monitor
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read # 讀上一次執行結果，判斷狀態是否改變
+  id-token: write
+
+env:
+  AWS_REGION: ap-northeast-1
+  API_HOST: dawnline-api.message-board.bid
+  BACKUP_BUCKET: dawnline-gpx
+  # 備份每天一次，留 2 小時餘裕
+  BACKUP_MAX_AGE_HOURS: 26
+  CERT_MIN_DAYS: 14
+
+jobs:
+  public:
+    name: 對外 /health 與 TLS 憑證
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: /health 要回 database ok（重試 3 次，避免單次網路抖動誤報）
+        run: |
+          for _ in 1 2 3; do
+            out=$(curl -fsS --max-time 10 "https://$API_HOST/health") && echo "$out" | grep -q '"database":"ok"' && { echo "$out"; exit 0; }
+            sleep 10
+          done
+          echo "::error::/health 失敗：${out:-無回應}"
+          exit 1
+
+      - name: 憑證剩餘天數
+        run: |
+          end=$(echo | openssl s_client -connect "$API_HOST:443" -servername "$API_HOST" 2>/dev/null | openssl x509 -noout -enddate | cut -d= -f2)
+          days=$(( ($(date -d "$end" +%s) - $(date +%s)) / 86400 ))
+          echo "憑證到期：$end（剩 $days 天）"
+          [ "$days" -ge "$CERT_MIN_DAYS" ] || { echo "::error::憑證剩 $days 天，cron.weekly 續期可能失效"; exit 1; }
+
+  host:
+    name: 主機資源、容器與備份
+    # AWS 端未設定前跳過（見 deploy-aws.md 第 8 節）
+    if: vars.AWS_DEPLOY_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: backend/deploy
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: 磁碟、記憶體、velorder-api／dawnline-mysql／nginx
+        env:
+          SSM_TIMEOUT_SECONDS: 60
+        run: backend/deploy/ssm-run.sh backend/deploy/host-check.sh
+
+      - name: 最新備份在 26 小時內
+        if: always()
+        run: |
+          latest=$(aws s3api list-objects-v2 --bucket "$BACKUP_BUCKET" --prefix backups/ \
+            --query 'sort_by(Contents, &LastModified)[-1].[Key, LastModified, Size]' --output text)
+          echo "最新備份：$latest"
+          read -r key modified size <<<"$latest"
+          [ "$key" != "None" ] || { echo "::error::backups/ 底下沒有任何備份"; exit 1; }
+          age=$(( ($(date +%s) - $(date -d "$modified" +%s)) / 3600 ))
+          [ "$age" -lt "$BACKUP_MAX_AGE_HOURS" ] || { echo "::error::最新備份已 $age 小時"; exit 1; }
+          [ "$size" -gt 1024 ] || { echo "::error::最新備份只有 $size bytes"; exit 1; }
+
+  restore-test:
+    name: 備份還原測試
+    if: vars.AWS_DEPLOY_ROLE_ARN != '' && (github.event.schedule == '40 7 * * 1' || inputs.restore_test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: restore
+          MYSQL_DATABASE: velorder
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -prestore --silent"
+          --health-interval 5s --health-retries 30
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # repo 是公開的：只印表格與筆數，不印任何資料內容
+      - name: 下載最新備份並還原
+        run: |
+          key=$(aws s3api list-objects-v2 --bucket "$BACKUP_BUCKET" --prefix backups/ \
+            --query 'sort_by(Contents, &LastModified)[-1].Key' --output text)
+          echo "還原 $key"
+          aws s3 cp "s3://$BACKUP_BUCKET/$key" - --only-show-errors | gunzip \
+            | mysql -h 127.0.0.1 -uroot -prestore velorder
+
+      - name: 驗證 schema 與資料
+        run: |
+          q() { mysql -h 127.0.0.1 -uroot -prestore velorder -N -e "$1"; }
+          q "SELECT version_num FROM alembic_version"
+          for t in users routes segments sessions cctv; do
+            echo "$t: $(q "SELECT COUNT(*) FROM $t") rows"
+          done
+          [ "$(q 'SELECT COUNT(*) FROM users')" -gt 0 ] || { echo "::error::還原後 users 是空的"; exit 1; }
+
+  notify:
+    name: 狀態改變才告警
+    needs: [public, host, restore-test]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          failed=$(echo "$RESULTS" | jq -r 'to_entries | map(select(.value.result == "failure")) | map(.key) | join(", ")')
+          prev=$(gh api "repos/${{ github.repository }}/actions/workflows/backend-monitor.yml/runs?status=completed&per_page=1" \
+            --jq '.workflow_runs[0].conclusion // "success"')
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo "本次失敗：${failed:-無}；上次結論：$prev"
+          msg=""
+          if [ -n "$failed" ] && [ "$prev" = "success" ]; then
+            msg="[曉行] 後端監控異常：$failed $run_url"
+          elif [ -z "$failed" ] && [ "$prev" = "failure" ]; then
+            msg="[曉行] 後端監控已恢復 $run_url"
+          fi
+          if [ -n "$msg" ] && [ -n "$ALERT_WEBHOOK_URL" ]; then
+            curl -fsS -X POST -H 'content-type: application/json' -d "$(jq -nc --arg t "$msg" '{text: $t}')" "$ALERT_WEBHOOK_URL"
+          fi
+          [ -z "$failed" ]
