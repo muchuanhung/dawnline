@@ -1,0 +1,115 @@
+name: Backend deploy
+
+# main 的 Backend CI 通過後，建映像推 ECR，再經 SSM 在 EC2 換容器。
+# 手動執行可指定 image_tag 重新部署既有映像（回滾），不重 build。
+# AWS 端設定見 backend/docs/deploy-aws.md 第 8 節。
+on:
+  workflow_run:
+    workflows: ["Backend CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "要部署的既有 ECR tag（commit SHA）；留空則用目前 main build 新映像"
+        required: false
+        default: ""
+
+# 同時只跑一個部署，後到的排隊，不取消進行中的部署
+concurrency:
+  group: backend-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write # OIDC，換 AWS 臨時憑證
+
+env:
+  AWS_REGION: ap-northeast-1
+  ECR_REPOSITORY: dawnline-api
+  HEALTH_URL: https://dawnline-api.message-board.bid/health
+
+jobs:
+  deploy:
+    name: Build、推 ECR、SSM 換容器
+    # workflow_run 只接受 main 上 push 觸發且成功的 CI，PR 的 CI 不部署
+    # 還沒設 AWS_DEPLOY_ROLE_ARN（AWS 端未設定）時整個跳過，不算失敗
+    if: >-
+      vars.AWS_DEPLOY_ROLE_ARN != '' && (
+        github.event_name == 'workflow_dispatch' ||
+        (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # workflow_run 預設 checkout main 最新；改成 CI 實際測過的那個 commit
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: 決定映像 tag
+        id: meta
+        run: |
+          tag="${{ inputs.image_tag }}"
+          [ -n "$tag" ] || tag=$(git rev-parse HEAD)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "image=${{ steps.ecr.outputs.registry }}/$ECR_REPOSITORY:$tag" >> "$GITHUB_OUTPUT"
+
+      - if: inputs.image_tag == ''
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build 並推送（EC2 上不再 build，1 GB 主機省記憶體）
+        if: inputs.image_tag == ''
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          platforms: ${{ vars.EC2_PLATFORM || 'linux/amd64' }}
+          push: true
+          tags: ${{ steps.meta.outputs.image }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,scope=backend,mode=max
+
+      - name: 確認 tag 存在於 ECR
+        if: inputs.image_tag != ''
+        run: aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="${{ steps.meta.outputs.tag }}" >/dev/null
+
+      - name: SSM 在 EC2 換容器（不健康自動回滾）
+        run: backend/deploy/ssm-run.sh backend/deploy/deploy.sh "IMAGE=${{ steps.meta.outputs.image }}" "REGION=$AWS_REGION"
+
+      - name: 對外 HTTPS 煙霧測試
+        run: |
+          for _ in 1 2 3 4 5; do
+            out=$(curl -fsS --max-time 10 "$HEALTH_URL") && echo "$out" | grep -q '"database":"ok"' && { echo "$out"; exit 0; }
+            sleep 6
+          done
+          echo "對外 /health 失敗：$out"
+          exit 1
+
+      - name: 摘要
+        if: always()
+        run: |
+          {
+            echo "### Backend deploy：${{ job.status }}"
+            echo "- 映像：\`${{ steps.meta.outputs.image }}\`"
+            echo "- 回滾：Actions → Backend deploy → Run workflow，image_tag 填上一版 SHA"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 失敗告警
+        if: failure()
+        env:
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+        run: |
+          [ -n "$ALERT_WEBHOOK_URL" ] || exit 0
+          msg="[曉行] 後端部署失敗：${{ steps.meta.outputs.tag }} ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          curl -fsS -X POST -H 'content-type: application/json' -d "$(jq -nc --arg t "$msg" '{text: $t}')" "$ALERT_WEBHOOK_URL"

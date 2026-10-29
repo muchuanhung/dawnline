@@ -19,7 +19,12 @@
    └─ Nginx :443 → message-board.bid ──> 127.0.0.1:8000（留言板，不屬於本 repo）
 
 瀏覽器 ──HTTPS（presigned POST / GET）──> S3 dawnline-gpx（私有）
-EC2 instance role ──> S3（GPX 讀寫刪、每日 DB 備份）
+EC2 instance role ──> S3（GPX 讀寫刪、每日 DB 備份）、ECR（拉映像）
+
+GitHub Actions ──OIDC──> IAM role dawnline-gha-deploy
+   ├─ build 映像 → ECR dawnline-api:<commit SHA>
+   ├─ SSM Run Command → EC2 執行 deploy.sh（換容器、健康檢查、失敗回滾）
+   └─ 每 15 分鐘監控：/health、憑證、主機資源、備份新鮮度 → ALERT_WEBHOOK_URL
 ```
 
 - **不用 ALB**：成本考量。TLS 由 Nginx 終止，憑證用 Let's Encrypt（免費、自動續期）。
@@ -34,7 +39,7 @@ EC2 instance role ──> S3（GPX 讀寫刪、每日 DB 備份）
 | OS | Ubuntu（SSH 帳號 `ubuntu`） |
 | 規格 | 1 GB 記憶體級距，另加 2 GB swap（Nginx、留言板、API、MySQL 同機） |
 | IP | Elastic IP；DNS `dawnline-api.message-board.bid` 的 A 記錄指向它 |
-| IAM role | `dawnline-ec2-role`：`AmazonSSMManagedInstanceCore` + inline policy `dawnline-gpx-s3`（見第 5 節） |
+| IAM role | `dawnline-ec2-role`：`AmazonSSMManagedInstanceCore` + `AmazonEC2ContainerRegistryReadOnly` + inline policy `dawnline-gpx-s3`（見第 5 節） |
 | Metadata | hop limit **2**（容器內才拿得到 role 憑證） |
 
 Security Group inbound：
@@ -95,7 +100,9 @@ sudo docker run -d --name dawnline-mysql --restart unless-stopped \
 
 不要放 `AWS_ACCESS_KEY_ID`：有的話 boto3 會改用那把 key，不走 instance role。
 
-建映像與啟動（在 EC2 上 build；T5 會改成 GitHub Actions 推 ECR）：
+平常由 GitHub Actions 部署（第 8 節）：main 的 Backend CI 通過後自動 build、推 ECR，再經 SSM 在 EC2 執行 [`backend/deploy/deploy.sh`](../deploy/deploy.sh)。容器參數與下面相同。
+
+Actions 或 ECR 不能用時的手動備援（在 EC2 上 build，1 GB 主機會吃 swap，較慢）：
 
 ```bash
 cd ~/dawnline && git pull
@@ -113,7 +120,8 @@ curl -s http://127.0.0.1:8001/health   # {"status":"ok","database":"ok"}
 
 - 只綁 `127.0.0.1:8001`，外部只能經 Nginx 進來。
 - 容器 CMD 先跑 `alembic upgrade head`，成功才啟動 uvicorn；失敗容器直接退出，`sudo docker logs velorder-api` 看原因。
-- 舊映像保留 commit tag，回滾時改用舊 tag 啟動（schema 有變動時先評估 downgrade）。
+- 回滾：Actions → Backend deploy → Run workflow，`image_tag` 填上一版 commit SHA（ECR 保留最近 10 版，主機保留最近 3 版）。
+- 新映像不健康時 deploy.sh 會自動換回舊映像，但新映像已跑過的 migration 不會退回，所以 migration 要維持「只加不刪」，舊程式碼才能在新 schema 上跑。
 
 ## 4. Nginx 與 HTTPS（Let's Encrypt）
 
@@ -212,16 +220,16 @@ CORS：
 
 ## 6. 每日 DB 備份
 
+腳本在 repo 的 [`backend/deploy/mysql-backup.sh`](../deploy/mysql-backup.sh)：mysqldump 失敗、gzip 壞掉或缺少 `-- Dump completed` 結尾都會中止，不會上傳半截檔案。安裝或更新（檔名不能有 `.sh`，run-parts 會跳過有點的檔名）：
+
 ```bash
-sudo tee /etc/cron.daily/dawnline-mysql-backup >/dev/null <<'EOF'
-#!/bin/sh
-set -e
-docker exec dawnline-mysql sh -c 'mysqldump -u velorder -p"$MYSQL_PASSWORD" --single-transaction --no-tablespaces velorder' \
-  | gzip \
-  | docker run --rm -i amazon/aws-cli s3 cp - "s3://dawnline-gpx/backups/velorder-$(date +%F).sql.gz" --region ap-northeast-1
-EOF
-sudo chmod +x /etc/cron.daily/dawnline-mysql-backup
+cd ~/dawnline && git pull
+sudo install -m 755 backend/deploy/mysql-backup.sh /etc/cron.daily/dawnline-mysql-backup
+sudo /etc/cron.daily/dawnline-mysql-backup && journalctl -t dawnline-backup -n 1   # 立刻跑一次
 ```
+
+- cron.daily 由 `/etc/crontab` 每天 06:25（主機時區，Ubuntu 預設 UTC）觸發。
+- 監控每 15 分鐘檢查最新備份是否在 26 小時內、大於 1 KB；每週一把最新備份還原到 GitHub Actions 裡的暫時 MySQL，確認 `alembic_version` 與各表筆數（第 9 節）。
 
 還原：
 
@@ -236,7 +244,44 @@ sudo docker run --rm amazon/aws-cli s3 cp s3://dawnline-gpx/backups/velorder-<�
 - rewrite 在 build 時讀這個變數，改了要 Redeploy 才生效。
 - 前端一律經 Vercel 的 `/api/v1/*` 呼叫後端，不直接打 API 網域：`rc_session` 是 `SameSite=Lax`，跨站 fetch 不會帶上。
 
-## 8. 驗證
+## 8. 自動部署：GitHub Actions + ECR + SSM
+
+Workflow：[`.github/workflows/backend-deploy.yml`](../../.github/workflows/backend-deploy.yml)。GitHub 不存任何 AWS 長期金鑰，用 OIDC 換臨時憑證；EC2 不開新 port，也不需要 SSH，指令走 SSM。
+
+以下在 AWS Console（東京區）做一次。`<ACCOUNT_ID>` 是右上角帳號 ID，`<INSTANCE_ID>` 是 EC2 的 `i-...`。
+
+1. **確認 EC2 已接上 SSM**：Systems Manager → Fleet Manager，看得到這台且 Ping status 為 Online。看不到時在 EC2 上 `sudo snap services amazon-ssm-agent`，沒裝就 `sudo snap install amazon-ssm-agent --classic`。role 已有 `AmazonSSMManagedInstanceCore`。
+2. **EC2 role 加 ECR 讀取**：IAM → Roles → `dawnline-ec2-role` → Add permissions → Attach `AmazonEC2ContainerRegistryReadOnly`。
+3. **建 ECR repository**：ECR → Create repository，名稱 `dawnline-api`，Private，Tag immutability 關閉，加密 AES-256。建好後 Lifecycle policy → Create rule，填：Rule priority `1`、Image tag status **Any**、Match criteria **Image count**、Count `10`、Rule action **Expire**（只保留最新 10 版；設定內容同 [`backend/deploy/ecr-lifecycle.json`](../deploy/ecr-lifecycle.json)）。不要選 Days since image created，那會把超過天數的映像全部刪掉，連正在跑的那版也是。
+4. **GitHub OIDC provider**：IAM → Identity providers → Add provider → OpenID Connect，URL `https://token.actions.githubusercontent.com`，Audience `sts.amazonaws.com`。
+5. **部署用 role**：IAM → Roles → Create role → Custom trust policy，貼 [`backend/deploy/iam/gha-trust-policy.json`](../deploy/iam/gha-trust-policy.json)（換掉 `<ACCOUNT_ID>`），不加 managed policy，名稱 `dawnline-gha-deploy`。建好後 Add permissions → Create inline policy → JSON，貼 [`backend/deploy/iam/gha-deploy-policy.json`](../deploy/iam/gha-deploy-policy.json)（換掉 `<ACCOUNT_ID>`、`<INSTANCE_ID>`），名稱 `dawnline-gha-deploy`。
+6. **GitHub 設定**（repo → Settings）：
+   - Environments：用既有的 `Production`（Vercel 建的；GitHub 環境名稱不分大小寫，workflow 寫 `production` 就是它），沒有就 New environment。Deployment branches and tags 選 Selected branches and tags，只加 `main`。
+   - 下面的 Variables 與 Secret 都建在 **Repository** 層級（不是 Environment），因為監控 job 不走 environment。
+   - Secrets and variables → Actions → Variables：`AWS_DEPLOY_ROLE_ARN`＝`arn:aws:iam::<ACCOUNT_ID>:role/dawnline-gha-deploy`、`EC2_INSTANCE_ID`＝`<INSTANCE_ID>`；EC2 是 Graviton（`t4g`）時再加 `EC2_PLATFORM`＝`linux/arm64`（預設 `linux/amd64`）。
+   - Secrets：`ALERT_WEBHOOK_URL`，與 Vercel 同一個值（Discord webhook 加 `/slack` 結尾）。
+7. **第一次部署**：Actions → Backend deploy → Run workflow（`image_tag` 留空）。成功後 `sudo docker ps` 會看到 `velorder-api` 的映像變成 `<ACCOUNT_ID>.dkr.ecr...dawnline-api:<SHA>`；舊的本機 `velorder-api:latest` 保留作手動回滾。
+
+流程：push main → Backend CI（pytest、ruff、MySQL 驗證）通過 → build（GHA cache）→ 推 `dawnline-api:<SHA>` → SSM 執行 deploy.sh（ECR 登入、pull、換容器、等 HEALTHCHECK healthy、清舊映像；不健康就換回舊映像並讓 workflow 失敗）→ 對外 HTTPS `/health` 煙霧測試。失敗會推一則告警。
+
+## 9. 監控
+
+Workflow：[`.github/workflows/backend-monitor.yml`](../../.github/workflows/backend-monitor.yml)，每 15 分鐘（公開 repo，Actions 分鐘數不計費；GitHub 排程尖峰時段可能延遲幾分鐘）。
+
+| 檢查 | 失敗條件 |
+| --- | --- |
+| 對外 `/health` | 重試 3 次仍非 200 或 `database` 不是 ok |
+| TLS 憑證 | 剩不到 14 天（代表 cron.weekly 續期壞了） |
+| 主機（SSM 執行 [`host-check.sh`](../deploy/host-check.sh)） | 根目錄磁碟 ≥ 85%、可用記憶體＋swap < 100 MB、`velorder-api` 不是 healthy、`dawnline-mysql` 沒在跑、nginx 不是 active |
+| 備份新鮮度 | `backups/` 最新物件超過 26 小時或 ≤ 1 KB |
+| 還原測試（每週一） | 最新備份還原失敗，或 `users` 是空的 |
+
+告警只在狀態改變時送出（正常→異常、異常→恢復），送到 `ALERT_WEBHOOK_URL`，格式與前端 `lib/observability/report.ts` 相同（`{ text }`）。手動檢查：Actions → Backend monitor → Run workflow。
+
+- repo 超過 60 天沒有任何 commit，GitHub 會自動停用排程 workflow，要到 Actions 頁面重新啟用。
+- 選配（免費）：EC2 → 這台 → Actions → Monitor and troubleshoot → Manage CloudWatch alarms，對 `StatusCheckFailed_System` 建 Recover 動作，硬體故障時 AWS 會自動搬到新主機（Elastic IP 不變）。
+
+## 10. 驗證
 
 自己的電腦（`/health` 只接受 GET，`curl -I` 送 HEAD 會得到 405，所以用 `-si`）：
 
@@ -268,3 +313,7 @@ free -m
 - **上傳時 CORS 錯誤**：S3 CORS 的 `AllowedOrigins` 沒有目前的網址。
 - **上傳回 500，log 有 NoCredentialsError**：metadata hop limit 還是 1，或 `api.env` 放了 access key。
 - **`/api/v1/...` 回 404**：Vercel 沒設 `BACKEND_API_URL`，或設了沒重新部署。
+- **Backend deploy 在 configure-aws-credentials 失敗（Not authorized to perform sts:AssumeRoleWithWebIdentity）**：trust policy 的 `sub` 與實際不符。部署 job 用 environment `production`，sub 是 `repo:muchuanhung/dawnline:environment:production`；監控用 main，sub 是 `...:ref:refs/heads/main`。
+- **SSM 回 InvalidInstanceId**：Fleet Manager 看不到這台（agent 沒跑，或 role 缺 `AmazonSSMManagedInstanceCore`），或 `EC2_INSTANCE_ID` 填錯。
+- **deploy.sh 在 ECR 登入失敗**：`dawnline-ec2-role` 沒掛 `AmazonEC2ContainerRegistryReadOnly`，或 metadata hop limit 不是 2。
+- **映像在 EC2 上 `exec format error`**：EC2 是 arm64（Graviton），要設 `EC2_PLATFORM=linux/arm64`。

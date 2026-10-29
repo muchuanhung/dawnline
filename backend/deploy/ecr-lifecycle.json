@@ -1,0 +1,10 @@
+{
+  "rules": [
+    {
+      "rulePriority": 1,
+      "description": "Keep the 10 newest images (rollback window); stay inside the 500 MB free tier",
+      "selection": { "tagStatus": "any", "countType": "imageCountMoreThan", "countNumber": 10 },
+      "action": { "type": "expire" }
+    }
+  ]
+}
