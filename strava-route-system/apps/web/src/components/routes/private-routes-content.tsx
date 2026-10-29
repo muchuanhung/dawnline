@@ -379,11 +379,8 @@ function UploadPanel({ canUpload, progress, error, full, used, limit, onPick, on
           uploading && "disabled:cursor-progress disabled:opacity-100"
         )}
       >
-        {uploading ? (
-          <Spinner size="lg" dotClassName="bg-primary" />
-        ) : (
-          <FileUp className="size-10 text-muted-foreground/60" aria-hidden />
-        )}
+        {/* 上傳中不放 spinner：圖示改主色，進度由下方進度條表示 */}
+        <FileUp className={cn("size-10", uploading ? "text-primary" : "text-muted-foreground/60")} aria-hidden />
         <span className="mt-3 text-sm font-semibold text-foreground" aria-live="polite">
           {progress ? uploadProgressLabel(progress) : full ? "已達路線上限，請先刪除舊路線" : "拖曳 GPX 到這裡，或點一下選擇檔案"}
         </span>
