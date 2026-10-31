@@ -106,3 +106,17 @@ def test_uppercase_extension_is_imported(api, s3, session_factory, tmp_path):
     _import(session_factory, s3, _write(tmp_path / "gpx", {"Yangjin.GPX": GPX}))
     ids = [r["id"] for r in api.get("/api/v1/public-routes").json()["routes"]]
     assert ids == ["Yangjin"]
+
+
+def test_original_firebase_file_names_are_kept(api, s3, session_factory, tmp_path):
+    # 原 Firebase 檔名常有空白、+、括號；前端以 encodeURIComponent 帶進網址
+    from urllib.parse import quote
+
+    names = ["冷水坑 + 陽金公路 + 小油坑", "[台北] Rapha 研究院路 貓空 堡嗝比漢堡"]
+    files = {f"{n}.gpx": GPX for n in names}
+    assert _import(session_factory, s3, _write(tmp_path / "gpx", files)) == 0
+    ids = sorted(r["id"] for r in api.get("/api/v1/public-routes").json()["routes"])
+    assert ids == sorted(names)
+    for n in names:
+        assert api.get(f"/api/v1/public-routes/{quote(n, safe='')}/gpx").status_code == 200
+        assert api.put(f"/api/v1/favorites/{quote(n, safe='')}").status_code == 204

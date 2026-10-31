@@ -23,8 +23,11 @@ from app.services.gpx import infer_route_type, parse_gpx
 from app.services.storage import GpxStorage, gpx_key
 
 NAME_MAX = 100
-# slug 會出現在網址與 Firestore key：擋掉空白、斜線與 URL 保留字元，其餘（含中文）照舊
-SLUG_PATTERN = re.compile(r"^[^\s/\\?#%&]{1,64}$")
+# slug 沿用原 GPX 檔名（常含空白、+、括號、中文），前端一律 encodeURIComponent。
+# 只擋路徑分隔、URL 保留的 ? # %、控制字元，以及頭尾空白；長度 1–64
+_SLUG_CHAR = r"[^/\\?#%\x00-\x1f]"
+_SLUG_EDGE = r"[^\s/\\?#%\x00-\x1f]"
+SLUG_PATTERN = re.compile(rf"^(?=.{{1,64}}$){_SLUG_EDGE}(?:{_SLUG_CHAR}*{_SLUG_EDGE})?$")
 
 ImportAction = Literal["created", "updated", "unchanged"]
 
