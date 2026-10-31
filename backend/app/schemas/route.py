@@ -47,3 +47,32 @@ class RouteList(CamelModel):
 
 class DownloadOut(CamelModel):
     url: str
+
+
+class PublicRouteOut(CamelModel):
+    """公開路線；id 是 slug（沿用原 GPX 檔名），不需登入。"""
+
+    id: str
+    name: str
+    type: str
+    distance_km: float | None
+    elevation_gain_m: int | None
+    updated_at: UtcDatetime
+
+
+class PublicRouteList(CamelModel):
+    routes: list[PublicRouteOut]
+
+
+class FavoriteOut(CamelModel):
+    """id 與其他 API 一致：公開路線 slug、私人路線 public_id。"""
+
+    id: str
+    visibility: str
+    name: str
+    created_at: UtcDatetime
+
+
+class FavoriteList(CamelModel):
+    favorites: list[FavoriteOut]
+    limit: int

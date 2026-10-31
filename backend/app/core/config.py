@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     s3_region: str = "ap-northeast-1"
     gpx_max_bytes: int = 5 * 1024 * 1024
     gpx_max_routes_per_user: int = 10
+    favorites_max_per_user: int = 50
     # presigned URL 有效秒數
     s3_upload_expires_seconds: int = 300
     s3_download_expires_seconds: int = 300

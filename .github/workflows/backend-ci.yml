@@ -62,10 +62,10 @@ jobs:
 
       - name: Alembic 版本與 migration 往返
         run: |
-          docker compose exec -T api alembic current | grep -q '0005 (head)'
+          docker compose exec -T api alembic current | grep -q '0007 (head)'
           docker compose exec -T api alembic downgrade base
           docker compose exec -T api alembic upgrade head
-          docker compose exec -T api alembic current | grep -q '0005 (head)'
+          docker compose exec -T api alembic current | grep -q '0007 (head)'
 
       - name: MySQL 設定與 schema（時區、utf8mb4、空間索引、FK）
         run: |
@@ -82,6 +82,11 @@ jobs:
           q 'SHOW CREATE TABLE sessions' | grep -q 'fk_sessions_user.*ON DELETE CASCADE'
           [ "$(q "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='velorder' AND table_name='members'")" = "0" ]
           q 'SHOW CREATE TABLE users' | grep -q 'uq_users_firebase_uid'
+          q 'SHOW CREATE TABLE routes' | grep -q "\`visibility\` enum('private','public') NOT NULL DEFAULT 'private'"
+          q 'SHOW CREATE TABLE routes' | grep -q 'UNIQUE KEY `uq_routes_slug`'
+          q 'SHOW CREATE TABLE routes' | grep -q 'KEY `idx_routes_public_list`'
+          q 'SHOW CREATE TABLE favorites' | tee /dev/stderr | grep -q 'PRIMARY KEY (`user_id`,`route_id`)'
+          q 'SHOW CREATE TABLE favorites' | grep -q 'fk_favorites_route.*ON DELETE CASCADE'
 
       - name: routes 寫入空間欄位（bbox 用 lon lat WKT、SRID 4326）
         run: |
@@ -90,7 +95,7 @@ jobs:
           from sqlalchemy.orm import Session
           from app.core.db import get_engine, utcnow
           from app.core.types import geometry_from_wkt
-          from app.models import Route, User
+          from app.models import Favorite, Route, User
           wkt = "POLYGON((121.5 25.1,121.6 25.1,121.6 25.2,121.5 25.2,121.5 25.1))"
           with Session(get_engine()) as db:
               user = User(firebase_uid="ci", created_at=utcnow(), last_login_at=utcnow())
@@ -104,6 +109,15 @@ jobs:
               )).one()
               print(row)
               assert row[1] == 4326 and abs(row[2] - 25.1) < 1e-9, row
+              # 公開路線（slug）與收藏的 FK
+              pub = Route(public_id="1" * 26, user_id=user.id, name="pub", slug="yangjin",
+                          visibility="public", s3_key="k2", file_size=1, file_sha256="0" * 64,
+                          status="ready", bbox=geometry_from_wkt(db, wkt))
+              db.add(pub)
+              db.flush()
+              db.add(Favorite(user_id=user.id, route_id=pub.id, created_at=utcnow()))
+              db.flush()
+              assert db.execute(text("SELECT COUNT(*) FROM favorites")).scalar() == 1
               db.rollback()
           PY
 

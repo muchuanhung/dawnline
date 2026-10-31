@@ -1,4 +1,4 @@
-"""路線（一檔會員上傳的 GPX）。期初只建表，API 在期中實作。"""
+"""路線（一檔 GPX）：使用者上傳的私人路線，或匯入腳本寫入的公開路線（visibility）。"""
 
 from datetime import datetime
 from decimal import Decimal
@@ -15,6 +15,8 @@ class Route(Base):
     __table_args__ = (
         UniqueConstraint("public_id", name="uq_routes_public_id"),
         Index("idx_routes_user_list", "user_id", "deleted_at", "created_at"),
+        UniqueConstraint("slug", name="uq_routes_slug"),
+        Index("idx_routes_public_list", "visibility", "deleted_at", "name"),
         Index("sp_routes_bbox", "bbox", mysql_prefix="SPATIAL"),
     )
 
@@ -24,6 +26,12 @@ class Route(Base):
     name: Mapped[str] = mapped_column(String(100))
     # 自行車／跑步／健行／雪巴運動（與前端 Route["type"] 相同），上傳時由 GPX 判斷
     route_type: Mapped[str] = mapped_column(String(20), default="自行車")
+    # private：使用者上傳（算配額）；public：所有人可看，對外 id 用 slug
+    visibility: Mapped[str] = mapped_column(
+        Enum("private", "public", name="route_visibility"), default="private"
+    )
+    # 公開路線的對外 id（沿用原 GPX 檔名）；私人路線為 None
+    slug: Mapped[str | None] = mapped_column(String(64))
     s3_key: Mapped[str] = mapped_column(String(255))
     file_size: Mapped[int] = mapped_column(UInt)
     file_sha256: Mapped[str] = mapped_column(CHAR(64))

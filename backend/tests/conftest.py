@@ -1,6 +1,6 @@
 """測試用 SQLite 記憶體 DB + 假的 Firebase 驗證，不連 MySQL、不連 Firebase。
 
-空間欄位在 SQLite 以 WKT 文字存放（app/core/types.py），所以 routes 也在 SQLite 建；
+空間欄位在 SQLite 以 WKT 文字存放（app/core/types.py），所以 routes、favorites 也在 SQLite 建；
 segments、cctv 尚無 API，不建。真正的 MySQL schema 在 CI 的 MySQL 容器上驗。
 """
 
@@ -16,7 +16,7 @@ from app.core.config import Settings, get_settings
 from app.core.db import Base, get_db
 from app.core.firebase import FirebaseIdentity, InvalidIdTokenError, get_token_verifier
 from app.main import create_app
-from app.models import AuthSession, Route, User
+from app.models import AuthSession, Favorite, Route, User
 
 COOKIE = "rc_session"
 
@@ -42,7 +42,8 @@ def session_factory() -> Iterator[sessionmaker[Session]]:
         "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
     )
     Base.metadata.create_all(
-        engine, tables=[User.__table__, AuthSession.__table__, Route.__table__]
+        engine,
+        tables=[User.__table__, AuthSession.__table__, Route.__table__, Favorite.__table__],
     )
     yield sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     engine.dispose()
