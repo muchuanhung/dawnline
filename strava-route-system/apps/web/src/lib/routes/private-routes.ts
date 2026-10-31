@@ -126,10 +126,11 @@ export function routeNameFromFile(fileName: string): string {
   return fileName.replace(/\.gpx$/i, "").trim();
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+/** 呼叫後端（經 Vercel rewrite 的 /api/v1/*）；base 預設私人路線，收藏等其他資源傳自己的 base */
+export async function request<T>(path: string, init?: RequestInit, base: string = API_BASE): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${API_BASE}${path}`, { credentials: "include", ...init });
+    res = await fetch(`${base}${path}`, { credentials: "include", ...init });
   } catch {
     throw new BackendError(0, "network_error", "網路連線中斷");
   }

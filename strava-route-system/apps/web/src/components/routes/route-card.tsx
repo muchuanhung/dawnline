@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Mountain, Route as RouteIcon, Clock, ChevronRight } from "lucide-react";
+import { Mountain, Route as RouteIcon, Clock, ChevronRight, Star } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { Route } from "@/lib/routes/route-data";
@@ -19,12 +19,14 @@ interface RouteCardProps {
   statusOverride?: CardStatus | null;
   /** 依目前運動類型與均速（含爬升）算的預估時間；未提供時退回 GPX 解析時的粗估 */
   timeLabel?: string;
+  /** 已收藏時名稱旁顯示實心星號（只是標示；收藏／取消在路線詳情的星號按鈕） */
+  favorite?: boolean;
 }
 
 /** 卡片標籤的顏色與文字；未判定用灰色，不能像安全那樣給綠色 */
 const UNKNOWN_STATUS = { color: "#9ca3af", label: "未判定" };
 
-export function RouteCard({ route, isSelected, onSelect, index, statusOverride, timeLabel }: RouteCardProps) {
+export function RouteCard({ route, isSelected, onSelect, index, statusOverride, timeLabel, favorite }: RouteCardProps) {
   const status = statusOverride ?? null;
   const statusColor = status ? (status === "unknown" ? UNKNOWN_STATUS.color : getStatusColor(status)) : undefined;
   const diffColor = getDifficultyColor(route.difficulty);
@@ -47,6 +49,9 @@ export function RouteCard({ route, isSelected, onSelect, index, statusOverride, 
             <span className="text-sm font-semibold text-foreground break-words min-w-0">
               {route.name}
             </span>
+            {favorite && (
+              <Star className="mt-0.5 h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-400" aria-label="已收藏" />
+            )}
           </div>
           <span className="text-[11px] text-muted-foreground">{route.nameZh}</span>
         </div>

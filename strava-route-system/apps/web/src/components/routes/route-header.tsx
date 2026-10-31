@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { motion } from "framer-motion";
 import { Pencil } from "lucide-react";
 import { DemoNotice } from "@/components/verdict/demo-notice";
@@ -23,13 +24,16 @@ interface RouteHeaderProps {
    * speedLabel 如「一般 20 km/h」，點了打開均速設定面板。未提供時退回 GPX 解析時的粗估。
    */
   estimate?: { totalLabel: string; climbLabel: string | null; speedLabel: string; onEdit: () => void };
+  /** 類型標籤旁的操作（收藏星號）；actionError 是該操作失敗的一句話 */
+  action?: ReactNode;
+  actionError?: string | null;
 }
 
 /**
  * 精簡標頭：名稱、經過縣市、類型與一行數據。
  * 判定與路線位置改由下方主視覺（影像＋里程軌道）呈現，這裡不再畫路線形狀圖。
  */
-export function RouteHeader({ route, departureLabel, estimate }: RouteHeaderProps) {
+export function RouteHeader({ route, departureLabel, estimate, action, actionError }: RouteHeaderProps) {
   const suggestTime = departureLabel ?? null;
   const TypeIcon = ROUTE_TYPE_ICONS[route.type];
   const areas = formatRouteAreas(routeAreas(route.segments));
@@ -47,11 +51,19 @@ export function RouteHeader({ route, departureLabel, estimate }: RouteHeaderProp
           {/* 副標題只列路線經過的縣市；nameZh 多半和名稱重複，不顯示 */}
           {areas && <p className="text-sm text-muted-foreground">{areas}</p>}
         </div>
-        <div className="flex shrink-0 items-center gap-1.5 rounded-lg bg-secondary/40 px-2.5 py-1.5">
-          <TypeIcon className="h-4 w-4 text-strava" />
-          <span className="text-xs font-medium text-foreground">{route.type}</span>
+        <div className="flex shrink-0 items-center gap-2">
+          <div className="flex items-center gap-1.5 rounded-lg bg-secondary/40 px-2.5 py-1.5">
+            <TypeIcon className="h-4 w-4 text-strava" />
+            <span className="text-xs font-medium text-foreground">{route.type}</span>
+          </div>
+          {action}
         </div>
       </div>
+      {actionError && (
+        <p role="status" className="text-xs text-destructive">
+          {actionError}
+        </p>
+      )}
 
       <p className="text-sm tabular-nums text-muted-foreground">
         <Stat value={`${route.distance}`} unit="km" />
