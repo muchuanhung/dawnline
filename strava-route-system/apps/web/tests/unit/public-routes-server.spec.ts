@@ -1,7 +1,6 @@
 import { test, expect } from "@playwright/test";
-import { fetchPublicRoutesFromBackend, loadPublicRoutesWithFallback } from "@/lib/routes/public-routes.server";
+import { fetchPublicRoutesFromBackend } from "@/lib/routes/public-routes.server";
 import { demoRouteGpx } from "@/lib/routes/demo-route";
-import type { Route } from "@/lib/routes/route-data";
 
 const BACKEND = "https://api.example.test";
 const S3 = (slug: string) => `https://bucket.s3.example.test/${slug}.gpx?sig=1`;
@@ -26,11 +25,11 @@ test.describe("fetchPublicRoutesFromBackend", () => {
     delete process.env.BACKEND_API_URL;
   });
 
-  test("沒設定後端回 null，不呼叫 fetch", async () => {
+  test("沒設定後端直接丟錯，不呼叫 fetch（沒有其他來源可退）", async () => {
     delete process.env.BACKEND_API_URL;
     const m = mockFetch(() => json({}));
     try {
-      expect(await fetchPublicRoutesFromBackend()).toBeNull();
+      await expect(fetchPublicRoutesFromBackend()).rejects.toThrow("後端未設定");
       expect(m.calls).toHaveLength(0);
     } finally {
       m.restore();
@@ -56,35 +55,13 @@ test.describe("fetchPublicRoutesFromBackend", () => {
     }
   });
 
-  test("清單失敗丟錯（交給 fallback）", async () => {
+  test("清單失敗丟錯（loadRoutes 收成只剩示意路線）", async () => {
     process.env.BACKEND_API_URL = BACKEND;
     const m = mockFetch(() => json({}, 503));
     try {
       await expect(fetchPublicRoutesFromBackend()).rejects.toThrow("503");
     } finally {
       m.restore();
-    }
-  });
-});
-
-test.describe("loadPublicRoutesWithFallback", () => {
-  const route = { id: "from-backend" } as Route;
-  const storageRoute = { id: "from-storage" } as Route;
-  const storage = async () => [storageRoute];
-
-  test("後端有資料就不讀 Storage", async () => {
-    let storageCalled = false;
-    const routes = await loadPublicRoutesWithFallback({
-      backend: async () => [route],
-      storage: async () => ((storageCalled = true), [storageRoute]),
-    });
-    expect(routes).toEqual([route]);
-    expect(storageCalled).toBe(false);
-  });
-
-  test("後端未設定、空清單或出錯都退回 Storage", async () => {
-    for (const backend of [async () => null, async () => [], async () => Promise.reject(new Error("down"))]) {
-      expect(await loadPublicRoutesWithFallback({ backend, storage })).toEqual([storageRoute]);
     }
   });
 });

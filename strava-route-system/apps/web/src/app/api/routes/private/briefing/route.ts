@@ -1,6 +1,6 @@
 /**
  * 私人路線今日判讀：與 /api/routes/briefing 同一套判讀流程與參數，
- * 差別只在路線來源（後端 S3，而不是 Firebase Storage 的公開路線）。
+ * 差別只在路線來源（後端的私人路線，而不是公開路線）。
  */
 
 import { NextResponse } from "next/server";

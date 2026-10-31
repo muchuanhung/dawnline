@@ -1,5 +1,5 @@
 /**
- * 從 Firebase Storage 取得 GPX 路線列表
+ * 公開路線列表（來源：FastAPI 後端，見 load-routes.server.ts）
  */
 
 import { NextResponse } from "next/server";
