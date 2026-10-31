@@ -90,3 +90,19 @@ def test_unknown_owner_fails(client, s3, session_factory, tmp_path):
     login(client, "valid:someone-else")
     assert _import(session_factory, s3, _write(tmp_path / "gpx", {"a.gpx": GPX})) == 1
     assert client.get("/api/v1/public-routes").json()["routes"] == []
+
+
+def test_empty_folder_fails_without_pruning(api, s3, session_factory, tmp_path, capsys):
+    _import(session_factory, s3, _write(tmp_path / "a", {"a.gpx": GPX}))
+    (tmp_path / "empty" / "nested").mkdir(parents=True)
+    (tmp_path / "empty" / "nested" / "b.gpx").write_bytes(GPX)
+    assert _import(session_factory, s3, tmp_path / "empty", prune=True) == 1
+    assert "沒有 .gpx" in capsys.readouterr().err
+    ids = [r["id"] for r in api.get("/api/v1/public-routes").json()["routes"]]
+    assert ids == ["a"]
+
+
+def test_uppercase_extension_is_imported(api, s3, session_factory, tmp_path):
+    _import(session_factory, s3, _write(tmp_path / "gpx", {"Yangjin.GPX": GPX}))
+    ids = [r["id"] for r in api.get("/api/v1/public-routes").json()["routes"]]
+    assert ids == ["Yangjin"]

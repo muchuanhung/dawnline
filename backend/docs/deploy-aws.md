@@ -246,17 +246,24 @@ GPX 放在匯入者的 `users/{id}/routes/` 底下，所以 §5 的 instance rol
 
 1. 從 Firebase Console → Storage → `gpx/routes/` 下載全部 GPX，放到本機資料夾（例如 `public-gpx/`），檔名不要改。
 2. 用要掛名的帳號在網站登入一次（`users` 才有這筆），到 Firebase Console → Authentication 抄下 UID。
-3. 傳到 EC2 並在 API 容器裡匯入（先 `--dry-run` 看結果）：
+3. EC2 Instance Connect 不能上傳檔案，先借 S3 中轉：AWS Console → S3 → `dawnline-gpx` → 上傳到 `users/import/public-gpx/`
+   （GPX 直接放在這層，不要多一層資料夾；instance role 只能讀 `users/*`）。
+4. 在 EC2 拉下來、放進 API 容器、匯入（先 `--dry-run` 看結果）：
 
 ```bash
-scp -r public-gpx ubuntu@<EC2>:~/public-gpx     # 或用 EC2 Instance Connect 上傳
+mkdir -p ~/public-gpx
+sudo docker run --rm -v ~/public-gpx:/out amazon/aws-cli s3 cp s3://dawnline-gpx/users/import/public-gpx/ /out --recursive --region ap-northeast-1
+ls ~/public-gpx                                        # 要看到 .gpx 檔
+sudo docker exec velorder-api rm -rf /tmp/public-gpx   # 目的地已存在時 docker cp 會多包一層
 sudo docker cp ~/public-gpx velorder-api:/tmp/public-gpx
 sudo docker exec velorder-api python -m app.scripts.import_public_routes /tmp/public-gpx --owner-uid <UID> --dry-run
 sudo docker exec velorder-api python -m app.scripts.import_public_routes /tmp/public-gpx --owner-uid <UID>
 curl -s https://dawnline-api.message-board.bid/api/v1/public-routes | head -c 400
 ```
 
-輸出每行是 `created`／`updated`／`unchanged`＋slug。之後新增或修改公開路線：把檔案放進同一個資料夾重跑即可；
+5. 確認後刪掉 S3 的 `users/import/`。
+
+輸出每行是 `created`／`updated`／`unchanged`＋slug；資料夾沒有 `.gpx`（副檔名不分大小寫，子資料夾不讀）時會報錯並結束，不會下架任何路線。之後新增或修改公開路線：把檔案放進同一個資料夾重跑即可；
 加 `--prune` 會把資料夾裡沒有的公開路線下架（軟刪除、刪 S3 檔、清收藏）。
 容器重建後 `/tmp/public-gpx` 會消失，資料已在 S3 與 MySQL，不影響服務。
 
