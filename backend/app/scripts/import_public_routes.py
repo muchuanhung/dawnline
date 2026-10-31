@@ -56,9 +56,15 @@ def run(
         print(f"找不到 firebase_uid={owner_uid} 的使用者（先用這個帳號登入一次）", file=sys.stderr)
         return 1
 
+    # 副檔名不分大小寫；資料夾沒有 GPX 時明講，避免 --prune 把全部公開路線下架
+    paths = sorted(p for p in folder.iterdir() if p.is_file() and p.suffix.lower() == ".gpx")
+    if not paths:
+        print(f"{folder} 裡沒有 .gpx 檔（子資料夾不會讀），什麼都沒做", file=sys.stderr)
+        return 1
+
     failures = 0
     seen: set[str] = set()
-    for path in sorted(folder.glob("*.gpx")):
+    for path in paths:
         slug = path.stem
         data = path.read_bytes()
         if len(data) > max_bytes:

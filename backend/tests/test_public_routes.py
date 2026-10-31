@@ -90,3 +90,33 @@ def test_unknown_owner_fails(client, s3, session_factory, tmp_path):
     login(client, "valid:someone-else")
     assert _import(session_factory, s3, _write(tmp_path / "gpx", {"a.gpx": GPX})) == 1
     assert client.get("/api/v1/public-routes").json()["routes"] == []
+
+
+def test_empty_folder_fails_without_pruning(api, s3, session_factory, tmp_path, capsys):
+    _import(session_factory, s3, _write(tmp_path / "a", {"a.gpx": GPX}))
+    (tmp_path / "empty" / "nested").mkdir(parents=True)
+    (tmp_path / "empty" / "nested" / "b.gpx").write_bytes(GPX)
+    assert _import(session_factory, s3, tmp_path / "empty", prune=True) == 1
+    assert "沒有 .gpx" in capsys.readouterr().err
+    ids = [r["id"] for r in api.get("/api/v1/public-routes").json()["routes"]]
+    assert ids == ["a"]
+
+
+def test_uppercase_extension_is_imported(api, s3, session_factory, tmp_path):
+    _import(session_factory, s3, _write(tmp_path / "gpx", {"Yangjin.GPX": GPX}))
+    ids = [r["id"] for r in api.get("/api/v1/public-routes").json()["routes"]]
+    assert ids == ["Yangjin"]
+
+
+def test_original_firebase_file_names_are_kept(api, s3, session_factory, tmp_path):
+    # 原 Firebase 檔名常有空白、+、括號；前端以 encodeURIComponent 帶進網址
+    from urllib.parse import quote
+
+    names = ["冷水坑 + 陽金公路 + 小油坑", "[台北] Rapha 研究院路 貓空 堡嗝比漢堡"]
+    files = {f"{n}.gpx": GPX for n in names}
+    assert _import(session_factory, s3, _write(tmp_path / "gpx", files)) == 0
+    ids = sorted(r["id"] for r in api.get("/api/v1/public-routes").json()["routes"])
+    assert ids == sorted(names)
+    for n in names:
+        assert api.get(f"/api/v1/public-routes/{quote(n, safe='')}/gpx").status_code == 200
+        assert api.put(f"/api/v1/favorites/{quote(n, safe='')}").status_code == 204
