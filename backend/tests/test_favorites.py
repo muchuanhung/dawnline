@@ -5,11 +5,17 @@ from pathlib import Path
 from app.core.config import Settings, get_settings
 from app.scripts import import_public_routes
 from app.services.storage import GpxStorage
+from tests import test_routes
 from tests.conftest import login
-from tests.test_routes import BUCKET, GPX, api, s3, upload  # noqa: F401 - fixtures
+from tests.test_routes import BUCKET, GPX, upload
+
+# 共用 test_routes 的 fixture（假 S3、已登入 client）；用指派而非 import，
+# 測試參數同名時 ruff 才不會當成重複定義
+api = test_routes.api
+s3 = test_routes.s3
 
 
-def _publish(session_factory, s3, tmp_path: Path, *slugs: str) -> None:  # noqa: F811
+def _publish(session_factory, s3, tmp_path: Path, *slugs: str) -> None:
     folder = tmp_path / "gpx"
     folder.mkdir(exist_ok=True)
     for slug in slugs:
@@ -19,13 +25,13 @@ def _publish(session_factory, s3, tmp_path: Path, *slugs: str) -> None:  # noqa:
         db.commit()
 
 
-def _ids(api) -> list[str]:  # noqa: F811
+def _ids(api) -> list[str]:
     res = api.get("/api/v1/favorites")
     assert res.status_code == 200, res.text
     return [f["id"] for f in res.json()["favorites"]]
 
 
-def test_favorite_public_and_own_private(api, s3, session_factory, tmp_path):  # noqa: F811
+def test_favorite_public_and_own_private(api, s3, session_factory, tmp_path):
     _publish(session_factory, s3, tmp_path, "yangjin")
     private_id = upload(api, s3).json()["id"]
 
@@ -43,21 +49,21 @@ def test_favorite_public_and_own_private(api, s3, session_factory, tmp_path):  #
     assert _ids(api) == [private_id]
 
 
-def test_other_users_private_route_is_404(api, s3):  # noqa: F811
+def test_other_users_private_route_is_404(api, s3):
     private_id = upload(api, s3).json()["id"]
     login(api, "valid:uid-2")
     assert api.put(f"/api/v1/favorites/{private_id}").status_code == 404
     assert api.put("/api/v1/favorites/does-not-exist").status_code == 404
 
 
-def test_deleting_private_route_removes_favorite(api, s3):  # noqa: F811
+def test_deleting_private_route_removes_favorite(api, s3):
     private_id = upload(api, s3).json()["id"]
     api.put(f"/api/v1/favorites/{private_id}")
     assert api.delete(f"/api/v1/routes/{private_id}").status_code == 204
     assert _ids(api) == []
 
 
-def test_unpublished_public_route_disappears(api, s3, session_factory, tmp_path):  # noqa: F811
+def test_unpublished_public_route_disappears(api, s3, session_factory, tmp_path):
     _publish(session_factory, s3, tmp_path, "a", "b")
     api.put("/api/v1/favorites/a")
     api.put("/api/v1/favorites/b")
@@ -69,7 +75,7 @@ def test_unpublished_public_route_disappears(api, s3, session_factory, tmp_path)
     assert _ids(api) == ["a"]
 
 
-def test_favorite_limit(api, s3, session_factory, tmp_path):  # noqa: F811
+def test_favorite_limit(api, s3, session_factory, tmp_path):
     _publish(session_factory, s3, tmp_path, "a", "b")
     limited = Settings(
         database_url="sqlite://",
