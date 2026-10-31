@@ -25,8 +25,8 @@ interface State {
  * 私人路線列表、上傳、改名與刪除。
  * 後端 session（rc_session）過期時回 401：重新用 Firebase ID token 換 session 後重試一次。
  */
-/** 後端 session 過期（401）時重新換 session 後重試一次；列表與詳情共用 */
-function useSessionRetry() {
+/** 後端 session 過期（401）時重新換 session 後重試一次；列表、詳情與收藏共用 */
+export function useSessionRetry() {
   const { refreshSession } = useAuth();
   return useCallback(
     async <T,>(fn: () => Promise<T>): Promise<T> => {

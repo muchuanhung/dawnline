@@ -3,6 +3,8 @@
 import { useState, type Ref } from "react";
 import type { Route } from "@/lib/routes/route-data";
 import { RouteHeader } from "@/components/routes/route-header";
+import { FavoriteButton } from "@/components/routes/favorite-button";
+import type { Favorites } from "@/hooks/useFavorites";
 import { ReconView } from "@/components/routes/recon-view";
 import { RideAhead, needsPlacement } from "@/components/routes/ride-ahead";
 import { usePositionOnRoute } from "@/hooks/usePositionOnRoute";
@@ -22,6 +24,7 @@ export function RouteReconBody({
   trip,
   recon,
   headerRef,
+  favorites,
 }: {
   route: Route;
   /** 網址上的行程設定（出發時間 ISO、運動類型），未指定為 null */
@@ -29,6 +32,8 @@ export function RouteReconBody({
   recon: RouteRecon;
   /** 路線卡外層；手機往下捲過它後顯示懸浮路線列 */
   headerRef?: Ref<HTMLDivElement>;
+  /** 收藏狀態；提供時路線卡顯示星號 */
+  favorites?: Favorites;
 }) {
   const { briefing, cctv, radar, polyline, aheadKm, setAheadKm } = recon;
   const suggestion = briefing.briefing?.departureSuggestion;
@@ -54,6 +59,8 @@ export function RouteReconBody({
             speedLabel: `${speedLevelLabel(activity, speedKmh)} ${speedKmh} km/h`,
             onEdit: () => setSpeedOpen(true),
           }}
+          action={favorites ? <FavoriteButton routeId={route.id} favorites={favorites} /> : undefined}
+          actionError={favorites?.error}
         />
       </div>
       <ReconView

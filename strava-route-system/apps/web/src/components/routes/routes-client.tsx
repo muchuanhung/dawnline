@@ -11,6 +11,7 @@ import { useRoutesFromStorage } from "@/hooks/useRoutesFromStorage";
 import { RoutesLoading } from "@/components/routes/routes-loading";
 import { useRouteRecon } from "@/hooks/useRouteRecon";
 import { useRouteStatuses } from "@/hooks/useRouteStatuses";
+import { useFavorites } from "@/hooks/useFavorites";
 import { verdictOf } from "@/hooks/useRouteBriefing";
 import { cardStatusOf } from "@/lib/routes/route-statuses";
 import { RouteCard } from "@/components/routes/route-card";
@@ -37,6 +38,8 @@ export function RoutesClient({
   const [selectedId, setSelectedId] = useState(initialRouteId ?? "");
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState(ALL_TYPES);
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const favorites = useFavorites();
   const [mobileListOpen, setMobileListOpen] = useState(false);
   const [drawerLoading, setDrawerLoading] = useState(false);
   const [switchingRoute, setSwitchingRoute] = useState(false);
@@ -82,9 +85,15 @@ export function RoutesClient({
   // 類型篩選的選項依路線資料產生；選的類型已不在資料裡就退回「全部」
   const routeTypes = routeTypesOf(routes);
   const activeTypeFilter = effectiveTypeFilter(typeFilter, routeTypes);
+  // 「收藏」篩選：登入且清單裡至少有一條收藏才出現；取消到一條都不剩時自動關掉，不會卡在空清單
+  const hasFavorites = favorites.signedIn && routes.some((r) => favorites.isFavorite(r.id));
+  const onlyFavorites = favoritesOnly && hasFavorites;
+  const favoriteFilter = hasFavorites
+    ? { active: onlyFavorites, onToggle: () => setFavoritesOnly(!onlyFavorites) }
+    : undefined;
   const filteredRoutes = routes.filter((r) => {
     const matchesSearch = r.name.toLowerCase().includes(search.toLowerCase()) || r.nameZh.includes(search);
-    return matchesSearch && matchesTypeFilter(r.type, activeTypeFilter);
+    return matchesSearch && matchesTypeFilter(r.type, activeTypeFilter) && (!onlyFavorites || favorites.isFavorite(r.id));
   });
 
   function handleSelectRoute(id: string) {
@@ -104,17 +113,22 @@ export function RoutesClient({
     return (
       <div className="mx-auto flex min-h-[50dvh] max-w-sm flex-col items-center justify-center gap-4 text-center">
         <p className="text-sm text-destructive">{error}</p>
-        <p className="text-xs text-muted-foreground">請確認 Firebase Storage 已設定 gpx/routes/ 路徑，並已部署 Storage 規則</p>
+        <p className="text-xs text-muted-foreground">請稍後重新整理；持續發生請檢查後端公開路線 API</p>
       </div>
     );
   }
 
+  // No public routes (none imported yet, or the backend is unreachable): keep the tabs so signed-in users can still reach 我的路線
   if (routes.length === 0) {
     return (
-      <div className="mx-auto flex min-h-[50dvh] max-w-sm flex-col items-center justify-center gap-4 text-center">
-        <Bike className="size-12 text-muted-foreground/40" aria-hidden />
-        <p className="text-sm text-muted-foreground">尚無路線</p>
-        <p className="text-xs text-muted-foreground">請在 Firebase Storage 的 gpx/routes/ 資料夾上傳 .gpx 檔案</p>
+      <div className="space-y-6">
+        <h1 className="sr-only">路線</h1>
+        <RoutesTabs current="explore" />
+        <div className="mx-auto flex min-h-[40dvh] max-w-sm flex-col items-center justify-center gap-4 text-center">
+          <Bike className="size-12 text-muted-foreground/40" aria-hidden />
+          <p className="text-sm text-muted-foreground">目前沒有公開路線</p>
+          <p className="text-xs text-muted-foreground">路線資料暫時讀不到，請稍後重新整理</p>
+        </div>
       </div>
     );
   }
@@ -127,6 +141,7 @@ export function RoutesClient({
     statusOverride: (route.id === selectedRoute?.id ? selectedCardStatus : undefined) ?? listStatusOf(route.id) ?? null,
     // 與路線卡同一套預估（含爬升、自訂均速），清單與詳情的時間才一致
     timeLabel: formatDuration(sumHours(routeEstimate(route, trip))),
+    favorite: favorites.isFavorite(route.id),
   });
 
   return (
@@ -142,7 +157,7 @@ export function RoutesClient({
           <RoutesTabs current="explore" className="sm:w-full" />
         </div>
         <div className="border-b border-border p-4">
-          <RouteFilters search={search} onSearch={setSearch} types={routeTypes} typeFilter={activeTypeFilter} onFilter={setTypeFilter} />
+          <RouteFilters search={search} onSearch={setSearch} types={routeTypes} typeFilter={activeTypeFilter} onFilter={setTypeFilter} favoriteFilter={favoriteFilter} />
         </div>
         {/* 側欄只有 max-height，Radix ScrollArea 的 viewport（height: 100%）會撐成內容高度而無法捲動；改用原生捲動 */}
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -194,7 +209,7 @@ export function RoutesClient({
                   </div>
                 ) : (
                   <div className="space-y-3">
-                      <RouteFilters search={search} onSearch={setSearch} types={routeTypes} typeFilter={activeTypeFilter} onFilter={setTypeFilter} />
+                      <RouteFilters search={search} onSearch={setSearch} types={routeTypes} typeFilter={activeTypeFilter} onFilter={setTypeFilter} favoriteFilter={favoriteFilter} />
                       <div className="space-y-2">
                         {filteredRoutes.map((route, i) => (
                           <RouteCard key={route.id} {...cardProps(route, i)} />
@@ -224,7 +239,7 @@ export function RoutesClient({
               transition={{ duration: 0.25 }}
               className="w-full min-w-0 space-y-5"
             >
-              <RouteReconBody route={selectedRoute} trip={trip} recon={recon} headerRef={setRouteHeaderEl} />
+              <RouteReconBody route={selectedRoute} trip={trip} recon={recon} headerRef={setRouteHeaderEl} favorites={favorites} />
             </motion.div>
           )}
         </AnimatePresence>

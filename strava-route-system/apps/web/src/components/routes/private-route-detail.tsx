@@ -9,6 +9,7 @@ import { RouteReconBody } from "@/components/routes/route-recon-body";
 import { RouteStickyBar } from "@/components/routes/route-sticky-bar";
 import { usePrivateRoute } from "@/hooks/usePrivateRoutes";
 import { useRouteRecon } from "@/hooks/useRouteRecon";
+import { useFavorites } from "@/hooks/useFavorites";
 import type { PageTrip } from "@/lib/routes/trip";
 import { cn } from "@/lib/utils";
 
@@ -34,6 +35,8 @@ export function PrivateRouteDetail({
   const recon = useRouteRecon(route, trip, PRIVATE_BRIEFING_ENDPOINT);
   // 路線卡：手機往下捲過它後，頂部改顯示懸浮列（路線名＋回我的路線）
   const [routeHeaderEl, setRouteHeaderEl] = useState<HTMLDivElement | null>(null);
+  // 自己的私人路線也能收藏（id 是 ULID，後端只認自己的）
+  const favorites = useFavorites();
 
   const backLink = embedded ? null : (
     <Button asChild variant="ghost" size="sm" className="-ml-2 gap-1">
@@ -65,7 +68,7 @@ export function PrivateRouteDetail({
         <RouteStickyBar anchor={routeHeaderEl} route={route} status={recon.status} listHref="/routes/private" />
       )}
       {backLink}
-      <RouteReconBody route={route} trip={trip} recon={recon} headerRef={setRouteHeaderEl} />
+      <RouteReconBody route={route} trip={trip} recon={recon} headerRef={setRouteHeaderEl} favorites={favorites} />
     </div>
   );
 }

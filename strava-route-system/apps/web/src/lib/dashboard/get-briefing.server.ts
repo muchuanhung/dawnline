@@ -8,7 +8,6 @@
 import { loadRoutes } from "@/lib/routes/load-routes.server";
 import type { Route } from "@/lib/routes/route-data";
 import type { RouteStatusEntry } from "@/lib/routes/route-statuses";
-import { demoRoadEvents } from "@/lib/routes/demo-route";
 import type { RoadEvent } from "@/lib/routes/road-events";
 import type { Activity } from "@/lib/routes/trip";
 import type { StationRain } from "@/lib/cwb/rainfall-stations";
@@ -209,8 +208,7 @@ async function briefRoutes(routes: Route[], trip: TripOptions = {}, suggestFor?:
   const eventsFailed = eventsResult ? eventsResult.failed : null;
   const briefings = routes.map((route) =>
     briefRoute(route, withRouteObservedRain(route, lookup, stationsByCounty), {
-      // 示意路線另加假事件；真實路線只看 TDX
-      events: route.demo ? [...(eventsResult?.events ?? []), ...demoRoadEvents(route, now)] : (eventsResult?.events ?? []),
+      events: eventsResult?.events ?? [],
       now,
       departure: trip.departure ?? now,
       activity: trip.activity,

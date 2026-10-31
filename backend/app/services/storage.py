@@ -62,6 +62,10 @@ class GpxStorage:
         obj = self.client.get_object(Bucket=self.bucket, Key=key)
         return obj["Body"].read()
 
+    def put(self, key: str, data: bytes) -> None:
+        """直接寫檔（匯入公開路線用；使用者上傳仍走 presigned POST）。"""
+        self.client.put_object(Bucket=self.bucket, Key=key, Body=data, ContentType=GPX_CONTENT_TYPE)
+
     def presign_download(self, key: str, filename: str, expires: int) -> str:
         # 中文檔名用 RFC 5987 的 filename*
         disposition = f"attachment; filename*=UTF-8''{quote(filename)}"
