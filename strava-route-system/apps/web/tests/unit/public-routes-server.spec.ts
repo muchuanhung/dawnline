@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { fetchPublicRoutesFromBackend } from "@/lib/routes/public-routes.server";
-import { demoRouteGpx } from "@/lib/routes/demo-route";
+import { sampleGpx } from "./fixtures/sample-gpx";
 
 const BACKEND = "https://api.example.test";
 const S3 = (slug: string) => `https://bucket.s3.example.test/${slug}.gpx?sig=1`;
@@ -43,7 +43,7 @@ test.describe("fetchPublicRoutesFromBackend", () => {
       if (url === `${BACKEND}/api/v1/public-routes/yangjin/gpx`) return json({ url: S3("yangjin") });
       if (url === `${BACKEND}/api/v1/public-routes/wuling/gpx`) return json({ url: S3("wuling") });
       if (url === `${BACKEND}/api/v1/public-routes/${encodeURIComponent("壞掉")}/gpx`) return json({}, 404);
-      if (url.startsWith("https://bucket.")) return new Response(demoRouteGpx());
+      if (url.startsWith("https://bucket.")) return new Response(sampleGpx());
       return new Response("unexpected", { status: 500 });
     });
     try {
@@ -55,7 +55,7 @@ test.describe("fetchPublicRoutesFromBackend", () => {
     }
   });
 
-  test("清單失敗丟錯（loadRoutes 收成只剩示意路線）", async () => {
+  test("清單失敗丟錯（loadRoutes 收成空清單）", async () => {
     process.env.BACKEND_API_URL = BACKEND;
     const m = mockFetch(() => json({}, 503));
     try {

@@ -3,7 +3,6 @@
 import type { ReactNode } from "react";
 import { motion } from "framer-motion";
 import { Pencil } from "lucide-react";
-import { DemoNotice } from "@/components/verdict/demo-notice";
 import type { Route } from "@/lib/routes/route-data";
 import type { VerdictLevel } from "@/lib/routes/recon-geo";
 import { ROUTE_TYPE_ICONS } from "@/constants";
@@ -92,7 +91,6 @@ export function RouteHeader({ route, departureLabel, estimate, action, actionErr
         </button>
       )}
 
-      {route.demo && <DemoNotice />}
     </motion.div>
   );
 }

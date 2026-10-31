@@ -35,7 +35,7 @@ export async function Briefing({
     return (
       <section className="rounded-2xl border border-dashed border-border bg-card p-8 text-center">
         <h2 className="text-lg font-bold">目前沒有可判讀的路線</h2>
-        <p className="mt-2 text-sm text-muted-foreground">路線資料尚未建立，請稍後再回來看看。</p>
+        <p className="mt-2 text-sm text-muted-foreground">路線資料暫時讀不到，請稍後再回來看看。</p>
       </section>
     );
   }

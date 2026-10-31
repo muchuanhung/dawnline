@@ -51,7 +51,7 @@ async function loadOne(base: string, meta: PublicRouteMeta): Promise<Route | nul
 
 /**
  * 全部公開路線（依名稱排序）。公開路線只有後端這一個來源，沒有備援。
- * - 未設定 BACKEND_API_URL 或清單讀取失敗直接丟錯（loadRoutes 收成只剩示意路線，判讀不會因此變成安全）；
+ * - 未設定 BACKEND_API_URL 或清單讀取失敗直接丟錯（loadRoutes 收成空清單，判讀不會因此變成安全）；
  * - 個別 GPX 失敗只略過那一條。
  */
 export async function fetchPublicRoutesFromBackend(): Promise<Route[]> {

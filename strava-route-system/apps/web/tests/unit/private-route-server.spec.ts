@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { loadPrivateRoute, PrivateRouteError } from "@/lib/routes/private-route.server";
-import { demoRouteGpx } from "@/lib/routes/demo-route";
+import { sampleGpx } from "./fixtures/sample-gpx";
 
 const ID = "01JABCDEFGHJKMNPQRSTVWXYZ0";
 const BACKEND = "https://api.example.test";
@@ -37,7 +37,7 @@ test.describe("loadPrivateRoute", () => {
     const m = mockFetch((url) => {
       if (url === `${BACKEND}/api/v1/routes`) return json(listOf());
       if (url === `${BACKEND}/api/v1/routes/${ID}/gpx`) return json({ url: S3_URL });
-      if (url === S3_URL) return new Response(demoRouteGpx());
+      if (url === S3_URL) return new Response(sampleGpx());
       return new Response("unexpected", { status: 500 });
     });
     try {

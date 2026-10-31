@@ -44,7 +44,7 @@ export function UserMenu({ active }: { active: boolean }) {
     // 沒有快取（第一次來、或伺服器渲染）：靜態佔位，和名牌同尺寸，避免載入完把版面推開
     return <div aria-hidden className="h-10 w-32 rounded-full border border-border bg-card" />;
   }
-  // Auth resolved with no user (e.g. guest browsing the demo route): offer sign-in instead of a spinner that never ends
+  // Auth resolved with no user (e.g. guest browsing public routes): offer sign-in instead of a spinner that never ends
   if (!user) {
     return (
       <Button asChild variant="outline" className="h-10 rounded-full px-4">

@@ -242,7 +242,7 @@ sudo docker run --rm amazon/aws-cli s3 cp s3://dawnline-gpx/backups/velorder-<�
 
 公開路線（原 Firebase Storage `gpx/routes/`）存在同一張 `routes` 表（`visibility='public'`），
 GPX 放在匯入者的 `users/{id}/routes/` 底下，所以 §5 的 instance role 權限不用改。檔名（去掉 `.gpx`）就是前端的路線 id。
-前端只讀後端，沒有 Firebase 備援：T6 合併、部署完成後要馬上匯入，否則公開路線頁只剩示意路線。匯入並確認正式站正常後，Firebase Storage 的 `gpx/routes/` 可以刪除。
+前端只讀後端，沒有 Firebase 備援：T6 合併、部署完成後要馬上匯入，否則公開路線頁是空的。匯入並確認正式站正常後，Firebase Storage 的 `gpx/routes/` 可以刪除。
 
 1. 從 Firebase Console → Storage → `gpx/routes/` 下載全部 GPX，放到本機資料夾（例如 `public-gpx/`），檔名不要改。
 2. 用要掛名的帳號在網站登入一次（`users` 才有這筆），到 Firebase Console → Authentication 抄下 UID。

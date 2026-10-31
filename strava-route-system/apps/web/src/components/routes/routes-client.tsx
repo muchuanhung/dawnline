@@ -118,12 +118,17 @@ export function RoutesClient({
     );
   }
 
+  // No public routes (none imported yet, or the backend is unreachable): keep the tabs so signed-in users can still reach 我的路線
   if (routes.length === 0) {
     return (
-      <div className="mx-auto flex min-h-[50dvh] max-w-sm flex-col items-center justify-center gap-4 text-center">
-        <Bike className="size-12 text-muted-foreground/40" aria-hidden />
-        <p className="text-sm text-muted-foreground">尚無路線</p>
-        <p className="text-xs text-muted-foreground">公開路線由後端匯入腳本上傳（見 backend/docs/deploy-aws.md §7a）</p>
+      <div className="space-y-6">
+        <h1 className="sr-only">路線</h1>
+        <RoutesTabs current="explore" />
+        <div className="mx-auto flex min-h-[40dvh] max-w-sm flex-col items-center justify-center gap-4 text-center">
+          <Bike className="size-12 text-muted-foreground/40" aria-hidden />
+          <p className="text-sm text-muted-foreground">目前沒有公開路線</p>
+          <p className="text-xs text-muted-foreground">路線資料暫時讀不到，請稍後重新整理</p>
+        </div>
       </div>
     );
   }

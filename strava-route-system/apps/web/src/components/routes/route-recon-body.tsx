@@ -32,7 +32,7 @@ export function RouteReconBody({
   recon: RouteRecon;
   /** 路線卡外層；手機往下捲過它後顯示懸浮路線列 */
   headerRef?: Ref<HTMLDivElement>;
-  /** 收藏狀態；提供時路線卡顯示星號（示意路線不能收藏） */
+  /** 收藏狀態；提供時路線卡顯示星號 */
   favorites?: Favorites;
 }) {
   const { briefing, cctv, radar, polyline, aheadKm, setAheadKm } = recon;
@@ -59,7 +59,7 @@ export function RouteReconBody({
             speedLabel: `${speedLevelLabel(activity, speedKmh)} ${speedKmh} km/h`,
             onEdit: () => setSpeedOpen(true),
           }}
-          action={favorites && !route.demo ? <FavoriteButton routeId={route.id} favorites={favorites} /> : undefined}
+          action={favorites ? <FavoriteButton routeId={route.id} favorites={favorites} /> : undefined}
           actionError={favorites?.error}
         />
       </div>
