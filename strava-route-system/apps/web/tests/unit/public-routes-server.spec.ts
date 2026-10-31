@@ -50,7 +50,7 @@ test.describe("fetchPublicRoutesFromBackend", () => {
     try {
       const routes = await fetchPublicRoutesFromBackend();
       expect(routes?.map((r) => r.id).sort()).toEqual(["wuling", "yangjin"]);
-      expect(routes?.[0].segments.length).toBeGreaterThan(0);
+      expect(routes?.[0]?.segments.length).toBeGreaterThan(0);
     } finally {
       m.restore();
     }
