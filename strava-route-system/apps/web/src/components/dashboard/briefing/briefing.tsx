@@ -1,8 +1,10 @@
 import { Suspense } from "react";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { loadRoutes } from "@/lib/routes/load-routes.server";
 import { briefLoadedRoute } from "@/lib/dashboard/get-briefing.server";
 import { loadMyRoutes } from "@/lib/dashboard/my-routes.server";
+import { applyOrder } from "@/lib/dashboard/my-routes";
+import { PUBLIC_ORDER_COOKIE, parseOrderCookie } from "@/lib/dashboard/route-order";
 import { loadPrivateRoute } from "@/lib/routes/private-route.server";
 import { cachedParsedGpx } from "@/lib/routes/private-gpx-cache.server";
 import type { Route } from "@/lib/routes/route-data";
@@ -60,7 +62,8 @@ export async function Briefing({
   /** 已登入：切換列改放收藏與自己的路線（T8），也能判讀私人路線 */
   signedIn?: boolean;
 }) {
-  const routes = await loadRoutes();
+  // 公開路線依這台裝置的自訂順序（cookie，未登入也能排）；沒排過就是 loadRoutes 的名稱排序
+  const routes = applyOrder(await loadRoutes(), parseOrderCookie((await cookies()).get(PUBLIC_ORDER_COOKIE)?.value));
   // 只有登入時才把 cookie 轉給後端；null 代表不嘗試私人路線
   const cookie = signedIn ? ((await headers()).get("cookie") ?? "") : null;
   // null：未登入或讀不到 → 照舊顯示公開路線；[]：登入但還沒有收藏或上傳
@@ -118,7 +121,13 @@ export async function Briefing({
             elevationGainM: current.elevationGain,
           }}
         />
-        <RouteSwitcher routes={switcherRoutes} currentId={current.id} trip={tripParams} mine={useMine} />
+        {/* 我的路線排序存帳號（跨裝置）；公開路線排序存這台裝置的 cookie */}
+        <RouteSwitcher
+          routes={switcherRoutes}
+          currentId={current.id}
+          trip={tripParams}
+          sortStorage={useMine ? "account" : "device"}
+        />
         {mine?.length === 0 && (
           <p className="text-sm text-muted-foreground">
             還沒有收藏或上傳的路線：在路線頁按 ☆ 收藏，或上傳自己的 GPX，這裡就會換成你的路線。

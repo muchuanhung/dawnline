@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Star } from "lucide-react";
+import { Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { withTrip, type TripParams } from "@/lib/routes/trip";
 import { MyRoutesMore } from "./my-routes-more";
@@ -27,20 +27,22 @@ const CHIP =
 
 /**
  * 路線切換：純連結（?route=），可分享、可上一頁，不需客戶端狀態。
- * mine：登入後的「我的路線」（收藏＋自己上傳，T8）：超過 MAX_CHIPS 條時最後一顆就地展開全部，
- * 沒超過時附「全部路線」連到路線頁；一條也顯示。
+ * 最後一顆「全部 N 條」就地展開完整清單，可選路線、拖曳排序（T8）：
+ * - sortStorage "account"：登入後的「我的路線」（收藏＋自己上傳），順序存帳號，一條也顯示；
+ * - sortStorage "device"：公開路線（未登入或還沒有我的路線），順序存這台裝置的 cookie。
  */
 export function RouteSwitcher({
   routes,
   currentId,
   trip,
-  mine = false,
+  sortStorage,
 }: {
   routes: SwitcherRoute[];
   currentId: string;
   trip: TripParams;
-  mine?: boolean;
+  sortStorage: "account" | "device";
 }) {
+  const mine = sortStorage === "account";
   if (!mine && routes.length < 2) return null;
   const shown = visibleRoutes(routes, currentId);
   return (
@@ -68,24 +70,16 @@ export function RouteSwitcher({
             </li>
           );
         })}
-        {/* 我的路線超過可見數量：就地展開全部，不離開 Dashboard */}
-        {mine && routes.length > shown.length ? (
-          <li>
-            <MyRoutesMore
-              routes={routes}
-              currentId={currentId}
-              trip={trip}
-              chipClassName={cn(CHIP, "gap-1 border-dashed border-border text-primary hover:bg-muted/50")}
-            />
-          </li>
-        ) : (mine || routes.length > shown.length) && (
-          <li>
-            <Link href={withTrip("/routes", trip)} className={cn(CHIP, "gap-1 border-dashed border-border text-primary hover:bg-muted/50")}>
-              {mine ? "全部路線" : `全部 ${routes.length} 條路線`}
-              <ArrowRight className="size-3.5" aria-hidden />
-            </Link>
-          </li>
-        )}
+        {/* 就地展開全部（選路線、拖曳排序），不離開 Dashboard；路線頁入口在面板底部 */}
+        <li>
+          <MyRoutesMore
+            routes={routes}
+            currentId={currentId}
+            trip={trip}
+            storage={sortStorage}
+            chipClassName={cn(CHIP, "gap-1 border-dashed border-border text-primary hover:bg-muted/50")}
+          />
+        </li>
       </ul>
     </nav>
   );

@@ -11,25 +11,29 @@ import { cn } from "@/lib/utils";
 import { withTrip, type TripParams } from "@/lib/routes/trip";
 import { MY_ROUTES_MAX } from "@/lib/dashboard/my-routes";
 import { saveRouteOrder } from "@/lib/dashboard/route-order";
+import { savePublicOrder } from "@/lib/dashboard/public-order-storage";
 import { useSessionRetry } from "@/hooks/usePrivateRoutes";
 import type { SwitcherRoute } from "./route-switcher";
 
 const DESKTOP_QUERY = "(min-width: 1024px)";
 
 /**
- * 「我的路線」切換列最後一顆：就地展開全部收藏與自己上傳的路線，選了直接換判讀，不必離開 Dashboard。
+ * 切換列最後一顆：就地展開全部路線（我的路線或公開路線），選了直接換判讀、可拖曳排序，不必離開 Dashboard。
  * 桌機為下拉面板、手機為底部 Drawer（與 SpeedSheet 相同的切換方式），內容相同。
+ * storage：account 存帳號（後端，跨裝置）；device 存這台裝置的 cookie（未登入的公開路線）。
  */
 export function MyRoutesMore({
   routes,
   currentId,
   trip,
+  storage,
   chipClassName,
 }: {
-  /** 全部我的路線（收藏在前），不只切換列上看得到的 5 條 */
+  /** 全部路線（已依自訂順序），不只切換列上看得到的 5 條 */
   routes: SwitcherRoute[];
   currentId: string;
   trip: TripParams;
+  storage: "account" | "device";
   chipClassName: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -53,14 +57,20 @@ export function MyRoutesMore({
     </button>
   );
   /**
-   * 拖曳放開後存到後端（跨裝置同步），再重新整理伺服器資料讓切換列的前幾顆跟著換。
-   * 失敗時也重新整理：清單回到後端的順序，並顯示一句錯誤。
+   * 拖曳放開後存檔（帳號：後端；裝置：cookie），再重新整理伺服器資料讓切換列的前幾顆跟著換。
+   * 失敗時也重新整理：清單回到已存的順序，並顯示一句錯誤。
    */
   const saveOrder = (ids: string[]) => {
     if (ids.join("|") === routes.map((r) => r.id).join("|")) return;
     setSaveError(null);
+    const failed = () => setSaveError("排序沒有存到，請再試一次");
+    if (storage === "device") {
+      if (!savePublicOrder(ids)) failed();
+      router.refresh();
+      return;
+    }
     withSessionRetry(() => saveRouteOrder(ids))
-      .catch(() => setSaveError("排序沒有存到，請再試一次"))
+      .catch(failed)
       .finally(() => router.refresh());
   };
   const body = (
@@ -71,6 +81,7 @@ export function MyRoutesMore({
       onPick={() => setOpen(false)}
       onReorder={saveOrder}
       error={saveError}
+      footerLabel={storage === "account" ? "到路線頁看更多、管理收藏" : "到路線頁看更多"}
     />
   );
 
@@ -90,7 +101,7 @@ export function MyRoutesMore({
       <Drawer open={open} onOpenChange={setOpen}>
         <DrawerContent className="bg-card pb-[calc(env(safe-area-inset-bottom)+1rem)]">
           <DrawerHeader className="text-left">
-            <DrawerTitle className="text-foreground">我的路線</DrawerTitle>
+            <DrawerTitle className="text-foreground">{storage === "account" ? "我的路線" : "公開路線"}</DrawerTitle>
             <DrawerDescription>選一條看今日判讀</DrawerDescription>
           </DrawerHeader>
           <div className="max-h-[60vh] overflow-y-auto px-2">{body}</div>
@@ -112,6 +123,7 @@ function MyRoutesList({
   onPick,
   onReorder,
   error,
+  footerLabel,
 }: {
   routes: SwitcherRoute[];
   currentId: string;
@@ -121,16 +133,19 @@ function MyRoutesList({
   onReorder: (ids: string[]) => void;
   /** 最近一次存檔失敗的訊息 */
   error: string | null;
+  footerLabel: string;
 }) {
   const [items, setItems] = useState(routes);
   // Server data changed (new favourite, refresh after save): start from it again
   useEffect(() => setItems(routes), [routes]);
+  // Leave a star-sized gap on non-favourites only when some row has a star, so names line up
+  const hasStars = routes.some((r) => r.mark === "favorite");
   // Latest order for onDragEnd, which may fire with a closure from before the last reorder
   const latest = useRef(items);
   latest.current = items;
 
   return (
-    <nav aria-label="我的路線">
+    <nav aria-label="全部路線">
       <p className="px-3 py-1.5 text-xs text-muted-foreground">按住 ⋮⋮ 拖曳調整順序，前 {MY_ROUTES_MAX} 條顯示在上方</p>
       {error && (
         <p role="alert" className="px-3 pb-1.5 text-xs font-medium text-destructive">
@@ -148,6 +163,7 @@ function MyRoutesList({
             onPick={onPick}
             onDragEnd={() => onReorder(latest.current.map((x) => x.id))}
             dividerAfter={i === MY_ROUTES_MAX - 1 && items.length > MY_ROUTES_MAX}
+            alignStars={hasStars}
           />
         ))}
       </Reorder.Group>
@@ -157,7 +173,7 @@ function MyRoutesList({
           onClick={onPick}
           className="flex min-h-11 items-center gap-1 rounded-lg px-2 text-sm font-medium text-primary hover:bg-muted"
         >
-          到路線頁管理收藏與上傳
+          {footerLabel}
           <ArrowRight className="size-3.5" aria-hidden />
         </Link>
       </div>
@@ -172,6 +188,7 @@ function SortableRow({
   onPick,
   onDragEnd,
   dividerAfter,
+  alignStars,
 }: {
   route: SwitcherRoute;
   active: boolean;
@@ -180,6 +197,8 @@ function SortableRow({
   onDragEnd: () => void;
   /** 第 MY_ROUTES_MAX 條下方畫分隔線：線上方的路線出現在切換列 */
   dividerAfter: boolean;
+  /** 清單裡有收藏時，沒星號的列留同寬空位 */
+  alignStars: boolean;
 }) {
   const controls = useDragControls();
   return (
@@ -198,11 +217,11 @@ function SortableRow({
           aria-current={active ? "page" : undefined}
           className={cn("flex min-h-11 min-w-0 flex-1 items-center gap-2.5 pl-3 text-sm", active && "font-semibold")}
         >
-          {/* 收藏才有星號；自己上傳的留同寬空位，名稱對齊 */}
+          {/* 收藏才有星號；清單有收藏時其他列留同寬空位，名稱對齊 */}
           {r.mark === "favorite" ? (
             <Star className="size-4 shrink-0 fill-amber-400 text-amber-400" aria-label="收藏" />
           ) : (
-            <span className="size-4 shrink-0" aria-hidden />
+            alignStars && <span className="size-4 shrink-0" aria-hidden />
           )}
           <span className="min-w-0 flex-1 truncate">{r.name}</span>
           {active && <Check className="size-4 shrink-0 text-primary" aria-label="目前路線" />}
