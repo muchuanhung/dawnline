@@ -2,7 +2,7 @@
  * CWA 雷達合成回波：伺服器端列出歷史檔、把格點畫成透明 PNG
  * 資料放在 CWA 公開 S3（與 Vercel hnd1 同在東京），不需要金鑰。
  * 每筆 XML 約 9 MB，畫好的圖依時間戳快取：同一張圖內容不會再變，CDN 也能長期快取。
- * 只供顯示，不進判讀（briefing 不會呼叫這裡）。
+ * 雷達回波只供顯示；判讀只用 getRainNowcastGrid（未來 1 小時降雨預報的格點）來判斷沿線雨量大小。
  */
 
 import sharp from "sharp";
@@ -35,6 +35,15 @@ const FRAME_CACHE_SIZE = 14;
 let listCache: { frames: RadarFrame[]; fetchedAt: number } | null = null;
 /** 最新一筆降雨預報：畫好的圖跟著存，清單與圖用同一份，不會對不上 */
 let nowcastCache: { frame: NowcastFrame; png: Buffer; fetchedAt: number } | null = null;
+/** 判讀用的降雨預報格點；與畫圖共用同一次下載（約 2.7 MB） */
+let nowcastGridCache: { grid: RainNowcastGrid; fetchedAt: number } | null = null;
+let nowcastGridJob: Promise<RainNowcastGrid> | null = null;
+
+export interface RainNowcastGrid {
+  /** 預報起點（ISO，台灣時間），涵蓋之後 1 小時 */
+  issuedAt: string;
+  values: Float32Array;
+}
 const frameCache = new Map<string, Promise<Buffer>>();
 
 /** S3 ListObjectsV2 的物件名稱（一天約 300 筆，不會超過單頁 1000 筆） */
@@ -63,16 +72,35 @@ function encode(rgba: Uint8Array): Promise<Buffer> {
     .toBuffer();
 }
 
-/** 最新的未來 1 小時降雨預報；觀測時間由呼叫端判斷是否過期 */
+/**
+ * 最新的未來 1 小時降雨預報格點；預報起點由呼叫端判斷是否過期。
+ * 同一 instance 內 LIST_REUSE_MS 內重用，同時間的請求共用一次下載。
+ */
+export function getRainNowcastGrid(now = Date.now(), timeoutMs = FRAME_TIMEOUT_MS): Promise<RainNowcastGrid> {
+  if (nowcastGridCache && now - nowcastGridCache.fetchedAt < LIST_REUSE_MS) return Promise.resolve(nowcastGridCache.grid);
+  nowcastGridJob ??= (async () => {
+    try {
+      const res = await fetch(`${BUCKET}/${NOWCAST}`, { cache: "no-store", signal: AbortSignal.timeout(timeoutMs) });
+      if (!res.ok) throw new Error(`降雨預報 ${res.status}`);
+      const { observedAt, values } = parseRainNowcast(await res.text());
+      const grid = { issuedAt: observedAt, values };
+      nowcastGridCache = { grid, fetchedAt: Date.now() };
+      return grid;
+    } finally {
+      nowcastGridJob = null;
+    }
+  })();
+  return nowcastGridJob;
+}
+
+/** 最新的未來 1 小時降雨預報圖；觀測時間由呼叫端判斷是否過期 */
 export async function getRainNowcast(now = Date.now()): Promise<{ frame: NowcastFrame; png: Buffer }> {
   if (nowcastCache && now - nowcastCache.fetchedAt < LIST_REUSE_MS) return nowcastCache;
-  const res = await fetch(`${BUCKET}/${NOWCAST}`, { cache: "no-store", signal: AbortSignal.timeout(FRAME_TIMEOUT_MS) });
-  if (!res.ok) throw new Error(`降雨預報 ${res.status}`);
-  const { observedAt, values } = parseRainNowcast(await res.text());
-  const id = nowcastFrameId(observedAt);
-  if (!id) throw new Error(`降雨預報時間格式不對：${observedAt}`);
+  const { issuedAt, values } = await getRainNowcastGrid(now);
+  const id = nowcastFrameId(issuedAt);
+  if (!id) throw new Error(`降雨預報時間格式不對：${issuedAt}`);
   const png = nowcastCache?.frame.id === id ? nowcastCache.png : await encode(renderNowcastRegion(values));
-  nowcastCache = { frame: { id, issuedAt: observedAt }, png, fetchedAt: now };
+  nowcastCache = { frame: { id, issuedAt }, png, fetchedAt: now };
   return nowcastCache;
 }
 
