@@ -8,7 +8,6 @@ import { AccountInfo } from "@/components/profile/account-info";
 import { PasswordChange } from "@/components/profile/password-change";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSignOut } from "@/components/auth/sign-out-button";
-import { getProxiedAvatarUrl } from "@/lib/avatar";
 function formatJoinedDate(creationTime: string | undefined): string {
   if (!creationTime) return "—";
   return new Date(creationTime).toLocaleDateString("en-US", { month: "long", year: "numeric" });
@@ -44,7 +43,6 @@ export function ProfileContent() {
       <ProfileHeader
         name={user?.displayName ?? "使用者"}
         email={user?.email ?? ""}
-        avatarUrl={getProxiedAvatarUrl(user?.photoURL)}
         joinedDate={formatJoinedDate(user?.metadata?.creationTime)}
       />
 

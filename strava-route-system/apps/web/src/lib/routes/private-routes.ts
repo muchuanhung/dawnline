@@ -155,8 +155,8 @@ export function listPrivateRoutes(): Promise<PrivateRouteList> {
   return request<PrivateRouteList>("");
 }
 
-/** multipart POST 到 S3 並回報上傳百分比；網路中斷丟 network_error */
-function postFormWithProgress(
+/** multipart POST 到 S3 並回報上傳百分比；網路中斷丟 network_error（頭像上傳也共用） */
+export function postFormWithProgress(
   url: string,
   form: FormData,
   onPercent: (percent: number) => void
