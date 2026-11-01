@@ -13,6 +13,7 @@ import type { Activity } from "@/lib/routes/trip";
 import type { StationRain } from "@/lib/cwb/rainfall-stations";
 import { normalizeCountyForCWB } from "@/lib/cwb/county-map";
 import { getCountyRainfallStations, getDistrictWeather } from "@/lib/cwb/district-weather.server";
+import { getRainNowcastGrid } from "@/lib/cwb/radar.server";
 import { tdxCityCode } from "@/lib/tdx/client";
 import { getRoadEventsByCounty, type RoadEventsResult } from "@/lib/tdx/road-events.server";
 import { readBriefingInputs, writeBriefingInputs } from "@/lib/background/briefing-inputs.firestore";
@@ -22,8 +23,10 @@ import {
   briefRoute,
   mapCwbCondition,
   routeDistrictKeys,
+  withRouteNowcast,
   withRouteObservedRain,
   type DistrictWeather,
+  type RainNowcastInput,
   type RouteBriefing,
 } from "@/lib/dashboard/briefing";
 
@@ -88,6 +91,7 @@ function toDistrictWeather(w: Awaited<ReturnType<typeof getDistrictWeather>>): D
     periodLabel: first ? `${first.label}–${first.endLabel}` : null,
     rainfallBuckets: w.rainfall12h,
     windBuckets: w.windBuckets,
+    weatherTextBuckets: w.weatherTextBuckets,
     stale: w.stale,
   };
 }
@@ -201,13 +205,32 @@ export async function refreshBriefingInputs(): Promise<{ inputs: number; eventsF
   return { inputs: total, eventsFailed: eventsResult ? eventsResult.failed : null };
 }
 
+/** 判讀等降雨預報的上限；比畫圖用的短，取不到就照降雨機率判，不拖慢判讀 */
+const NOWCAST_TIMEOUT_MS = 5_000;
+
+/**
+ * 未來 1 小時降雨預報格點（降雨信心用）。取不到回 null：判讀維持只看降雨機率，不會因此判成安全。
+ * 格點約 2.7 MB、每 10 分鐘更新，不存 Firestore，同一 instance 內由 radar.server 快取。
+ */
+async function loadRainNowcast(): Promise<RainNowcastInput | null> {
+  try {
+    return await getRainNowcastGrid(Date.now(), NOWCAST_TIMEOUT_MS);
+  } catch (e) {
+    reportError("cwb", "rain-nowcast-unavailable", e);
+    return null;
+  }
+}
+
 /** suggestFor：只替這條路線試算建議出發時段（畫面只顯示目前路線的建議） */
 async function briefRoutes(routes: Route[], trip: TripOptions = {}, suggestFor?: string) {
-  const { lookup, eventsResult, stationsByCounty } = await loadBriefingInputs(routes);
+  const [{ lookup, eventsResult, stationsByCounty }, nowcast] = await Promise.all([
+    loadBriefingInputs(routes),
+    loadRainNowcast(),
+  ]);
   const now = new Date();
   const eventsFailed = eventsResult ? eventsResult.failed : null;
   const briefings = routes.map((route) =>
-    briefRoute(route, withRouteObservedRain(route, lookup, stationsByCounty), {
+    briefRoute(route, withRouteNowcast(route, withRouteObservedRain(route, lookup, stationsByCounty), nowcast, now), {
       events: eventsResult?.events ?? [],
       now,
       departure: trip.departure ?? now,

@@ -1,5 +1,5 @@
 /**
- * 依預估抵達時間（ETA）挑選 CWB 降雨機率、風速時段
+ * 依預估抵達時間（ETA）挑選 CWB 降雨機率、風速、天氣現象時段
  * 不依賴 React 與伺服器，Dashboard 判讀與路線偵察共用。
  */
 
@@ -107,20 +107,19 @@ export interface WindBucket {
 type CwbTime = { StartTime?: string; EndTime?: string; DataTime?: string; ElementValue?: Array<Record<string, string>> };
 
 /**
- * CWB「風速」元素 → 時段。風速（m/s）換算 km/h。
+ * CWB 時段元素 → [起, 迄, 值]。
  * 有 StartTime／EndTime 時直接用；只有 DataTime（時間點）時，以到下一個時間點為一段，最後一段沿用前一段長度（預設 3 小時）。
- * 時間無法解析或數值缺漏的略過。
+ * 時間無法解析或 read 回傳 null（數值缺漏）的略過。
  */
-export function windBucketsFromCwb(times: readonly CwbTime[] | undefined): WindBucket[] {
+function timedValuesFromCwb<V>(
+  times: readonly CwbTime[] | undefined,
+  read: (v: Record<string, string> | undefined) => V | null
+): { startTime: string; endTime: string; value: V }[] {
   if (!times?.length) return [];
   const points = times
-    .map((t) => {
-      const v = t.ElementValue?.[0];
-      const ms = parseFloat(v?.WindSpeed ?? v?.value ?? "");
-      return { start: t.StartTime ?? t.DataTime, end: t.EndTime, ms };
-    })
-    .filter((p): p is { start: string; end: string | undefined; ms: number } =>
-      !!p.start && !Number.isNaN(Date.parse(p.start)) && Number.isFinite(p.ms)
+    .map((t) => ({ start: t.StartTime ?? t.DataTime, end: t.EndTime, value: read(t.ElementValue?.[0]) }))
+    .filter((p): p is { start: string; end: string | undefined; value: V } =>
+      !!p.start && !Number.isNaN(Date.parse(p.start)) && p.value !== null
     );
   return points.map((p, i) => {
     let end = p.end;
@@ -130,8 +129,55 @@ export function windBucketsFromCwb(times: readonly CwbTime[] | undefined): WindB
       const step = next ? Date.parse(next) - Date.parse(p.start) : prev ? Date.parse(p.start) - Date.parse(prev) : 3 * 3_600_000;
       end = new Date(Date.parse(p.start) + step).toISOString();
     }
-    return { startTime: p.start, endTime: end, kmh: Math.round(p.ms * 3.6) };
+    return { startTime: p.start, endTime: end, value: p.value };
   });
+}
+
+/** CWB「風速」元素 → 時段。風速（m/s）換算 km/h。 */
+export function windBucketsFromCwb(times: readonly CwbTime[] | undefined): WindBucket[] {
+  return timedValuesFromCwb(times, (v) => {
+    const ms = parseFloat(v?.WindSpeed ?? v?.value ?? "");
+    return Number.isFinite(ms) ? ms : null;
+  }).map(({ startTime, endTime, value }) => ({ startTime, endTime, kmh: Math.round(value * 3.6) }));
+}
+
+/** 天氣現象時段，例：「短暫陣雨」「多雲時陰短暫雨」「午後短暫雷陣雨」 */
+export interface WeatherTextBucket {
+  startTime: string;
+  endTime: string;
+  text: string;
+}
+
+/** CWB「天氣現象」元素 → 時段；空字串略過 */
+export function weatherTextBucketsFromCwb(times: readonly CwbTime[] | undefined): WeatherTextBucket[] {
+  return timedValuesFromCwb(times, (v) => {
+    const text = (v?.Weather ?? v?.value ?? "").trim();
+    return text ? text : null;
+  }).map(({ startTime, endTime, value }) => ({ startTime, endTime, text: value }));
+}
+
+/** 路段進入 ETA ～ 離開 ETA 的時間區間（ms） */
+function segmentWindow(sampleKms: readonly number[] | undefined, departure: Date, pace: Pace): [from: number, to: number] {
+  const entryKm = sampleKms?.[0] ?? 0;
+  const exitKm = sampleKms?.[sampleKms.length - 1] ?? entryKm;
+  return [estimateArrivalTime(entryKm, departure, pace).getTime(), estimateArrivalTime(exitKm, departure, pace).getTime()];
+}
+
+/**
+ * 路段行經時間重疊的所有天氣現象（去重、依時間排序）；沒有重疊時取進入 ETA 所在或之後的第一個時段。
+ * 判讀只拿來擋降級（有雷、大雨就不降），所以全部列出，不挑其中一個。
+ */
+export function pickWeatherTextsForSegment(
+  sampleKms: readonly number[] | undefined,
+  departure: Date,
+  buckets: readonly WeatherTextBucket[],
+  pace: Pace = DEFAULT_CYCLING_SPEED_KMH
+): string[] {
+  if (buckets.length === 0) return [];
+  const [from, to] = segmentWindow(sampleKms, departure, pace);
+  const overlapping = buckets.filter((b) => Date.parse(b.startTime) <= to && Date.parse(b.endTime) > from);
+  const picked = overlapping.length > 0 ? overlapping : [pickRainfallBucketByEta(new Date(from), buckets)].filter((b) => b != null);
+  return [...new Set(picked.map((b) => b.text))];
 }
 
 /**

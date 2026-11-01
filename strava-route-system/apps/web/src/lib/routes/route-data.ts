@@ -21,6 +21,15 @@ export interface RouteSegment {
    * undefined 代表沒有查詢即時雨量（不列入判定也不加註）
    */
   observedRainMmPerHr?: number | null;
+  /** 行經時段的天氣現象（多個時段以「、」連接），例：「短暫陣雨、午後短暫雷陣雨」；判讀只用來擋降級 */
+  weatherText?: string;
+  /**
+   * 未來 1 小時降雨預報（F-B0046）在此路段沿線的最大雨量（mm）；
+   * undefined 代表沒有可用的預報（取不到、過期、超過 1 小時才會到），判讀維持只看降雨機率
+   */
+  nowcastRainMm?: number;
+  /** nowcastRainMm 的預報涵蓋到何時（ISO）；路段離開 ETA 晚於此時不採用 */
+  nowcastValidUntil?: string;
   /** 此路段用的是過期預報（重抓後仍過期） */
   weatherStale?: boolean;
   /** 此路段預估抵達時間超出預報涵蓋時段 */

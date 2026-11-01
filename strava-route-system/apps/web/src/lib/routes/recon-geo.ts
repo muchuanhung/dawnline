@@ -26,6 +26,11 @@ export type RouteStage = {
   hasWeather?: boolean;
   /** 路線 3 km 內雨量站的即時時雨量；null 為附近沒有測站，undefined 為未查詢 */
   observedRainMmPerHr?: number | null;
+  /** 行經時段的天氣現象，見 RouteSegment.weatherText */
+  weatherText?: string;
+  /** 未來 1 小時沿線預估雨量（mm）；undefined 為沒有可用預報，見 RouteSegment.nowcastRainMm */
+  nowcastRainMm?: number;
+  nowcastValidUntil?: string;
   /** 此路段用的是過期預報 */
   weatherStale?: boolean;
   /** 此路段 ETA 超出預報涵蓋時段 */
@@ -293,6 +298,9 @@ export function deriveStages(route: Route): RouteStage[] {
       condition: seg?.condition,
       hasWeather: seg?.hasWeather ?? false,
       observedRainMmPerHr: seg?.observedRainMmPerHr,
+      weatherText: seg?.weatherText,
+      nowcastRainMm: seg?.nowcastRainMm,
+      nowcastValidUntil: seg?.nowcastValidUntil,
       weatherStale: seg?.weatherStale ?? false,
       outOfCoverage: seg?.outOfCoverage ?? false,
     };
@@ -448,6 +456,46 @@ export function rainLevel(pct: number): HazardLevel | null {
   return null;
 }
 
+/**
+ * 降雨信心：降雨機率只說「會不會下」，不說「下多大」，機率高的毛毛雨也會被判成危險。
+ * 未來 1 小時預估雨量低於此值（mm，1 小時累積即平均 mm/hr）時，降雨機率的「危險」降成「注意」。
+ * 依據：與 RAIN_NOW_RISKY 相同的 2.6 mm/hr 中雨下限（AMS 雨強分級：小雨 < 2.5、中雨 2.6–7.6 mm/hr），
+ * 低於此值屬小雨以下，路面濕滑但不至於視線不良、積水。
+ */
+export const NOWCAST_LIGHT_MAX_MM = RAIN_NOW_RISKY;
+/**
+ * 天氣現象出現這些字就不降級：雷雨有閃電與強陣風，大雨、豪雨是 CWA 依雨量定義的等級（大雨：1 小時 40 mm 以上或 24 小時 80 mm 以上）；
+ * 外延預報抓不到正在發展的對流，這時不能拿「預估雨量小」當理由。
+ */
+const NO_DOWNGRADE_WX = /雷|大雨|豪雨/;
+
+/** 降雨機率判定的結果；downgraded 為依預估雨量從危險降成注意 */
+export interface ForecastRainLevel {
+  level: HazardLevel | null;
+  downgraded: boolean;
+}
+
+/**
+ * 預報降雨（不含即時雨量站）的等級：先依降雨機率（rainLevel），再看降雨信心。
+ * 只在以下條件全部成立時把「危險」降成「注意」，其餘一律維持降雨機率的判定：
+ * - 有未來 1 小時預估雨量（沒有、過期、路段超過 1 小時才會到，呼叫端已設為 undefined）
+ * - 預估雨量 < NOWCAST_LIGHT_MAX_MM
+ * - 天氣現象沒有雷、大雨、豪雨，condition 不是 stormy
+ * - 即時雨量站沒有量到中雨以上
+ * 只降一級、最低到「注意」：降雨機率高仍代表會下雨，不能因雨量小判成安全。
+ */
+export function forecastRainLevel(
+  s: Pick<RouteStage, "rainProbability" | "nowcastRainMm" | "weatherText" | "condition" | "observedRainMmPerHr">
+): ForecastRainLevel {
+  const level = rainLevel(s.rainProbability);
+  if (level !== "risky") return { level, downgraded: false };
+  const mm = s.nowcastRainMm;
+  if (mm == null || !Number.isFinite(mm) || mm < 0 || mm >= NOWCAST_LIGHT_MAX_MM) return { level, downgraded: false };
+  if (s.condition === "stormy" || NO_DOWNGRADE_WX.test(s.weatherText ?? "")) return { level, downgraded: false };
+  if (s.observedRainMmPerHr != null && s.observedRainMmPerHr >= RAIN_NOW_RISKY) return { level, downgraded: false };
+  return { level: "caution", downgraded: true };
+}
+
 export function observedRainLevel(mmPerHr: number): HazardLevel | null {
   if (mmPerHr >= RAIN_NOW_RISKY) return "risky";
   if (mmPerHr >= RAIN_NOW_CAUTION) return "caution";
@@ -461,16 +509,24 @@ export function windLevel(kmh: number): HazardLevel | null {
 }
 
 /** observed：即時雨量（value 為 mm/hr），與預報降雨機率（value 為 %）分開合併與標示 */
-type RawHazard = Omit<Hazard, "id" | "label"> & { value: number; observed?: boolean };
+type RawHazard = Omit<Hazard, "id" | "label"> & {
+  value: number;
+  observed?: boolean;
+  /** 依預估雨量降級時的沿線預估雨量（mm），標籤加註用 */
+  nowcastMm?: number;
+};
 
 /** 相鄰且同類型同等級的區段合併，保留最大值 */
 function mergeAdjacent(items: RawHazard[]): RawHazard[] {
   const out: RawHazard[] = [];
   for (const h of items) {
     const last = out[out.length - 1];
-    if (last && last.kind === h.kind && last.level === h.level && h.startKm - last.endKm < 1e-6) {
+    // 降級的與沒降級的不合併：合併後標籤會把「雨量小」套到沒有預估雨量的路段
+    const sameDowngrade = (last?.nowcastMm == null) === (h.nowcastMm == null);
+    if (last && last.kind === h.kind && last.level === h.level && sameDowngrade && h.startKm - last.endKm < 1e-6) {
       last.endKm = h.endKm;
       last.value = Math.max(last.value, h.value);
+      if (h.nowcastMm != null) last.nowcastMm = Math.max(last.nowcastMm ?? 0, h.nowcastMm);
     } else {
       out.push({ ...h });
     }
@@ -487,8 +543,17 @@ function weatherHazards(stages: RouteStage[]): RawHazard[] {
     const { startKm, endKm } = s;
     // 超出預報時段：沒有對應時段的預報，不拿其他時段的數值產生示警（判定由 summarizeVerdict 改 unknown）
     const forecastUsable = !s.outOfCoverage;
-    const rain = forecastUsable ? rainLevel(s.rainProbability) : null;
-    if (rain) byKind.rain.push({ kind: "rain", level: rain, startKm, endKm, value: s.rainProbability });
+    const { level: rain, downgraded } = forecastUsable ? forecastRainLevel(s) : { level: null, downgraded: false };
+    if (rain) {
+      byKind.rain.push({
+        kind: "rain",
+        level: rain,
+        startKm,
+        endKm,
+        value: s.rainProbability,
+        ...(downgraded ? { nowcastMm: s.nowcastRainMm } : {}),
+      });
+    }
     const wind = forecastUsable ? windLevel(s.windSpeed) : null;
     if (wind) byKind.wind.push({ kind: "wind", level: wind, startKm, endKm, value: s.windSpeed });
     if (!forecastUsable) {
@@ -532,7 +597,11 @@ export function computeHazards(_route: Route, stages: RouteStage[]): Hazard[] {
       level: h.level,
       startKm: h.startKm,
       endKm: h.endKm,
-      label: h.observed ? `即時雨量 ${h.value} mm/hr` : KIND_LABEL[h.kind](h.value),
+      label: h.observed
+        ? `即時雨量 ${h.value} mm/hr`
+        : h.nowcastMm != null
+          ? `${KIND_LABEL[h.kind](h.value)}，但 1 小時內預估雨量僅 ${h.nowcastMm} mm`
+          : KIND_LABEL[h.kind](h.value),
     }));
 }
 
