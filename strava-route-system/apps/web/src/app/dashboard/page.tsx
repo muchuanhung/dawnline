@@ -32,7 +32,7 @@ export default async function DashboardPage({
       {!signedIn && <GuestNotice />}
       {/* 只在第一次進頁面時顯示；換路線時 Briefing 內部只讓判讀卡顯示載入中 */}
       <Suspense fallback={<BriefingLoading />}>
-        <Briefing routeId={route} trip={trip} />
+        <Briefing routeId={route} trip={trip} signedIn={signedIn} />
       </Suspense>
     </AppShell>
   );
