@@ -31,8 +31,9 @@ export function AvatarEditor({ name }: { name: string }) {
   const src = resolveAvatarUrl(avatarUrl, user?.photoURL);
   const canUpload = mounted && !signedInWithGoogle(user);
 
+  // key: Radix keeps the "loaded" status after the image unmounts, so remount to show the fallback
   const avatar = (
-    <Avatar className="h-24 w-24 border-2 border-border">
+    <Avatar key={src ?? "fallback"} className="h-24 w-24 border-2 border-border">
       {mounted && src && <AvatarImage src={src} alt={name} className="object-cover" />}
       <AvatarFallback className="bg-strava text-2xl font-semibold text-primary-foreground">
         {avatarInitials(name)}
