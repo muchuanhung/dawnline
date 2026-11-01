@@ -60,9 +60,12 @@ const tempRange = ({ min, max }: { min: number; max: number }) => (min === max ?
 export function BriefingCard({
   featured,
   trip,
+  isPrivate = false,
 }: {
   featured: RouteBriefing;
   trip: TripParams;
+  /** 私人路線：詳情在 /routes/private/[id]，不在公開路線頁 */
+  isPrivate?: boolean;
 }) {
   const { verdict } = featured;
   const areas = formatRouteAreas(routeAreas(featured.segments));
@@ -133,7 +136,12 @@ export function BriefingCard({
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3 border-t border-dashed border-border pt-4 text-sm">
         <Link
-          href={withTrip(`/routes?route=${encodeURIComponent(featured.id)}`, trip)}
+          href={withTrip(
+            isPrivate
+              ? `/routes/private/${encodeURIComponent(featured.id)}`
+              : `/routes?route=${encodeURIComponent(featured.id)}`,
+            trip
+          )}
           className="ml-auto inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg bg-primary px-4 font-bold text-primary-foreground transition-colors hover:bg-primary/90"
         >
           看逐段示警與 CCTV

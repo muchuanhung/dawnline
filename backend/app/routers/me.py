@@ -4,8 +4,9 @@ from fastapi import APIRouter, Depends, Response, status
 from fastapi.responses import RedirectResponse
 
 from app.deps import AppSettings, CurrentUser, DbSession
+from app.schemas.route import RouteOrderIn, RouteOrderOut
 from app.schemas.user import AvatarConfirm, AvatarUploadCreate, AvatarUploadOut, UserOut
-from app.services import avatar_service
+from app.services import avatar_service, route_order_service
 from app.services.storage import GpxStorage, get_storage
 
 router = APIRouter(prefix="/api/v1", tags=["me"])
@@ -64,3 +65,17 @@ def view_avatar(user: CurrentUser, storage: Storage) -> RedirectResponse:
         status_code=status.HTTP_302_FOUND,
         headers={"Cache-Control": f"private, max-age={AVATAR_REDIRECT_MAX_AGE}"},
     )
+
+
+@router.get("/me/route-order", response_model=RouteOrderOut)
+def get_route_order(user: CurrentUser, db: DbSession):
+    """「我的路線」自訂順序；沒排過回空陣列（前端用預設順序）。"""
+    return RouteOrderOut(ids=route_order_service.get_order(db, user))
+
+
+@router.put("/me/route-order", response_model=RouteOrderOut)
+def put_route_order(body: RouteOrderIn, user: CurrentUser, db: DbSession):
+    """整份取代；回傳實際存下的順序（看不到的路線已略過）。"""
+    ids = route_order_service.set_order(db, user, body.ids)
+    db.commit()
+    return RouteOrderOut(ids=ids)

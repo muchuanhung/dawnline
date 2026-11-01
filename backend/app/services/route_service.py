@@ -15,7 +15,7 @@ from app.core.db import utcnow
 from app.core.errors import ApiError
 from app.core.types import geometry_from_wkt
 from app.core.ulid import is_ulid, new_ulid
-from app.models import Favorite, Route, User
+from app.models import Favorite, Route, RouteOrder, User
 from app.services.gpx import InvalidGpxError, infer_route_type, parse_gpx
 from app.services.storage import GpxStorage, PresignedUpload, gpx_key
 
@@ -138,9 +138,10 @@ def rename_route(db: Session, user: User, public_id: str, name: str) -> Route:
 
 
 def delete_route(db: Session, user: User, storage: GpxStorage, public_id: str) -> None:
-    """軟刪除 routes 並刪掉 S3 檔案（檔案不保留，配額立即釋出）；收藏一併清掉。"""
+    """軟刪除 routes 並刪掉 S3 檔案（檔案不保留，配額立即釋出）；收藏與自訂排序一併清掉。"""
     route = get_route(db, user, public_id)
     route.deleted_at = utcnow()
     db.execute(delete(Favorite).where(Favorite.route_id == route.id))
+    db.execute(delete(RouteOrder).where(RouteOrder.route_id == route.id))
     db.flush()
     storage.delete(route.s3_key)

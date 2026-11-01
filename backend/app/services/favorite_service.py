@@ -18,7 +18,7 @@ def route_external_id(route: Route) -> str:
     return route.slug if route.visibility == "public" and route.slug else route.public_id
 
 
-def _visible_to(user: User):
+def visible_to(user: User):
     """使用者看得到的路線：未刪除，且是公開路線或自己的私人路線。"""
     return and_(
         Route.deleted_at.is_(None),
@@ -35,7 +35,7 @@ def _find_route(db: Session, user: User, route_id: str) -> Route:
     cond = Route.slug == route_id
     if is_ulid(route_id):
         cond = or_(cond, Route.public_id == route_id)
-    route = db.scalar(select(Route).where(cond, _visible_to(user)))
+    route = db.scalar(select(Route).where(cond, visible_to(user)))
     if route is None:
         raise ApiError(404, "route_not_found", "找不到這條路線")
     return route
@@ -46,7 +46,7 @@ def list_favorites(db: Session, user: User) -> list[Favorite]:
     stmt = (
         select(Favorite)
         .join(Route, Favorite.route_id == Route.id)
-        .where(Favorite.user_id == user.id, _visible_to(user))
+        .where(Favorite.user_id == user.id, visible_to(user))
         .order_by(Favorite.created_at.desc())
     )
     return list(db.scalars(stmt).unique())

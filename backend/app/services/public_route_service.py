@@ -18,7 +18,7 @@ from app.core.db import utcnow
 from app.core.errors import ApiError
 from app.core.types import geometry_from_wkt
 from app.core.ulid import new_ulid
-from app.models import Favorite, Route, User
+from app.models import Favorite, Route, RouteOrder, User
 from app.services.gpx import infer_route_type, parse_gpx
 from app.services.storage import GpxStorage, gpx_key
 
@@ -109,13 +109,14 @@ def import_public_route(
 
 
 def unpublish_missing(db: Session, storage: GpxStorage, keep_slugs: set[str]) -> list[str]:
-    """下架不在 keep_slugs 裡的公開路線（軟刪除、刪 S3 檔、清收藏），回傳被下架的 slug。"""
+    """下架不在 keep_slugs 裡的公開路線（軟刪除、刪 S3 檔、清收藏與排序），回傳下架的 slug。"""
     removed: list[str] = []
     for route in db.scalars(_active_public()):
         if route.slug in keep_slugs:
             continue
         route.deleted_at = utcnow()
         db.execute(delete(Favorite).where(Favorite.route_id == route.id))
+        db.execute(delete(RouteOrder).where(RouteOrder.route_id == route.id))
         storage.delete(route.s3_key)
         removed.append(route.slug or route.public_id)
     db.flush()
