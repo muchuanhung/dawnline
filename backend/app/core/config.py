@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     gpx_max_bytes: int = 5 * 1024 * 1024
     gpx_max_routes_per_user: int = 10
     favorites_max_per_user: int = 50
+    # 頭像：瀏覽器先裁成 256px 正方形 JPEG（通常 < 50 KB），這裡只是上限
+    avatar_max_bytes: int = 1024 * 1024
     # presigned URL 有效秒數
     s3_upload_expires_seconds: int = 300
     s3_download_expires_seconds: int = 300
