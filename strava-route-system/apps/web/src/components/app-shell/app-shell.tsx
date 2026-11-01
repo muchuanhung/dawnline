@@ -78,7 +78,7 @@ export function AppShell({ current, children }: { current: AppSection; children:
         className="mx-auto max-w-6xl px-4 pb-[calc(env(safe-area-inset-bottom)+6rem)] pt-6 sm:px-6 md:pb-12 md:pt-10"
       >
         {children}
-        <SiteFooter className="mt-12 border-t border-border pt-6" />
+        <SiteFooter className="mt-8 border-t border-border pt-4 md:mt-12 md:pt-6" />
       </main>
 
       <nav
