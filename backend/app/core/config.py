@@ -26,6 +26,17 @@ class Settings(BaseSettings):
     s3_upload_expires_seconds: int = 300
     s3_download_expires_seconds: int = 300
 
+    # Admins (comma-separated Firebase UIDs) may upload/unpublish public routes from the site.
+    # Empty = nobody; changing it only needs an api.env edit + container restart.
+    admin_firebase_uids: str = ""
+
+    @property
+    def admin_uid_set(self) -> frozenset[str]:
+        return frozenset(u.strip() for u in self.admin_firebase_uids.split(",") if u.strip())
+
+    def is_admin(self, firebase_uid: str) -> bool:
+        return firebase_uid in self.admin_uid_set
+
     @property
     def session_ttl_seconds(self) -> int:
         return self.session_ttl_days * 24 * 60 * 60

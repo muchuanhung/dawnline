@@ -14,6 +14,8 @@ class UserOut(CamelModel):
     last_login_at: UtcDatetime
     # Read from the ORM row only to build avatar_url; never serialized
     avatar_key: str | None = Field(default=None, exclude=True)
+    # Filled by the router from settings (ADMIN_FIREBASE_UIDS); only shows/hides admin buttons
+    is_admin: bool = False
 
     @computed_field
     @property
