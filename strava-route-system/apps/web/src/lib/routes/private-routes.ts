@@ -174,16 +174,12 @@ export function postFormWithProgress(
   });
 }
 
-export async function uploadGpx(
+/** 第 2 步：presigned POST 直傳 S3（私人路線與管理員上傳公開路線共用） */
+export async function sendGpxToS3(
+  upload: { url: string; fields: Record<string, string> },
   file: File,
-  onProgress: (progress: UploadProgress) => void = () => {}
-): Promise<PrivateRoute> {
-  onProgress({ stage: "preparing", percent: null });
-  const upload = await postJson<{ uploadId: string; url: string; fields: Record<string, string> }>(
-    "/uploads",
-    { fileSize: file.size }
-  );
-
+  onProgress: (progress: UploadProgress) => void
+): Promise<void> {
   // S3 presigned POST：policy 欄位在前，file 必須是最後一個欄位
   const form = new FormData();
   for (const [key, value] of Object.entries(upload.fields)) form.append(key, value);
@@ -195,7 +191,19 @@ export async function uploadGpx(
     const tooLarge = s3.text.includes("EntityTooLarge");
     throw new BackendError(s3.status, tooLarge ? "file_too_large" : "s3_upload_failed", tooLarge ? "檔案超過大小上限" : "檔案上傳失敗，請再試一次");
   }
+}
 
+export async function uploadGpx(
+  file: File,
+  onProgress: (progress: UploadProgress) => void = () => {}
+): Promise<PrivateRoute> {
+  onProgress({ stage: "preparing", percent: null });
+  const upload = await postJson<{ uploadId: string; url: string; fields: Record<string, string> }>(
+    "/uploads",
+    { fileSize: file.size }
+  );
+
+  await sendGpxToS3(upload, file, onProgress);
   onProgress({ stage: "processing", percent: null });
   return postJson<PrivateRoute>("", { uploadId: upload.uploadId, name: routeNameFromFile(file.name) });
 }
