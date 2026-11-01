@@ -146,14 +146,14 @@ function MyRoutesList({
 
   return (
     <nav aria-label="全部路線">
-      <p className="px-3 py-1.5 text-xs text-muted-foreground">按住 ⋮⋮ 拖曳調整順序，前 {MY_ROUTES_MAX} 條顯示在上方</p>
       {error && (
         <p role="alert" className="px-3 pb-1.5 text-xs font-medium text-destructive">
           {error}
         </p>
       )}
       {/* data-vaul-no-drag：在手機 Drawer 裡拖曳排序時不要把 Drawer 拉下來 */}
-      <Reorder.Group axis="y" values={items} onReorder={setItems} as="ul" data-vaul-no-drag>
+      {/* The ⋮⋮ handle is a familiar drag cue, so no instruction line; the dashed divider marks the first MY_ROUTES_MAX */}
+      <Reorder.Group axis="y" values={items} onReorder={setItems} as="ul" className="space-y-1" data-vaul-no-drag>
         {items.map((r, i) => (
           <SortableRow
             key={r.id}
@@ -207,10 +207,10 @@ function SortableRow({
       dragListener={false}
       dragControls={controls}
       onDragEnd={onDragEnd}
-      className={cn("relative bg-popover", dividerAfter && "mb-1 border-b border-dashed border-border pb-1")}
+      className={cn("relative bg-popover", dividerAfter && "border-b border-dashed border-border pb-1")}
       whileDrag={{ scale: 1.02, boxShadow: "0 8px 20px -8px rgb(0 0 0 / 0.25)", borderRadius: 8, zIndex: 10 }}
     >
-      <div className={cn("flex min-h-11 items-center rounded-lg transition-colors hover:bg-muted", active && "bg-muted")}>
+      <div className={cn("flex min-h-11 items-center rounded-lg transition-colors", active ? "bg-muted" : "hover:bg-muted/50")}>
         <Link
           href={href}
           onClick={onPick}
