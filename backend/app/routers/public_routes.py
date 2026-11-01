@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/v1/public-routes", tags=["public-routes"])
 Storage = Annotated[GpxStorage, Depends(get_storage)]
 
 
-def _public_out(route: Route) -> PublicRouteOut:
+def public_route_out(route: Route) -> PublicRouteOut:
     return PublicRouteOut(
         id=route.slug or route.public_id,
         name=route.name,
@@ -29,7 +29,7 @@ def _public_out(route: Route) -> PublicRouteOut:
 @router.get("", response_model=PublicRouteList)
 def list_public_routes(db: DbSession):
     return PublicRouteList(
-        routes=[_public_out(r) for r in public_route_service.list_public_routes(db)]
+        routes=[public_route_out(r) for r in public_route_service.list_public_routes(db)]
     )
 
 

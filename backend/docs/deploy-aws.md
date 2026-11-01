@@ -97,6 +97,7 @@ sudo docker run -d --name dawnline-mysql --restart unless-stopped \
 | `S3_REGION` | `ap-northeast-1` | |
 | `GPX_MAX_BYTES` | `5242880` | 每檔 5 MB |
 | `GPX_MAX_ROUTES_PER_USER` | `10` | |
+| `ADMIN_FIREBASE_UIDS` | 你的 Firebase UID | 逗號分隔；可在網站上新增／下架公開路線（§7a） |
 
 不要放 `AWS_ACCESS_KEY_ID`：有的話 boto3 會改用那把 key，不走 instance role。
 
@@ -239,6 +240,10 @@ sudo docker run --rm amazon/aws-cli s3 cp s3://dawnline-gpx/backups/velorder-<�
 ```
 
 ## 7a. 公開路線匯入（T6）
+
+> 日常新增、覆寫、下架單條公開路線，請直接在網站上操作：`/api/v1/admin/public-routes`，只有管理員可以用。
+> 管理員名單是 `api.env` 的 `ADMIN_FIREBASE_UIDS`，用逗號分隔 Firebase UID；改完要重啟容器。
+> 下面的腳本只用在第一次大量匯入，或網站無法使用時的備援。
 
 公開路線（原 Firebase Storage `gpx/routes/`）存在同一張 `routes` 表（`visibility='public'`），
 GPX 放在匯入者的 `users/{id}/routes/` 底下，所以 §5 的 instance role 權限不用改。檔名（去掉 `.gpx`）就是前端的路線 id。

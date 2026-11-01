@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
 from app.core.errors import register_error_handlers
-from app.routers import auth, favorites, health, me, public_routes, routes
+from app.routers import admin_public_routes, auth, favorites, health, me, public_routes, routes
 
 
 def create_app() -> FastAPI:
@@ -13,6 +13,7 @@ def create_app() -> FastAPI:
     app.include_router(routes.router)
     app.include_router(public_routes.router)
     app.include_router(favorites.router)
+    app.include_router(admin_public_routes.router)
     return app
 
 

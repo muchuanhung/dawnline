@@ -22,7 +22,8 @@ export function useRoutesFromStorage(): UseRoutesFromStorageState & {
   });
 
   const fetchRoutes = useCallback(async () => {
-    setState((s) => ({ ...s, loading: true, error: null }));
+    // Refetch keeps the current list on screen (only the first load shows the loading state)
+    setState((s) => ({ ...s, loading: s.routes.length === 0, error: null }));
     try {
       const res = await fetch("/api/routes/gpx");
       if (!res.ok) {

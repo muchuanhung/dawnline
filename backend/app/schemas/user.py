@@ -14,6 +14,8 @@ class UserOut(CamelModel):
     last_login_at: UtcDatetime
     # Read from the ORM row only to build avatar_url; never serialized
     avatar_key: str | None = Field(default=None, exclude=True)
+    # Filled by the router from settings (ADMIN_FIREBASE_UIDS); only shows/hides admin buttons
+    is_admin: bool = False
 
     @computed_field
     @property
@@ -26,6 +28,13 @@ class UserOut(CamelModel):
             return None
         version = self.avatar_key.rsplit("/", 1)[-1].removesuffix(".jpg")
         return f"{AVATAR_PATH}?v={version}"
+
+
+def user_out(user: object, is_admin: bool) -> UserOut:
+    """ORM User -> UserOut with is_admin (decided by the router from settings)."""
+    out = UserOut.model_validate(user)
+    out.is_admin = is_admin
+    return out
 
 
 class AvatarUploadCreate(CamelModel):

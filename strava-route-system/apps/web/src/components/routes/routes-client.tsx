@@ -15,6 +15,8 @@ import { useFavorites } from "@/hooks/useFavorites";
 import { verdictOf } from "@/hooks/useRouteBriefing";
 import { cardStatusOf } from "@/lib/routes/route-statuses";
 import { RouteCard } from "@/components/routes/route-card";
+import { AdminPublicRoutesSheet } from "@/components/routes/admin-public-routes-sheet";
+import { useAuth } from "@/contexts/AuthContext";
 import { RoutesTabs } from "@/components/routes/routes-tabs";
 import { RouteFilters } from "@/components/routes/route-filters";
 import { ALL_TYPES, effectiveTypeFilter, matchesTypeFilter, routeTypesOf } from "@/lib/routes/route-types";
@@ -34,7 +36,11 @@ export function RoutesClient({
   /** 網址上的行程設定（出發時間 ISO、運動類型），未指定為 null */
   trip: PageTrip;
 }) {
-  const { routes, loading, error } = useRoutesFromStorage();
+  const { routes, loading, error, refetch } = useRoutesFromStorage();
+  // 管理員（後端判定）才看得到「管理公開路線」；一般使用者畫面不變
+  const { isAdmin } = useAuth();
+  const adminSheet = (className?: string) =>
+    isAdmin ? <AdminPublicRoutesSheet routes={routes} onChanged={() => void refetch()} className={className} /> : null;
   const [selectedId, setSelectedId] = useState(initialRouteId ?? "");
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState(ALL_TYPES);
@@ -128,6 +134,7 @@ export function RoutesClient({
           <Bike className="size-12 text-muted-foreground/40" aria-hidden />
           <p className="text-sm text-muted-foreground">目前沒有公開路線</p>
           <p className="text-xs text-muted-foreground">路線資料暫時讀不到，請稍後重新整理</p>
+          {adminSheet("gap-1.5")}
         </div>
       </div>
     );
@@ -175,9 +182,12 @@ export function RoutesClient({
             </AnimatePresence>
           </div>
         </div>
-        <p className="border-t border-border p-3 text-center text-xs text-muted-foreground">
-          {filteredRoutes.length} / {routes.length} 條路線
-        </p>
+        <div className="flex items-center justify-center gap-3 border-t border-border p-3 text-xs text-muted-foreground">
+          <span>
+            {filteredRoutes.length} / {routes.length} 條路線
+          </span>
+          {adminSheet("h-7 gap-1.5 text-xs")}
+        </div>
       </aside>
 
       <RouteStickyBar
@@ -191,6 +201,7 @@ export function RoutesClient({
         {/* 標題與切換只在手機顯示（桌機的切換在左側清單頂端）；窄螢幕整列換行，不讓標題或連結被拆字 */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 lg:hidden">
           <h1 className="mr-auto whitespace-nowrap text-2xl font-black tracking-tight sm:text-3xl">路線</h1>
+          {adminSheet("gap-1.5 lg:hidden")}
           <Drawer open={mobileListOpen} onOpenChange={setMobileListOpen}>
             <DrawerTrigger asChild>
               <Button variant="outline" size="sm" className="gap-1.5 lg:hidden">

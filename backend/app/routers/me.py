@@ -5,7 +5,7 @@ from fastapi.responses import RedirectResponse
 
 from app.deps import AppSettings, CurrentUser, DbSession
 from app.schemas.route import RouteOrderIn, RouteOrderOut
-from app.schemas.user import AvatarConfirm, AvatarUploadCreate, AvatarUploadOut, UserOut
+from app.schemas.user import AvatarConfirm, AvatarUploadCreate, AvatarUploadOut, UserOut, user_out
 from app.services import avatar_service, route_order_service
 from app.services.storage import GpxStorage, get_storage
 
@@ -19,8 +19,8 @@ AVATAR_REDIRECT_MAX_AGE = 300
 
 
 @router.get("/me", response_model=UserOut)
-def get_me(user: CurrentUser):
-    return user
+def get_me(user: CurrentUser, settings: AppSettings):
+    return user_out(user, settings.is_admin(user.firebase_uid))
 
 
 @router.post(
@@ -46,7 +46,7 @@ def confirm_avatar(
     """第 2 步：檔案已傳到 S3，檢查是 JPEG 後換成新頭像、刪掉舊檔。"""
     user = avatar_service.confirm_upload(db, user, storage, settings, body.upload_id)
     db.commit()
-    return user
+    return user_out(user, settings.is_admin(user.firebase_uid))
 
 
 @router.delete("/me/avatar", status_code=status.HTTP_204_NO_CONTENT)

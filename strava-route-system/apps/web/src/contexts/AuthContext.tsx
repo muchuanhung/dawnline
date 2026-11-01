@@ -44,6 +44,8 @@ type AuthContextValue = {
   cachedProfile: CachedProfile | null;
   /** 自己上傳的頭像網址（後端換 session 時回傳）；null = 沒上傳，顯示 Google 頭像或縮寫 */
   avatarUrl: string | null;
+  /** 管理員（後端 ADMIN_FIREBASE_UIDS）：只用來顯示公開路線的新增／下架按鈕，真正的權限由後端擋 */
+  isAdmin: boolean;
   /** 上傳或移除頭像後更新（同時寫進快取，重新整理也不閃回舊圖） */
   setAvatarUrl: (url: string | null) => void;
   /**
@@ -112,8 +114,10 @@ async function exchangeBackendSession(idToken: string): Promise<BackendProfile |
       console.warn("後端 session 設定失敗", res.status);
       return null;
     }
-    const data = (await res.json().catch(() => null)) as { avatarUrl?: string | null } | null;
-    return { avatarUrl: data?.avatarUrl ?? null };
+    const data = (await res.json().catch(() => null)) as
+      | { avatarUrl?: string | null; isAdmin?: boolean }
+      | null;
+    return { avatarUrl: data?.avatarUrl ?? null, isAdmin: data?.isAdmin === true };
   } catch (err) {
     console.warn("後端 session 設定失敗", err);
     return null;
@@ -121,7 +125,7 @@ async function exchangeBackendSession(idToken: string): Promise<BackendProfile |
 }
 
 /** 後端 session 回應中前端要用的使用者資料；換 session 失敗時是 null（沿用快取） */
-type BackendProfile = { avatarUrl: string | null };
+type BackendProfile = { avatarUrl: string | null; isAdmin: boolean };
 
 /**
  * 刪除私人路線的離線快照（public/sw.js 的 PRIVATE_CACHE），同一台裝置換人登入不會讀到上一位的路線。
@@ -168,6 +172,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [sessionReady, setSessionReady] = useState(false);
   const [cachedProfile, setCachedProfile] = useState<CachedProfile | null>(null);
   const [avatarUrl, setAvatarUrlState] = useState<string | null>(null);
+  // Not cached: admin buttons simply appear once the backend session answers
+  const [isAdmin, setIsAdmin] = useState(false);
   const authRef = useRef<ReturnType<typeof getAuthClient> | null>(null);
 
   const inflightRef = useRef<SessionExchange | null>(null);
@@ -225,6 +231,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const previous = readCachedProfile();
       const keptAvatar = u && previous?.email === u.email ? (previous.avatarUrl ?? null) : null;
       setAvatarUrlState(keptAvatar);
+      setIsAdmin(false);
       writeCachedProfile(u, keptAvatar);
       // 登入狀態一確定就結束 loading：畫面（帳號名牌等）不必等下面換 session 的兩個網路請求
       setLoading(false);
@@ -242,6 +249,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // 後端連不上（null）時沿用快取，不把頭像清掉
         if (cancelled || !profile) return;
         setAvatarUrlState(profile.avatarUrl);
+        setIsAdmin(profile.isAdmin);
         writeCachedProfile(u, profile.avatarUrl);
       });
       await exchange.done;
@@ -334,6 +342,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       sessionReady,
       cachedProfile,
       avatarUrl,
+      isAdmin,
       setAvatarUrl,
       refreshSession,
       signIn,
@@ -342,7 +351,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       sendPasswordReset,
       signOut,
     }),
-    [user, loading, sessionReady, cachedProfile, avatarUrl, setAvatarUrl, refreshSession, signIn, signInWithEmail, signUpWithEmail, sendPasswordReset, signOut]
+    [user, loading, sessionReady, cachedProfile, avatarUrl, isAdmin, setAvatarUrl, refreshSession, signIn, signInWithEmail, signUpWithEmail, sendPasswordReset, signOut]
   );
 
   return (

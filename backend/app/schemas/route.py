@@ -64,6 +64,20 @@ class PublicRouteList(CamelModel):
     routes: list[PublicRouteOut]
 
 
+class AdminPublicRouteCreate(CamelModel):
+    """Admin upload, step 2: the file is in S3; slug rules = public_route_service.SLUG_PATTERN."""
+
+    upload_id: str = Field(min_length=26, max_length=26)
+    slug: str = Field(min_length=1, max_length=64)
+
+
+class AdminPublicRouteResult(CamelModel):
+    """action: created / updated / unchanged (same as the import script output)."""
+
+    action: str
+    route: PublicRouteOut
+
+
 class FavoriteOut(CamelModel):
     """id 與其他 API 一致：公開路線 slug、私人路線 public_id。"""
 
