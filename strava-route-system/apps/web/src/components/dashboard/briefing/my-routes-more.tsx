@@ -181,6 +181,81 @@ function MyRoutesList({
   );
 }
 
+/** 滑鼠按住移動超過這個距離（px）才開始拖曳，未達就是點選 */
+const MOUSE_DRAG_SLOP = 4;
+/** 觸控長按多久（ms）開始拖曳；之前手指移動超過 TOUCH_MOVE_CANCEL 視為捲動 */
+const TOUCH_HOLD_MS = 250;
+const TOUCH_MOVE_CANCEL = 8;
+
+/**
+ * 整列都能拖：滑鼠按住移動即拖；觸控長按後拖（短按是點選、直接滑是捲動清單）。
+ * 拖過的那次放開不觸發連結點選。
+ */
+function useRowDrag(controls: ReturnType<typeof useDragControls>) {
+  const pending = useRef<{ event: PointerEvent; x: number; y: number; timer?: number } | null>(null);
+  const dragging = useRef(false);
+  const dragged = useRef(false);
+
+  // While a touch drag is active, block the page/list from scrolling under the finger
+  useEffect(() => {
+    const block = (e: TouchEvent) => {
+      if (dragging.current) e.preventDefault();
+    };
+    window.addEventListener("touchmove", block, { passive: false });
+    return () => window.removeEventListener("touchmove", block);
+  }, []);
+
+  const clear = () => {
+    if (pending.current?.timer) window.clearTimeout(pending.current.timer);
+    pending.current = null;
+  };
+  const start = () => {
+    const p = pending.current;
+    if (!p) return;
+    clear();
+    dragging.current = true;
+    dragged.current = true;
+    controls.start(p.event);
+  };
+
+  return {
+    onPointerDown(e: React.PointerEvent) {
+      if (e.button !== 0) return;
+      dragged.current = false;
+      clear();
+      pending.current = { event: e.nativeEvent, x: e.clientX, y: e.clientY };
+      if (e.pointerType !== "mouse") {
+        pending.current.timer = window.setTimeout(() => {
+          navigator.vibrate?.(10);
+          start();
+        }, TOUCH_HOLD_MS);
+      }
+    },
+    onPointerMove(e: React.PointerEvent) {
+      const p = pending.current;
+      if (!p) return;
+      const moved = Math.hypot(e.clientX - p.x, e.clientY - p.y);
+      if (e.pointerType === "mouse") {
+        if (moved > MOUSE_DRAG_SLOP) start();
+      } else if (moved > TOUCH_MOVE_CANCEL) {
+        clear(); // finger moved before the hold finished: it is a scroll
+      }
+    },
+    onPointerUp: clear,
+    onPointerCancel: clear,
+    onDragEnd() {
+      dragging.current = false;
+    },
+    // A drag ends with a click on the row's link: swallow it so dropping does not navigate
+    onClickCapture(e: React.MouseEvent) {
+      if (!dragged.current) return;
+      dragged.current = false;
+      e.preventDefault();
+      e.stopPropagation();
+    },
+  };
+}
+
 function SortableRow({
   route: r,
   active,
@@ -201,21 +276,38 @@ function SortableRow({
   alignStars: boolean;
 }) {
   const controls = useDragControls();
+  const drag = useRowDrag(controls);
   return (
     <Reorder.Item
       value={r}
       dragListener={false}
       dragControls={controls}
-      onDragEnd={onDragEnd}
+      onDragEnd={() => {
+        drag.onDragEnd();
+        onDragEnd();
+      }}
       className={cn("relative bg-popover", dividerAfter && "border-b border-dashed border-border pb-1")}
       whileDrag={{ scale: 1.02, boxShadow: "0 8px 20px -8px rgb(0 0 0 / 0.25)", borderRadius: 8, zIndex: 10 }}
     >
-      <div className={cn("flex min-h-11 items-center rounded-lg transition-colors", active ? "bg-muted" : "hover:bg-muted/50")}>
+      {/* select-none / no touch callout: a long press starts a drag instead of selecting text or opening the link menu */}
+      <div
+        onPointerDown={drag.onPointerDown}
+        onPointerMove={drag.onPointerMove}
+        onPointerUp={drag.onPointerUp}
+        onPointerCancel={drag.onPointerCancel}
+        onClickCapture={drag.onClickCapture}
+        onContextMenu={(e) => e.preventDefault()}
+        className={cn(
+          "flex min-h-11 cursor-grab select-none items-center rounded-lg transition-colors [-webkit-touch-callout:none] active:cursor-grabbing",
+          active ? "bg-muted" : "hover:bg-muted/50"
+        )}
+      >
         <Link
           href={href}
           onClick={onPick}
+          draggable={false}
           aria-current={active ? "page" : undefined}
-          className={cn("flex min-h-11 min-w-0 flex-1 items-center gap-2.5 pl-3 text-sm", active && "font-semibold")}
+          className={cn("flex min-h-11 min-w-0 flex-1 cursor-[inherit] items-center gap-2.5 pl-3 text-sm", active && "font-semibold")}
         >
           {/* 收藏才有星號；清單有收藏時其他列留同寬空位，名稱對齊 */}
           {r.mark === "favorite" ? (
@@ -226,14 +318,17 @@ function SortableRow({
           <span className="min-w-0 flex-1 truncate">{r.name}</span>
           {active && <Check className="size-4 shrink-0 text-primary" aria-label="目前路線" />}
         </Link>
-        <button
-          type="button"
-          aria-label={`拖曳調整「${r.name}」的順序`}
-          onPointerDown={(e) => controls.start(e)}
-          className="flex size-11 shrink-0 cursor-grab touch-none items-center justify-center text-muted-foreground active:cursor-grabbing"
+        {/* ⋮⋮ 只是可拖曳的提示；按住它立即開始拖（不用長按） */}
+        <span
+          aria-hidden
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            controls.start(e);
+          }}
+          className="flex size-11 shrink-0 touch-none items-center justify-center text-muted-foreground"
         >
-          <GripVertical className="size-4" aria-hidden />
-        </button>
+          <GripVertical className="size-4" />
+        </span>
       </div>
     </Reorder.Item>
   );
