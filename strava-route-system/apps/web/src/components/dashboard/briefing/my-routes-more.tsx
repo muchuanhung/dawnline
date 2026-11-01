@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Reorder, useDragControls } from "framer-motion";
 import { ArrowRight, Check, ChevronDown, GripVertical, Lock, Star } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -9,6 +10,8 @@ import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } f
 import { cn } from "@/lib/utils";
 import { withTrip, type TripParams } from "@/lib/routes/trip";
 import { MY_ROUTES_MAX } from "@/lib/dashboard/my-routes";
+import { saveRouteOrder } from "@/lib/dashboard/route-order";
+import { useSessionRetry } from "@/hooks/usePrivateRoutes";
 import type { SwitcherRoute } from "./route-switcher";
 
 const DESKTOP_QUERY = "(min-width: 1024px)";
@@ -31,6 +34,9 @@ export function MyRoutesMore({
 }) {
   const [open, setOpen] = useState(false);
   const [desktop, setDesktop] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const router = useRouter();
+  const withSessionRetry = useSessionRetry();
   useEffect(() => {
     const mq = window.matchMedia(DESKTOP_QUERY);
     setDesktop(mq.matches);
@@ -46,7 +52,27 @@ export function MyRoutesMore({
       <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} aria-hidden />
     </button>
   );
-  const body = <MyRoutesList routes={routes} currentId={currentId} trip={trip} onPick={() => setOpen(false)} />;
+  /**
+   * 拖曳放開後存到後端（跨裝置同步），再重新整理伺服器資料讓切換列的前幾顆跟著換。
+   * 失敗時也重新整理：清單回到後端的順序，並顯示一句錯誤。
+   */
+  const saveOrder = (ids: string[]) => {
+    if (ids.join("|") === routes.map((r) => r.id).join("|")) return;
+    setSaveError(null);
+    withSessionRetry(() => saveRouteOrder(ids))
+      .catch(() => setSaveError("排序沒有存到，請再試一次"))
+      .finally(() => router.refresh());
+  };
+  const body = (
+    <MyRoutesList
+      routes={routes}
+      currentId={currentId}
+      trip={trip}
+      onPick={() => setOpen(false)}
+      onReorder={saveOrder}
+      error={saveError}
+    />
+  );
 
   if (desktop) {
     return (
@@ -85,21 +111,32 @@ function MyRoutesList({
   trip,
   onPick,
   onReorder,
+  error,
 }: {
   routes: SwitcherRoute[];
   currentId: string;
   trip: TripParams;
   onPick: () => void;
   /** 放開時的新順序（id）；存檔方式由呼叫端決定 */
-  onReorder?: (ids: string[]) => void;
+  onReorder: (ids: string[]) => void;
+  /** 最近一次存檔失敗的訊息 */
+  error: string | null;
 }) {
   const [items, setItems] = useState(routes);
   // Server data changed (new favourite, refresh after save): start from it again
   useEffect(() => setItems(routes), [routes]);
+  // Latest order for onDragEnd, which may fire with a closure from before the last reorder
+  const latest = useRef(items);
+  latest.current = items;
 
   return (
     <nav aria-label="我的路線">
       <p className="px-3 py-1.5 text-xs text-muted-foreground">按住 ⋮⋮ 拖曳調整順序，前 {MY_ROUTES_MAX} 條顯示在上方</p>
+      {error && (
+        <p role="alert" className="px-3 pb-1.5 text-xs font-medium text-destructive">
+          {error}
+        </p>
+      )}
       {/* data-vaul-no-drag：在手機 Drawer 裡拖曳排序時不要把 Drawer 拉下來 */}
       <Reorder.Group axis="y" values={items} onReorder={setItems} as="ul" data-vaul-no-drag>
         {items.map((r, i) => (
@@ -109,7 +146,7 @@ function MyRoutesList({
             active={r.id === currentId}
             href={withTrip(`/dashboard?route=${encodeURIComponent(r.id)}`, trip)}
             onPick={onPick}
-            onDragEnd={() => onReorder?.(items.map((x) => x.id))}
+            onDragEnd={() => onReorder(latest.current.map((x) => x.id))}
             dividerAfter={i === MY_ROUTES_MAX - 1 && items.length > MY_ROUTES_MAX}
           />
         ))}
