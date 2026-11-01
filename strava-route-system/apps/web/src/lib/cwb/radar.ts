@@ -1,6 +1,7 @@
 /**
  * CWA 雷達合成回波：純函式
- * 只用來「顯示」，不參與判定（判定仍只看規則式的預報、雨量站與路況）。
+ * 雷達回波只用來「顯示」，不參與判定。唯一進判讀的是未來 1 小時降雨預報（F-B0046）的沿線雨量 nowcastMmNear，
+ * 也只用來把「降雨機率高但雨量小」的危險降成注意，不會判成安全。
  *
  * 來源是 CWA 公開 S3 的歷史檔 history/Observation/<YYYYMMDDHHmm>compref_mosaic.xml（台灣時間，
  * 內容即 O-A0059-001）：每 10 分鐘一筆、保留約兩週、不需金鑰，所以能回放過去的回波。
@@ -189,6 +190,41 @@ export const QPF_GRID = { lon0: 118, lat0: 20, res: 0.0125, nx: 441, ny: 561 } a
 
 export function parseRainNowcast(xml: string): CompositeGrid {
   return parseCwaGrid(xml, QPF_GRID, "降雨預報格點");
+}
+
+/**
+ * 沿線取樣的範圍：路線點四周各 2 格（±0.025°，約 ±2.8 km）。
+ * 依據：1) 外延預報的位置誤差，CWA 說明要「瞭解外延法應用之極限」；2) 資料說明寫第一點是 117.975°E、19.975°N，
+ * 與格點參數的 118°E、20°N 差 2 格，對不準時也要涵蓋到；3) 與即時雨量站採 3 km 內測站的範圍相當。
+ * 取範圍內最大值：範圍越大、越不容易判成「雨量小」，只會比較保守。
+ */
+export const NOWCAST_SAMPLE_RADIUS_CELLS = 2;
+
+/**
+ * 路線點（WGS84）周圍的未來 1 小時雨量最大值（mm）。判讀用：雨量小才可能把降雨機率的「危險」降成「注意」。
+ * F-B0046 沒有雨與資料無效都記成 -99（同一檔裡兩者無法區分），這裡當成 0 mm；
+ * 因此這個值只能用來「降一級到注意」，不能拿來判安全（見 recon-geo 的 forecastRainLevel）。
+ * 點落在格點外、值不是數字（解析失敗）時回傳 null：不知道就不降級。沒有點也回 null。
+ */
+export function nowcastMmNear(values: Float32Array, points: readonly { lat: number; lon: number }[]): number | null {
+  const { lon0, lat0, res, nx, ny } = QPF_GRID;
+  const r = NOWCAST_SAMPLE_RADIUS_CELLS;
+  if (points.length === 0 || values.length !== nx * ny) return null;
+  let max = 0;
+  for (const { lat, lon } of points) {
+    // WGS84 → TWD67 格點索引
+    const col = Math.round((lon - TWD67_SHIFT.lon - lon0) / res);
+    const row = Math.round((lat - TWD67_SHIFT.lat - lat0) / res);
+    if (col - r < 0 || col + r >= nx || row - r < 0 || row + r >= ny) return null;
+    for (let y = row - r; y <= row + r; y++) {
+      for (let x = col - r; x <= col + r; x++) {
+        const mm = values[y * nx + x]!;
+        if (Number.isNaN(mm)) return null;
+        if (mm > max) max = mm;
+      }
+    }
+  }
+  return Math.round(max * 10) / 10;
 }
 
 /** 超過色階（52 dBZ 以上）的顏色；dbzFromColor 對不上色階，只說「回波很強」不猜數值 */

@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
+import { Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   ACTIVITIES,
@@ -76,6 +77,8 @@ export function TripSettings({
   const offset = offsetOf(explicitDeparture ? new Date(explicitDeparture) : null, now);
   const [speedOpen, setSpeedOpen] = useState(false);
   const editSpeed = onEditSpeed ?? (speedRoute ? () => setSpeedOpen(true) : undefined);
+  const climbMin = climbMinFor(activity, speedKmh);
+  const descentMin = descentMinFor(activity, speedKmh);
 
   // Remember what the page currently shows so the nav links can restore it
   useEffect(() => {
@@ -132,27 +135,39 @@ export function TripSettings({
           ))}
         </select>
       </label>
-      <p className="w-full text-xs text-muted-foreground">
-        {fromKm != null ? (
-          <>
-            依你在 <span className="font-mono">{fromKm.toFixed(1)} km</span>、
-          </>
-        ) : (
-          <>
-            依 <span className="font-mono">{formatClock(new Date(departure), now)}</span> 出發、
-          </>
-        )}
-        {ACTIVITY[activity].label}均速{" "}
-        {speedKmh} km/h
-        {climbMinFor(activity, speedKmh) > 0 && `、每爬升 100 m 加 ${formatClimbMin(climbMinFor(activity, speedKmh))} 分鐘`}
-        {descentMinFor(activity, speedKmh) > 0 && `、每下降 100 m 減 ${formatClimbMin(descentMinFor(activity, speedKmh))} 分鐘`}{" "}
-        估算{fromKm != null ? "前方" : ""}各段抵達時間，再對照該時段的預報。
+      <div className="flex w-full flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-muted-foreground">
+        {/* Mobile (outdoors, on the move): only the speed in use; the full ETA formula is for desktop planning */}
+        <span className="md:hidden">
+          {ACTIVITY[activity].label}均速 <span className="font-mono font-medium text-foreground">{speedKmh} km/h</span>
+        </span>
+        <span className="hidden md:inline">
+          {fromKm != null ? (
+            <>
+              依你在 <span className="font-mono">{fromKm.toFixed(1)} km</span>、
+            </>
+          ) : (
+            <>
+              依 <span className="font-mono">{formatClock(new Date(departure), now)}</span> 出發、
+            </>
+          )}
+          {ACTIVITY[activity].label}均速{" "}
+          {speedKmh} km/h
+          {climbMin > 0 && `、每爬升 100 m 加 ${formatClimbMin(climbMin)} 分鐘`}
+          {descentMin > 0 && `、每下降 100 m 減 ${formatClimbMin(descentMin)} 分鐘`}{" "}
+          估算{fromKm != null ? "前方" : ""}各段抵達時間，再對照該時段的預報。
+        </span>
         {editSpeed && (
-          <button type="button" onClick={editSpeed} className="ml-1 font-medium text-primary underline-offset-2 hover:underline">
+          // Same chip style as the route card's speed button, so it reads as tappable
+          <button
+            type="button"
+            onClick={editSpeed}
+            className="inline-flex items-center gap-1 rounded-lg bg-secondary/60 px-2.5 py-1 text-xs font-medium text-primary hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Pencil className="h-3 w-3" aria-hidden />
             調整速度
           </button>
         )}
-      </p>
+      </div>
       {!onEditSpeed && speedRoute && (
         <SpeedSheet
           open={speedOpen}

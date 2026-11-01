@@ -33,11 +33,14 @@ import {
   estimateArrivalTime,
   isBeyondForecast,
   pickRainfallBucketForSegment,
+  pickWeatherTextsForSegment,
   pickWindForSegment,
   type Pace,
   type RainfallBucket,
+  type WeatherTextBucket,
   type WindBucket,
 } from "@/lib/cwb/forecast-eta";
+import { RADAR_STALE_MS, nowcastMmNear } from "@/lib/cwb/radar";
 
 export interface DistrictWeather {
   /** 第一個預報時段的降雨機率；沒有 rainfallBuckets 或未指定出發時間時使用 */
@@ -51,6 +54,10 @@ export interface DistrictWeather {
   rainfallBuckets?: RainfallBucket[];
   /** 風速時段，依各路段 ETA 挑選；沒有時用 windSpeedKmh（第一個時段） */
   windBuckets?: WindBucket[];
+  /** 天氣現象時段，依各路段 ETA 挑選；舊的判讀輸入沒有此欄位 */
+  weatherTextBuckets?: WeatherTextBucket[];
+  /** 此路線沿線的未來 1 小時預估雨量；只由 withRouteNowcast 加上，沒有時判讀只看降雨機率 */
+  nowcast?: { mm: number; validUntil: string };
   /** 路線 3 km 內雨量站的即時時雨量（mm/hr）；null 為附近沒有測站，未提供時不列入判定 */
   observedRainMmPerHr?: number | null;
   /** 重抓後仍是過期預報 */
@@ -154,6 +161,42 @@ export function withRouteObservedRain(
   return out;
 }
 
+/** 未來 1 小時降雨預報（F-B0046）格點；issuedAt 為預報起點 */
+export interface RainNowcastInput {
+  issuedAt: string;
+  values: Float32Array;
+}
+
+/** 預報涵蓋的時間：預報起點起 1 小時 */
+const NOWCAST_SPAN_MS = 60 * 60_000;
+
+/**
+ * 此路線專用的天氣查詢表：加上各行政區沿線（這條路線的取樣點）的未來 1 小時預估雨量。
+ * 預報取不到（null）、預報起點超過 RADAR_STALE_MS（30 分鐘，與雷達圖「暫無」同一門檻）或時間無法解析時不加，
+ * 判讀維持只看降雨機率。哪些路段能用（1 小時內會離開）由 weatherStages 依 ETA 判斷。
+ */
+export function withRouteNowcast(
+  route: Route,
+  lookup: WeatherLookup,
+  nowcast: RainNowcastInput | null,
+  now: Date
+): WeatherLookup {
+  if (!nowcast) return lookup;
+  const issued = Date.parse(nowcast.issuedAt);
+  const age = now.getTime() - issued;
+  // 預報起點在未來太多（時鐘誤差）也不信任
+  if (!Number.isFinite(issued) || age > RADAR_STALE_MS || age < -5 * 60_000) return lookup;
+  const validUntil = new Date(issued + NOWCAST_SPAN_MS).toISOString();
+  const out = new Map(lookup);
+  for (const [key, near] of routeDistrictPoints([route])) {
+    const w = lookup.get(key);
+    if (!w) continue;
+    const mm = nowcastMmNear(nowcast.values, near);
+    out.set(key, mm == null ? { ...w, nowcast: undefined } : { ...w, nowcast: { mm, validUntil } });
+  }
+  return out;
+}
+
 /** 遞增陣列中最接近 target 的索引 */
 function nearestIndex(sorted: number[], target: number): number {
   let lo = 0;
@@ -173,9 +216,22 @@ export interface ApplyWeatherOptions {
   pace?: Pace;
 }
 
+/** 路段行經時段的天氣現象；沒有出發時間時取第一個時段，沒有時段資料回 undefined */
+function weatherTextForSegment(
+  seg: RouteSegment,
+  w: DistrictWeather,
+  { departureTime, pace = DEFAULT_CYCLING_SPEED_KMH }: ApplyWeatherOptions
+): string | undefined {
+  const buckets = w.weatherTextBuckets;
+  if (!buckets?.length) return undefined;
+  if (!departureTime) return buckets[0]!.text;
+  const texts = pickWeatherTextsForSegment(seg.sampleKms, departureTime, buckets, pace);
+  return texts.length ? texts.join("、") : undefined;
+}
+
 /**
  * 把天氣合併進路段；查不到的路段標 hasWeather=false（數值不可當真）。
- * 風速、氣溫、天氣現象仍是第一個預報時段（CWB 這些欄位目前只取第一筆）。
+ * 氣溫、condition 仍是第一個預報時段（CWB 這些欄位目前只取第一筆）；降雨機率、風速、天氣現象文字依 ETA 挑時段。
  */
 export function applyWeather(route: Route, lookup: WeatherLookup, options: ApplyWeatherOptions = {}): Route {
   return {
@@ -191,6 +247,9 @@ export function applyWeather(route: Route, lookup: WeatherLookup, options: Apply
         condition: w.condition,
         hasWeather: true,
         observedRainMmPerHr: w.observedRainMmPerHr,
+        weatherText: weatherTextForSegment(seg, w, options),
+        nowcastRainMm: w.nowcast?.mm,
+        nowcastValidUntil: w.nowcast?.validUntil,
         weatherStale: w.stale ?? false,
         outOfCoverage: isOutOfCoverage(seg, w, options),
       };
@@ -210,6 +269,8 @@ type TimedWeatherOptions = ApplyWeatherOptions & { departureTime: Date };
  * 現在起 60 分鐘內進入的區段採用，較晚抵達的只看預報。
  * 以區段而非路段判斷：區段已依里程排序、繞圈路線的回程是另一個區段，起點里程一定存在。
  * 途中模式反推的出發時間在現在之前，目前所在區段的 ETA 也在現在之前，仍採用。
+ * 未來 1 小時預估雨量只涵蓋預報起點起 1 小時：區段「離開」ETA 在涵蓋時間內才採用（整段都在預報內，才能說雨量小），
+ * 其餘區段拿掉，判讀維持只看降雨機率。
  */
 function weatherStages(
   route: Route,
@@ -223,11 +284,19 @@ function weatherStages(
   const clipped = fromKm != null ? clipStagesFrom(derived, fromKm) : derived;
   const cutoff = now.getTime() + OBSERVED_RAIN_RELEVANT_MIN * 60_000;
   const { departureTime, pace = DEFAULT_CYCLING_SPEED_KMH } = options;
-  const stages = clipped.map((s) =>
-    s.observedRainMmPerHr === undefined || estimateArrivalTime(s.startKm, departureTime, pace).getTime() <= cutoff
-      ? s
-      : { ...s, observedRainMmPerHr: undefined }
-  );
+  const stages = clipped.map((s) => {
+    const observedOk =
+      s.observedRainMmPerHr === undefined || estimateArrivalTime(s.startKm, departureTime, pace).getTime() <= cutoff;
+    const nowcastOk =
+      s.nowcastRainMm === undefined ||
+      estimateArrivalTime(s.endKm, departureTime, pace).getTime() <= Date.parse(s.nowcastValidUntil ?? "");
+    if (observedOk && nowcastOk) return s;
+    return {
+      ...s,
+      ...(observedOk ? {} : { observedRainMmPerHr: undefined }),
+      ...(nowcastOk ? {} : { nowcastRainMm: undefined, nowcastValidUntil: undefined }),
+    };
+  });
   return { enriched, stages };
 }
 

@@ -78,7 +78,8 @@ export function AppShell({ current, children }: { current: AppSection; children:
         className="mx-auto max-w-6xl px-4 pb-[calc(env(safe-area-inset-bottom)+6rem)] pt-6 sm:px-6 md:pb-12 md:pt-10"
       >
         {children}
-        <SiteFooter className="mt-12 border-t border-border pt-6" />
+        {/* Mobile: main keeps 6rem bottom padding for the 4rem bottom nav, so 2rem shows below the footer text; pt-8 matches it to center the line vertically */}
+        <SiteFooter className="mt-8 border-t border-border pt-8 md:mt-12 md:pt-6" />
       </main>
 
       <nav
