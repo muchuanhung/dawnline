@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Reorder, useDragControls } from "framer-motion";
-import { ArrowRight, Check, ChevronDown, GripVertical, Lock, Star } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, GripVertical, Star } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { cn } from "@/lib/utils";
@@ -101,7 +101,7 @@ export function MyRoutesMore({
 }
 
 /**
- * 一個清單（收藏與上傳不分組，★／鎖頭標示來源）；目前路線打勾；底部連到路線頁管理。
+ * 一個清單（收藏與上傳不分組，收藏加 ★）；目前路線打勾；底部連到路線頁管理。
  * 按住右側把手拖曳排序（framer-motion Reorder，滑鼠與觸控皆可）；前 MY_ROUTES_MAX 條就是切換列上的路線。
  * 只有把手能拖，手機上下捲動清單不會誤觸；放開時呼叫 onReorder 存檔。
  */
@@ -182,7 +182,6 @@ function SortableRow({
   dividerAfter: boolean;
 }) {
   const controls = useDragControls();
-  const Icon = r.mark === "favorite" ? Star : Lock;
   return (
     <Reorder.Item
       value={r}
@@ -199,10 +198,12 @@ function SortableRow({
           aria-current={active ? "page" : undefined}
           className={cn("flex min-h-11 min-w-0 flex-1 items-center gap-2.5 pl-3 text-sm", active && "font-semibold")}
         >
-          <Icon
-            className={cn("size-4 shrink-0", r.mark === "favorite" ? "fill-amber-400 text-amber-400" : "text-muted-foreground")}
-            aria-label={r.mark === "favorite" ? "收藏" : "私人路線"}
-          />
+          {/* 收藏才有星號；自己上傳的留同寬空位，名稱對齊 */}
+          {r.mark === "favorite" ? (
+            <Star className="size-4 shrink-0 fill-amber-400 text-amber-400" aria-label="收藏" />
+          ) : (
+            <span className="size-4 shrink-0" aria-hidden />
+          )}
           <span className="min-w-0 flex-1 truncate">{r.name}</span>
           {active && <Check className="size-4 shrink-0 text-primary" aria-label="目前路線" />}
         </Link>

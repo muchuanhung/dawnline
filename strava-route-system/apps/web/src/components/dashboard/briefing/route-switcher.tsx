@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { ArrowRight, Lock, Star } from "lucide-react";
+import { ArrowRight, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { withTrip, type TripParams } from "@/lib/routes/trip";
 import { MyRoutesMore } from "./my-routes-more";
 
-/** 切換列的一條路線；mark 只在登入後的「我的路線」出現：favorite 收藏、private 自己上傳 */
+/** 切換列的一條路線；mark 只在登入後的「我的路線」出現：favorite 收藏（顯示星號）、private 自己上傳（不加圖示） */
 export interface SwitcherRoute {
   id: string;
   name: string;
@@ -63,7 +63,6 @@ export function RouteSwitcher({
                 {r.mark === "favorite" && (
                   <Star className="size-3.5 shrink-0 fill-amber-400 text-amber-400" aria-label="收藏" />
                 )}
-                {r.mark === "private" && <Lock className="size-3.5 shrink-0" aria-label="私人路線" />}
                 <span className="truncate">{r.name}</span>
               </Link>
             </li>
