@@ -47,6 +47,8 @@ def _keys(s3) -> list[str]:
 
 def test_me_reports_admin(admin):
     assert admin.get("/api/v1/me").json()["isAdmin"] is True
+    res = admin.post("/api/v1/auth/session", json={"idToken": f"valid:{ADMIN_UID}"})
+    assert res.json()["isAdmin"] is True
     login(admin, "valid:rider")
     assert admin.get("/api/v1/me").json()["isAdmin"] is False
 

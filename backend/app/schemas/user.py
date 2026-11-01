@@ -30,6 +30,13 @@ class UserOut(CamelModel):
         return f"{AVATAR_PATH}?v={version}"
 
 
+def user_out(user: object, is_admin: bool) -> UserOut:
+    """ORM User -> UserOut with is_admin (decided by the router from settings)."""
+    out = UserOut.model_validate(user)
+    out.is_admin = is_admin
+    return out
+
+
 class AvatarUploadCreate(CamelModel):
     file_size: int = Field(gt=0)
 

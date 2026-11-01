@@ -8,7 +8,7 @@ from app.core.errors import ApiError
 from app.core.firebase import InvalidIdTokenError, TokenVerifier, get_token_verifier
 from app.deps import AppSettings, DbSession
 from app.schemas.auth import SessionCreate
-from app.schemas.user import UserOut
+from app.schemas.user import UserOut, user_out
 from app.services import auth_service
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
@@ -38,7 +38,7 @@ def create_session(
     )
     db.commit()
     set_session_cookie(response, raw_token, settings)
-    return user
+    return user_out(user, settings.is_admin(user.firebase_uid))
 
 
 @router.delete("/session", status_code=status.HTTP_204_NO_CONTENT)
