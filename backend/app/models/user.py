@@ -15,5 +15,8 @@ class User(Base):
     firebase_uid: Mapped[str] = mapped_column(String(128))
     email: Mapped[str | None] = mapped_column(String(255))
     display_name: Mapped[str | None] = mapped_column(String(100))
+    # S3 key of the uploaded avatar (users/{id}/avatar/{ulid}.jpg);
+    # NULL = none, the frontend falls back to the Google photo or initials
+    avatar_key: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime3, default=utcnow)
     last_login_at: Mapped[datetime] = mapped_column(DateTime3, default=utcnow)
