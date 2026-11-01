@@ -600,7 +600,8 @@ export function computeHazards(_route: Route, stages: RouteStage[]): Hazard[] {
       label: h.observed
         ? `即時雨量 ${h.value} mm/hr`
         : h.nowcastMm != null
-          ? `${KIND_LABEL[h.kind](h.value)}，但 1 小時內預估雨量僅 ${h.nowcastMm} mm`
+          ? // Kept short: the label is the one-line verdict pill on mobile; mm detail lives in docs/rain-confidence.md
+            `${KIND_LABEL[h.kind](h.value)}・雨勢小`
           : KIND_LABEL[h.kind](h.value),
     }));
 }

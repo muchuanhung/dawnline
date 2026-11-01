@@ -32,9 +32,9 @@ test.describe("forecastRainLevel：三種情境", () => {
     const { hazards, verdict } = verdictOf(80, { nowcastRainMm: 0.4, weatherText: "短暫陣雨" });
     expect(hazards).toHaveLength(1);
     expect(hazards[0]).toMatchObject({ kind: "rain", level: "caution" });
-    expect(hazards[0]!.label).toBe("降雨 80%，但 1 小時內預估雨量僅 0.4 mm");
+    expect(hazards[0]!.label).toBe("降雨 80%・雨勢小");
     expect(verdict.level).toBe("caution");
-    expect(verdict.headline).toBe("0.0 km 起降雨 80%，但 1 小時內預估雨量僅 0.4 mm");
+    expect(verdict.headline).toBe("0.0 km 起降雨 80%・雨勢小");
   });
 
   test("機率高、預估雨量大：維持危險", () => {
@@ -79,7 +79,7 @@ test.describe("forecastRainLevel：三種情境", () => {
       ],
     });
     const labels = computeHazards(route, deriveStages(route)).map((h) => h.label);
-    expect(labels).toEqual(["降雨 80%，但 1 小時內預估雨量僅 0.3 mm", "降雨 45%"]);
+    expect(labels).toEqual(["降雨 80%・雨勢小", "降雨 45%"]);
   });
 });
 
@@ -172,7 +172,7 @@ test.describe("briefRoute：預估雨量只用在 1 小時內會走完的路段"
   test("1 小時內走完的路段降成注意，之後的路段仍危險", () => {
     const b = briefRoute(route, withRouteNowcast(route, lookup, nowcast, AT_8AM), { now: AT_8AM });
     expect(b.hazards.map((h) => [h.level, h.label])).toEqual([
-      ["caution", "降雨 80%，但 1 小時內預估雨量僅 0 mm"],
+      ["caution", "降雨 80%・雨勢小"],
       ["risky", "降雨 80%"],
     ]);
     expect(b.verdict.level).toBe("risky");
