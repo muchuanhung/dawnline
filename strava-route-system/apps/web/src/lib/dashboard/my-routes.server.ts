@@ -1,6 +1,6 @@
 /**
  * 今日判讀「我的路線」（伺服器端專用）：帶使用者自己的 cookie（rc_session）向 FastAPI 後端
- * 讀收藏與自己上傳的路線，交給 pickMyRoutes 排出切換列。
+ * 讀收藏與自己上傳的路線，交給 pickMyRoutes 排序（收藏在前）。
  * 任一個讀不到（未登入後端、session 過期、後端連不上）就回 null，Dashboard 改顯示公開路線，不擋判讀。
  */
 
@@ -24,7 +24,8 @@ export async function loadMyRoutes(cookie: string, publicIds: ReadonlySet<string
       backendJson<FavoriteList>("/api/v1/favorites", cookie),
       backendJson<PrivateRouteList>("/api/v1/routes", cookie),
     ]);
-    return pickMyRoutes(favorites, routes, publicIds);
+    // 全部回傳：切換列只顯示前 MY_ROUTES_MAX 條，其餘在「全部 N 條」面板裡
+    return pickMyRoutes(favorites, routes, publicIds, Number.POSITIVE_INFINITY);
   } catch (err) {
     console.warn("我的路線讀取失敗，改顯示公開路線:", err instanceof Error ? err.message : err);
     return null;

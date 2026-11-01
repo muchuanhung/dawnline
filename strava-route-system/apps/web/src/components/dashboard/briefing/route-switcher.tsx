@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight, Lock, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { withTrip, type TripParams } from "@/lib/routes/trip";
+import { MyRoutesMore } from "./my-routes-more";
 
 /** 切換列的一條路線；mark 只在登入後的「我的路線」出現：favorite 收藏、private 自己上傳 */
 export interface SwitcherRoute {
@@ -26,7 +27,8 @@ const CHIP =
 
 /**
  * 路線切換：純連結（?route=），可分享、可上一頁，不需客戶端狀態。
- * mine：登入後的「我的路線」（收藏＋自己上傳，T8）；一律附「全部路線」入口，一條也顯示。
+ * mine：登入後的「我的路線」（收藏＋自己上傳，T8）：超過 MAX_CHIPS 條時最後一顆就地展開全部，
+ * 沒超過時附「全部路線」連到路線頁；一條也顯示。
  */
 export function RouteSwitcher({
   routes,
@@ -67,7 +69,17 @@ export function RouteSwitcher({
             </li>
           );
         })}
-        {(mine || routes.length > shown.length) && (
+        {/* 我的路線超過可見數量：就地展開全部，不離開 Dashboard */}
+        {mine && routes.length > shown.length ? (
+          <li>
+            <MyRoutesMore
+              routes={routes}
+              currentId={currentId}
+              trip={trip}
+              chipClassName={cn(CHIP, "gap-1 border-dashed border-border text-primary hover:bg-muted/50")}
+            />
+          </li>
+        ) : (mine || routes.length > shown.length) && (
           <li>
             <Link href={withTrip("/routes", trip)} className={cn(CHIP, "gap-1 border-dashed border-border text-primary hover:bg-muted/50")}>
               {mine ? "全部路線" : `全部 ${routes.length} 條路線`}
