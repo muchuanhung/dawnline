@@ -87,7 +87,8 @@ export function UserMenuView({ active, displayName, email, avatarUrl, onSignOut 
           active ? "border-primary/40" : "border-border"
         )}
       >
-        <Avatar className="size-8">
+        {/* key: remount when the photo changes or is removed so Radix resets its loading status */}
+        <Avatar key={avatarUrl ?? "fallback"} className="size-8">
           <AvatarImage src={avatarUrl} alt="" />
           <AvatarFallback className="bg-gradient-to-br from-[#f6d38f] to-[#e9a35a] font-bold text-[#3b2a10]">
             {name.slice(0, 1).toUpperCase()}
