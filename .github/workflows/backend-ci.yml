@@ -62,10 +62,10 @@ jobs:
 
       - name: Alembic 版本與 migration 往返
         run: |
-          docker compose exec -T api alembic current | grep -q '0007 (head)'
+          docker compose exec -T api alembic current | grep -q '0008 (head)'
           docker compose exec -T api alembic downgrade base
           docker compose exec -T api alembic upgrade head
-          docker compose exec -T api alembic current | grep -q '0007 (head)'
+          docker compose exec -T api alembic current | grep -q '0008 (head)'
 
       - name: MySQL 設定與 schema（時區、utf8mb4、空間索引、FK）
         run: |

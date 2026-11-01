@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Check, ChevronDown, Lock, Star } from "lucide-react";
+import { Reorder, useDragControls } from "framer-motion";
+import { ArrowRight, Check, ChevronDown, GripVertical, Lock, Star } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { cn } from "@/lib/utils";
 import { withTrip, type TripParams } from "@/lib/routes/trip";
+import { MY_ROUTES_MAX } from "@/lib/dashboard/my-routes";
 import type { SwitcherRoute } from "./route-switcher";
 
 const DESKTOP_QUERY = "(min-width: 1024px)";
@@ -72,58 +74,46 @@ export function MyRoutesMore({
   );
 }
 
-/** 分「收藏」「我上傳的」兩組；目前路線打勾；底部連到路線頁管理 */
+/**
+ * 一個清單（收藏與上傳不分組，★／鎖頭標示來源）；目前路線打勾；底部連到路線頁管理。
+ * 按住右側把手拖曳排序（framer-motion Reorder，滑鼠與觸控皆可）；前 MY_ROUTES_MAX 條就是切換列上的路線。
+ * 只有把手能拖，手機上下捲動清單不會誤觸；放開時呼叫 onReorder 存檔。
+ */
 function MyRoutesList({
   routes,
   currentId,
   trip,
   onPick,
+  onReorder,
 }: {
   routes: SwitcherRoute[];
   currentId: string;
   trip: TripParams;
   onPick: () => void;
+  /** 放開時的新順序（id）；存檔方式由呼叫端決定 */
+  onReorder?: (ids: string[]) => void;
 }) {
-  const groups = [
-    { title: "收藏", items: routes.filter((r) => r.mark === "favorite") },
-    { title: "我上傳的", items: routes.filter((r) => r.mark !== "favorite") },
-  ].filter((g) => g.items.length > 0);
+  const [items, setItems] = useState(routes);
+  // Server data changed (new favourite, refresh after save): start from it again
+  useEffect(() => setItems(routes), [routes]);
 
   return (
     <nav aria-label="我的路線">
-      {groups.map((g) => (
-        <section key={g.title} className="py-1">
-          <h3 className="px-3 py-1.5 text-xs font-medium text-muted-foreground">
-            {g.title} {g.items.length}
-          </h3>
-          <ul>
-            {g.items.map((r) => {
-              const active = r.id === currentId;
-              const Icon = r.mark === "favorite" ? Star : Lock;
-              return (
-                <li key={r.id}>
-                  <Link
-                    href={withTrip(`/dashboard?route=${encodeURIComponent(r.id)}`, trip)}
-                    onClick={onPick}
-                    aria-current={active ? "page" : undefined}
-                    className={cn(
-                      "flex min-h-11 items-center gap-2.5 rounded-lg px-3 text-sm transition-colors hover:bg-muted",
-                      active && "bg-muted font-semibold"
-                    )}
-                  >
-                    <Icon
-                      className={cn("size-4 shrink-0", r.mark === "favorite" ? "fill-amber-400 text-amber-400" : "text-muted-foreground")}
-                      aria-hidden
-                    />
-                    <span className="min-w-0 flex-1 truncate">{r.name}</span>
-                    {active && <Check className="size-4 shrink-0 text-primary" aria-label="目前路線" />}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ))}
+      <p className="px-3 py-1.5 text-xs text-muted-foreground">按住 ⋮⋮ 拖曳調整順序，前 {MY_ROUTES_MAX} 條顯示在上方</p>
+      {/* data-vaul-no-drag：在手機 Drawer 裡拖曳排序時不要把 Drawer 拉下來 */}
+      <Reorder.Group axis="y" values={items} onReorder={setItems} as="ul" data-vaul-no-drag>
+        {items.map((r, i) => (
+          <SortableRow
+            key={r.id}
+            route={r}
+            active={r.id === currentId}
+            href={withTrip(`/dashboard?route=${encodeURIComponent(r.id)}`, trip)}
+            onPick={onPick}
+            onDragEnd={() => onReorder?.(items.map((x) => x.id))}
+            dividerAfter={i === MY_ROUTES_MAX - 1 && items.length > MY_ROUTES_MAX}
+          />
+        ))}
+      </Reorder.Group>
       <div className="mt-1 border-t border-border px-1 pt-1">
         <Link
           href={withTrip("/routes", trip)}
@@ -135,5 +125,59 @@ function MyRoutesList({
         </Link>
       </div>
     </nav>
+  );
+}
+
+function SortableRow({
+  route: r,
+  active,
+  href,
+  onPick,
+  onDragEnd,
+  dividerAfter,
+}: {
+  route: SwitcherRoute;
+  active: boolean;
+  href: string;
+  onPick: () => void;
+  onDragEnd: () => void;
+  /** 第 MY_ROUTES_MAX 條下方畫分隔線：線上方的路線出現在切換列 */
+  dividerAfter: boolean;
+}) {
+  const controls = useDragControls();
+  const Icon = r.mark === "favorite" ? Star : Lock;
+  return (
+    <Reorder.Item
+      value={r}
+      dragListener={false}
+      dragControls={controls}
+      onDragEnd={onDragEnd}
+      className={cn("relative bg-popover", dividerAfter && "mb-1 border-b border-dashed border-border pb-1")}
+      whileDrag={{ scale: 1.02, boxShadow: "0 8px 20px -8px rgb(0 0 0 / 0.25)", borderRadius: 8, zIndex: 10 }}
+    >
+      <div className={cn("flex min-h-11 items-center rounded-lg transition-colors hover:bg-muted", active && "bg-muted")}>
+        <Link
+          href={href}
+          onClick={onPick}
+          aria-current={active ? "page" : undefined}
+          className={cn("flex min-h-11 min-w-0 flex-1 items-center gap-2.5 pl-3 text-sm", active && "font-semibold")}
+        >
+          <Icon
+            className={cn("size-4 shrink-0", r.mark === "favorite" ? "fill-amber-400 text-amber-400" : "text-muted-foreground")}
+            aria-label={r.mark === "favorite" ? "收藏" : "私人路線"}
+          />
+          <span className="min-w-0 flex-1 truncate">{r.name}</span>
+          {active && <Check className="size-4 shrink-0 text-primary" aria-label="目前路線" />}
+        </Link>
+        <button
+          type="button"
+          aria-label={`拖曳調整「${r.name}」的順序`}
+          onPointerDown={(e) => controls.start(e)}
+          className="flex size-11 shrink-0 cursor-grab touch-none items-center justify-center text-muted-foreground active:cursor-grabbing"
+        >
+          <GripVertical className="size-4" aria-hidden />
+        </button>
+      </div>
+    </Reorder.Item>
   );
 }

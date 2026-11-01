@@ -76,3 +76,13 @@ class FavoriteOut(CamelModel):
 class FavoriteList(CamelModel):
     favorites: list[FavoriteOut]
     limit: int
+
+
+class RouteOrderIn(CamelModel):
+    """「我的路線」新順序；id 規則同收藏。上限見 route_order_service.ORDER_MAX。"""
+
+    ids: list[str] = Field(max_length=100)
+
+
+class RouteOrderOut(CamelModel):
+    ids: list[str]
