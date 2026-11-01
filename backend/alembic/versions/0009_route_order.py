@@ -4,15 +4,15 @@ PK (user_id, route_id)：一條路線在一個人的順序裡只出現一次；
 (user_id, position) 給讀取時依順序排；route_id 索引給外鍵與刪路線時清理。
 整份順序由 PUT 整批取代，所以 position 不留空位、也不需要唯一約束。
 
-Revision ID: 0008
-Revises: 0007
+Revision ID: 0009
+Revises: 0008
 Create Date: 2026-11-01
 """
 
 from alembic import op
 
-revision = "0008"
-down_revision = "0007"
+revision = "0009"
+down_revision = "0008"
 branch_labels = None
 depends_on = None
 

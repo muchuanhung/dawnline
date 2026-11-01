@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSignOut } from "@/components/auth/sign-out-button";
-import { getProxiedAvatarUrl } from "@/lib/avatar";
+import { resolveAvatarUrl } from "@/lib/avatar";
 import { cn } from "@/lib/utils";
 
 /** 名牌上的短名：顯示名稱的第一個字詞，沒有時用 Email @ 前段 */
@@ -25,7 +25,7 @@ function shortName(displayName: string | null | undefined, email: string | null 
 
 /** 桌機頂部導覽右側：頭像＋名字的名牌，點開為帳號選單（個人資料、登出） */
 export function UserMenu({ active }: { active: boolean }) {
-  const { user, loading, cachedProfile } = useAuth();
+  const { user, loading, cachedProfile, avatarUrl } = useAuth();
   const handleSignOut = useSignOut();
 
   if (loading) {
@@ -36,7 +36,7 @@ export function UserMenu({ active }: { active: boolean }) {
           active={active}
           displayName={cachedProfile.displayName}
           email={cachedProfile.email}
-          avatarUrl={getProxiedAvatarUrl(cachedProfile.photoURL)}
+          avatarUrl={resolveAvatarUrl(cachedProfile.avatarUrl, cachedProfile.photoURL)}
           onSignOut={handleSignOut}
         />
       );
@@ -60,7 +60,7 @@ export function UserMenu({ active }: { active: boolean }) {
       active={active}
       displayName={user.displayName}
       email={user.email}
-      avatarUrl={getProxiedAvatarUrl(user.photoURL)}
+      avatarUrl={resolveAvatarUrl(avatarUrl, user.photoURL)}
       onSignOut={handleSignOut}
     />
   );
@@ -87,7 +87,8 @@ export function UserMenuView({ active, displayName, email, avatarUrl, onSignOut 
           active ? "border-primary/40" : "border-border"
         )}
       >
-        <Avatar className="size-8">
+        {/* key: remount when the photo changes or is removed so Radix resets its loading status */}
+        <Avatar key={avatarUrl ?? "fallback"} className="size-8">
           <AvatarImage src={avatarUrl} alt="" />
           <AvatarFallback className="bg-gradient-to-br from-[#f6d38f] to-[#e9a35a] font-bold text-[#3b2a10]">
             {name.slice(0, 1).toUpperCase()}

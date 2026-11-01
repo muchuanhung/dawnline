@@ -76,7 +76,11 @@ export async function FeaturedRoutes() {
           );
         })}
       </ul>
-      <DataNotice generatedAt={briefings[0]!.generatedAt} />
+      {/* The hero clears text-shadow for this block, so give the notice its own backdrop to stay readable over the scene */}
+      <DataNotice
+        generatedAt={briefings[0]!.generatedAt}
+        className="rounded-lg bg-card/80 px-3 py-2 backdrop-blur"
+      />
     </section>
   );
 }

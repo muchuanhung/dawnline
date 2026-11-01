@@ -228,7 +228,8 @@ export function ElevationScrubber({
               tickLine={false}
               tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
               tickFormatter={(v: number) => `${v.toFixed(0)} m`}
-              width={48}
+              // 56px fits four-digit ticks ("1000 m", "3000 m") on one line; 48px wrapped the unit
+              width={56}
             />
             {hazards.map((h) =>
               h.endKm > h.startKm ? (

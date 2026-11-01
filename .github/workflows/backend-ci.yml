@@ -62,10 +62,10 @@ jobs:
 
       - name: Alembic 版本與 migration 往返
         run: |
-          docker compose exec -T api alembic current | grep -q '0008 (head)'
+          docker compose exec -T api alembic current | grep -q '0009 (head)'
           docker compose exec -T api alembic downgrade base
           docker compose exec -T api alembic upgrade head
-          docker compose exec -T api alembic current | grep -q '0008 (head)'
+          docker compose exec -T api alembic current | grep -q '0009 (head)'
 
       - name: MySQL 設定與 schema（時區、utf8mb4、空間索引、FK）
         run: |
@@ -120,6 +120,21 @@ jobs:
               assert db.execute(text("SELECT COUNT(*) FROM favorites")).scalar() == 1
               db.rollback()
           PY
+
+      # T7：灌數萬筆假資料，對 API 實際送出的 SQL 跑 EXPLAIN；沒用上預期索引就轉紅。
+      # 報告貼在這次 run 的 Summary，也存成 artifact（docs/db-tuning.md 的數據來源）
+      - name: 索引 EXPLAIN 報告（T7）
+        run: |
+          docker compose exec -T api python -m app.scripts.explain_queries | tee explain-report.md
+          cat explain-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 上傳 EXPLAIN 報告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: explain-report
+          path: backend/explain-report.md
+          if-no-files-found: ignore
 
       - name: 容器以非 root 執行
         run: '[ "$(docker compose exec -T api id -u)" = "10001" ]'

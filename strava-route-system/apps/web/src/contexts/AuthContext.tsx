@@ -30,6 +30,8 @@ export type CachedProfile = {
   displayName: string | null;
   email: string | null;
   photoURL: string | null;
+  /** 自己上傳的頭像（後端 /api/v1/me/avatar?v=…）；舊快取沒有這個欄位 */
+  avatarUrl?: string | null;
 };
 
 type AuthContextValue = {
@@ -40,6 +42,10 @@ type AuthContextValue = {
   sessionReady: boolean;
   /** 上次登入者的顯示資料；loading 期間用來避免名牌閃 spinner */
   cachedProfile: CachedProfile | null;
+  /** 自己上傳的頭像網址（後端換 session 時回傳）；null = 沒上傳，顯示 Google 頭像或縮寫 */
+  avatarUrl: string | null;
+  /** 上傳或移除頭像後更新（同時寫進快取，重新整理也不閃回舊圖） */
+  setAvatarUrl: (url: string | null) => void;
   /**
    * 重新換 session cookie。預設等 Next 與 FastAPI 兩份都換好（私人路線 401 重試要用）；
    * waitForBackend: false 只等 Next 的 cookie，導向 dashboard 用。
@@ -55,7 +61,13 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 /** 一輪 session 交換：cookie = Next 的 session cookie；done = 連同 FastAPI 的 rc_session 都結束（不論成敗） */
-type SessionExchange = { uid: string; cookie: Promise<void>; done: Promise<void> };
+type SessionExchange = {
+  uid: string;
+  cookie: Promise<void>;
+  done: Promise<void>;
+  /** 後端 session 的回應（含自訂頭像網址）；失敗為 null */
+  backend: Promise<BackendProfile | null>;
+};
 
 /** 回到登入頁後等這麼久還沒有結果，就當作使用者關掉了 Google 登入分頁 */
 const POPUP_RETURN_GRACE_MS = 3000;
@@ -88,7 +100,7 @@ function whenReturnedWithoutResult(): { promise: Promise<never>; dispose: () => 
  * 同一個 ID token 也換一份 FastAPI 後端的 session（rc_session，經 /api/v1 rewrite 成為同站 cookie）。
  * 只有私人路線用得到；後端未設定或暫時連不上時不擋登入，私人路線頁遇到 401 會再換一次。
  */
-async function exchangeBackendSession(idToken: string): Promise<void> {
+async function exchangeBackendSession(idToken: string): Promise<BackendProfile | null> {
   try {
     const res = await fetch("/api/v1/auth/session", {
       method: "POST",
@@ -96,11 +108,20 @@ async function exchangeBackendSession(idToken: string): Promise<void> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ idToken }),
     });
-    if (!res.ok) console.warn("後端 session 設定失敗", res.status);
+    if (!res.ok) {
+      console.warn("後端 session 設定失敗", res.status);
+      return null;
+    }
+    const data = (await res.json().catch(() => null)) as { avatarUrl?: string | null } | null;
+    return { avatarUrl: data?.avatarUrl ?? null };
   } catch (err) {
     console.warn("後端 session 設定失敗", err);
+    return null;
   }
 }
+
+/** 後端 session 回應中前端要用的使用者資料；換 session 失敗時是 null（沿用快取） */
+type BackendProfile = { avatarUrl: string | null };
 
 /**
  * 刪除私人路線的離線快照（public/sw.js 的 PRIVATE_CACHE），同一台裝置換人登入不會讀到上一位的路線。
@@ -123,7 +144,7 @@ function readCachedProfile(): CachedProfile | null {
 }
 
 /** 登入時記下顯示資料、登出時刪掉；儲存失敗（私密模式等）只是少了快取，不影響登入 */
-function writeCachedProfile(user: User | null): void {
+function writeCachedProfile(user: User | null, avatarUrl: string | null = null): void {
   try {
     if (!user) {
       localStorage.removeItem(PROFILE_STORAGE_KEY);
@@ -133,6 +154,7 @@ function writeCachedProfile(user: User | null): void {
       displayName: user.displayName,
       email: user.email,
       photoURL: user.photoURL,
+      avatarUrl,
     };
     localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
   } catch {
@@ -145,6 +167,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [sessionReady, setSessionReady] = useState(false);
   const [cachedProfile, setCachedProfile] = useState<CachedProfile | null>(null);
+  const [avatarUrl, setAvatarUrlState] = useState<string | null>(null);
   const authRef = useRef<ReturnType<typeof getAuthClient> | null>(null);
 
   const inflightRef = useRef<SessionExchange | null>(null);
@@ -170,9 +193,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .then((res) => {
         if (!res.ok) throw new Error("Session 設定失敗");
       });
-    const backend = idToken.then(exchangeBackendSession, () => undefined);
+    const backend = idToken.then(exchangeBackendSession, () => null);
     const done = Promise.allSettled([cookie, backend]).then(() => undefined);
-    const exchange: SessionExchange = { uid: user.uid, cookie, done };
+    const exchange: SessionExchange = { uid: user.uid, cookie, done, backend };
     inflightRef.current = exchange;
     void done.then(() => {
       if (inflightRef.current === exchange) inflightRef.current = null;
@@ -190,12 +213,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Read after mount (not in useState) so server and first client render match
-    setCachedProfile(readCachedProfile());
+    const cached = readCachedProfile();
+    setCachedProfile(cached);
+    // 先用快取的頭像，換完後端 session 再以後端為準
+    setAvatarUrlState(cached?.avatarUrl ?? null);
     authRef.current = getAuthClient();
     let cancelled = false;
     const unsub = onAuthStateChanged(authRef.current, async (u) => {
       setUser(u ?? null);
-      writeCachedProfile(u);
+      // 同一人重新整理時沿用快取的頭像；登出或換人登入時先清掉，等後端回應
+      const previous = readCachedProfile();
+      const keptAvatar = u && previous?.email === u.email ? (previous.avatarUrl ?? null) : null;
+      setAvatarUrlState(keptAvatar);
+      writeCachedProfile(u, keptAvatar);
       // 登入狀態一確定就結束 loading：畫面（帳號名牌等）不必等下面換 session 的兩個網路請求
       setLoading(false);
       // 沒有使用者（登出、session 過期、別的分頁登出）就刪私人快照；
@@ -207,7 +237,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       setSessionReady(false);
       // 兩份 session 都換完（成功或失敗）才算 ready；失敗仍顯示使用者，後續 API 若 401 再處理
-      await startSessionExchange(u).done;
+      const exchange = startSessionExchange(u);
+      void exchange.backend.then((profile) => {
+        // 後端連不上（null）時沿用快取，不把頭像清掉
+        if (cancelled || !profile) return;
+        setAvatarUrlState(profile.avatarUrl);
+        writeCachedProfile(u, profile.avatarUrl);
+      });
+      await exchange.done;
       if (!cancelled) setSessionReady(true);
     });
     return () => {
@@ -272,6 +309,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     ]);
   }, []);
 
+  const setAvatarUrl = useCallback((url: string | null) => {
+    setAvatarUrlState(url);
+    const current = (authRef.current ?? getAuthClient()).currentUser;
+    if (current) writeCachedProfile(current, url);
+  }, []);
+
   const refreshSession = useCallback(
     async ({ waitForBackend = true }: { waitForBackend?: boolean } = {}) => {
       const auth = authRef.current ?? getAuthClient();
@@ -290,6 +333,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loading,
       sessionReady,
       cachedProfile,
+      avatarUrl,
+      setAvatarUrl,
       refreshSession,
       signIn,
       signInWithEmail,
@@ -297,7 +342,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       sendPasswordReset,
       signOut,
     }),
-    [user, loading, sessionReady, cachedProfile, refreshSession, signIn, signInWithEmail, signUpWithEmail, sendPasswordReset, signOut]
+    [user, loading, sessionReady, cachedProfile, avatarUrl, setAvatarUrl, refreshSession, signIn, signInWithEmail, signUpWithEmail, sendPasswordReset, signOut]
   );
 
   return (

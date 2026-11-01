@@ -5,7 +5,12 @@
 
 import { getCWBdatasetId, normalizeCountyForCWB } from "@/lib/cwb/county-map";
 import { isForecastStale } from "@/lib/cwb/forecast-freshness";
-import { windBucketsFromCwb, type WindBucket } from "@/lib/cwb/forecast-eta";
+import {
+  weatherTextBucketsFromCwb,
+  windBucketsFromCwb,
+  type WeatherTextBucket,
+  type WindBucket,
+} from "@/lib/cwb/forecast-eta";
 import {
   parseRainfallStations,
   summarizeRainfall,
@@ -54,6 +59,8 @@ export type CWBWeatherResponse = {
   rainfall12h: Array<{ startTime: string; endTime: string; pop: number; label: string; endLabel: string }>;
   /** 風速時段（km/h），判讀依各路段 ETA 挑選 */
   windBuckets: WindBucket[];
+  /** 天氣現象時段（例：短暫陣雨、午後短暫雷陣雨），判讀依各路段 ETA 挑選，用來判斷預估雨量小時能否降級 */
+  weatherTextBuckets: WeatherTextBucket[];
   /** 重抓後仍是過期預報；判讀端須改判 unknown（stale） */
   stale: boolean;
   verdict: string;
@@ -278,6 +285,7 @@ export async function getDistrictWeather(
 
   const wx = getVal("天氣現象");
   const condition = resolveCondition(wx?.condition ?? wx?.Condition, wx?.Weather ?? wx?.value);
+  const weatherTextBuckets = weatherTextBucketsFromCwb(weatherElements.find((e) => e.ElementName === "天氣現象")?.Time);
 
   const descEl = getVal("天氣預報綜合描述");
   const description = descEl?.WeatherDescription ?? descEl?.value ?? "—";
@@ -337,6 +345,7 @@ export async function getDistrictWeather(
     sunset: sunsetStr,
     rainfall12h,
     windBuckets,
+    weatherTextBuckets,
     stale,
     verdict,
     verdictType,

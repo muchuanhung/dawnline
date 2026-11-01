@@ -46,7 +46,8 @@ function DrawerContent({
       <VaulDrawer.Overlay className="fixed inset-0 z-50 bg-black/80" />
       <VaulDrawer.Content
         className={cn(
-          "fixed inset-x-0 bottom-0 z-50 mt-24 flex h-auto flex-col rounded-t-[10px] border border-border bg-background",
+          // md (tablet portrait, 768-1023px) and up: cap width and center, so sheets don't span the whole tablet
+          "fixed inset-x-0 bottom-0 z-50 mt-24 flex h-auto flex-col rounded-t-[10px] border border-border bg-background md:mx-auto md:max-w-xl",
           className
         )}
         {...props}
