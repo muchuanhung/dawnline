@@ -79,7 +79,6 @@ export function TripSettings({
   const editSpeed = onEditSpeed ?? (speedRoute ? () => setSpeedOpen(true) : undefined);
   const climbMin = climbMinFor(activity, speedKmh);
   const descentMin = descentMinFor(activity, speedKmh);
-  const hasSlopeAdjust = climbMin > 0 || descentMin > 0;
 
   // Remember what the page currently shows so the nav links can restore it
   useEffect(() => {
@@ -140,7 +139,6 @@ export function TripSettings({
         {/* Mobile (outdoors, on the move): only the speed in use; the full ETA formula is for desktop planning */}
         <span className="md:hidden">
           {ACTIVITY[activity].label}均速 <span className="font-mono font-medium text-foreground">{speedKmh} km/h</span>
-          {hasSlopeAdjust && "・已含爬坡修正"}
         </span>
         <span className="hidden md:inline">
           {fromKm != null ? (
