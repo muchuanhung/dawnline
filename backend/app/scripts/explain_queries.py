@@ -120,7 +120,7 @@ SELECT user_id, id, NOW(3) - INTERVAL id SECOND FROM routes
 WHERE visibility = 'private' AND deleted_at IS NULL AND id % 4 = 0
 """)
     )
-    # 自訂順序（T8）：約一半的人排過，順序 = 收藏＋自己還在的私人路線，依 route id 倒序給 position
+    # 自訂順序（T8）：每人都排過，順序 = 收藏＋自己還在的私人路線，依 route id 倒序給 position
     db.execute(
         text("""
 INSERT INTO route_order (user_id, route_id, position)
@@ -130,7 +130,6 @@ FROM (
   UNION
   SELECT user_id, id FROM routes WHERE visibility = 'private' AND deleted_at IS NULL
 ) mine
-WHERE user_id % 2 = 0
 """)
     )
     db.commit()
@@ -204,8 +203,7 @@ class Case:
 
 def _sample(db: Session) -> Sample:
     users = db.scalar(select(func.count()).select_from(User)) or 0
-    # 偶數 id 的人有自訂順序（seed）；挑中間附近的一位偶數 id
-    user = db.scalar(select(User).where(User.firebase_uid == f"explain-seed-{users // 2 // 2 * 2}"))
+    user = db.scalar(select(User).where(User.firebase_uid == f"explain-seed-{users // 2}"))
     private = db.scalar(
         select(Route.public_id)
         .where(Route.user_id == user.id, Route.visibility == "private", Route.deleted_at.is_(None))
