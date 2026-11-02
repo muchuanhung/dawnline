@@ -31,7 +31,12 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.db import get_engine, get_sessionmaker
 from app.models import Route, User
-from app.services import favorite_service, public_route_service, route_service
+from app.services import (
+    favorite_service,
+    public_route_service,
+    route_order_service,
+    route_service,
+)
 from app.services.storage import GpxStorage
 
 PUBLIC_ROUTES = 200  # 公開路線數（目前線上 4 條，抓日後規模）
@@ -39,6 +44,7 @@ PRIVATE_PER_USER = 12  # 每人 12 條私人路線，其中 2 條已軟刪除（
 PUBLIC_FAVS_PER_USER = 15  # 每人收藏 15 條公開路線，另加約 1/4 自己的私人路線
 BBOX_WKT = "POLYGON((121.5 25.1,121.6 25.1,121.6 25.2,121.5 25.2,121.5 25.1))"
 EXPLAIN_COLUMNS = ("table", "type", "key", "rows", "filtered", "Extra")
+SEEDED_TABLES = ("users", "routes", "favorites", "route_order")
 
 
 # ---------------------------------------------------------------- seed
@@ -114,9 +120,22 @@ SELECT user_id, id, NOW(3) - INTERVAL id SECOND FROM routes
 WHERE visibility = 'private' AND deleted_at IS NULL AND id % 4 = 0
 """)
     )
+    # 自訂順序（T8）：約一半的人排過，順序 = 收藏＋自己還在的私人路線，依 route id 倒序給 position
+    db.execute(
+        text("""
+INSERT INTO route_order (user_id, route_id, position)
+SELECT user_id, route_id, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY route_id DESC) - 1
+FROM (
+  SELECT user_id, route_id FROM favorites
+  UNION
+  SELECT user_id, id FROM routes WHERE visibility = 'private' AND deleted_at IS NULL
+) mine
+WHERE user_id % 2 = 0
+""")
+    )
     db.commit()
     # 讓優化器拿到正確的統計資料（索引基數），不然小表的計畫不準
-    for table in ("users", "routes", "favorites"):
+    for table in SEEDED_TABLES:
         db.execute(text(f"ANALYZE TABLE {table}")).all()
 
 
@@ -185,7 +204,8 @@ class Case:
 
 def _sample(db: Session) -> Sample:
     users = db.scalar(select(func.count()).select_from(User)) or 0
-    user = db.scalar(select(User).where(User.firebase_uid == f"explain-seed-{users // 2}"))
+    # 偶數 id 的人有自訂順序（seed）；挑中間附近的一位偶數 id
+    user = db.scalar(select(User).where(User.firebase_uid == f"explain-seed-{users // 2 // 2 * 2}"))
     private = db.scalar(
         select(Route.public_id)
         .where(Route.user_id == user.id, Route.visibility == "private", Route.deleted_at.is_(None))
@@ -271,6 +291,22 @@ CASES = [
         lambda db, s: route_service.delete_route(db, s.user, _NoopStorage(), s.private_id),
         lambda sql: sql.lstrip().lower().startswith("delete from favorites"),
         ("favorites", "idx_favorites_route"),
+        timed=False,
+    ),
+    Case(
+        "我的路線自訂順序（今日判讀切換列，依 position）",
+        "route_order_service.get_order",
+        lambda db, s: route_order_service.get_order(db, s.user),
+        _is_select_from("routes"),
+        ("route_order", "idx_route_order_user_position"),
+        note="拿掉時改走 PK (user_id, route_id) 前綴，筆數相同但多一次 filesort 排 position。",
+    ),
+    Case(
+        "刪除私人路線時清掉它在自訂順序裡的位置",
+        "route_service.delete_route",
+        lambda db, s: route_service.delete_route(db, s.user, _NoopStorage(), s.private_id),
+        lambda sql: sql.lstrip().lower().startswith("delete from route_order"),
+        ("route_order", "idx_route_order_route"),
         timed=False,
     ),
 ]
@@ -406,10 +442,7 @@ def main(argv: list[str] | None = None) -> int:
             print("users 不是空的：這支腳本會灌大量假資料，只能在空的資料庫上跑", file=sys.stderr)
             return 2
         seed(db, args.users)
-        counts = {
-            t: db.scalar(text(f"SELECT COUNT(*) FROM {t}"))
-            for t in ("users", "routes", "favorites")
-        }
+        counts = {t: db.scalar(text(f"SELECT COUNT(*) FROM {t}")) for t in SEEDED_TABLES}
         server = db.scalar(text("SELECT VERSION()"))
         sample = _sample(db)
         failed = [c.title for c in CASES if not analyze(db, c, sample, args.runs)]

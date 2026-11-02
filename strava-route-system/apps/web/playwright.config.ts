@@ -45,13 +45,13 @@ export default defineConfig({
     {
       name: "e2e-desktop",
       testDir: "./tests/e2e",
-      testIgnore: /dashboard/,
+      testIgnore: /dashboard|favorites/,
       use: { ...devices["Desktop Chrome"] },
     },
     {
       name: "e2e-mobile",
       testDir: "./tests/e2e",
-      testIgnore: /dashboard/,
+      testIgnore: /dashboard|favorites/,
       use: { ...devices["Pixel 7"] },
     },
     // 需要 .env.local 的測試帳號；未設定時整組跳過
@@ -62,7 +62,8 @@ export default defineConfig({
     {
       name: "e2e-dashboard",
       testDir: "./tests/e2e",
-      testMatch: /dashboard/,
+      // favorites.spec 也需要登入狀態（收藏、我的路線），一起放在這組
+      testMatch: /dashboard|favorites/,
       dependencies: ["auth-setup", "e2e-desktop", "e2e-mobile"],
       use: { ...devices["Desktop Chrome"], storageState: AUTH_STATE_PATH },
     },
