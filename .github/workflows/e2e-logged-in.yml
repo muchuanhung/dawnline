@@ -1,0 +1,86 @@
+# 暫時用：在 GitHub 的機器上跑登入後 E2E（PR #89 的收藏與我的路線測試），跑完就刪掉這個檔案。
+# 需要的 Secrets（Settings → Secrets and variables → Actions）：
+#   E2E_USER_EMAIL, E2E_USER_PASSWORD, BACKEND_API_URL, FIREBASE_SERVICE_ACCOUNT_JSON,
+#   NEXT_PUBLIC_FIREBASE_API_KEY, NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN, NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+#   NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET, NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID, NEXT_PUBLIC_FIREBASE_APP_ID
+# 選填（沒有時判讀會是「未判定」，測試仍可通過）：CWB_API_KEY, TDX_CLIENT_ID, TDX_CLIENT_SECRET
+name: 登入後 E2E（暫時）
+
+on:
+  # workflow_dispatch 要檔案在 main 才按得到，所以改成推到這個 branch 就跑
+  push:
+    branches: [claude/project-thread-phhc8e]
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-logged-in-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  e2e-logged-in:
+    name: 登入後 E2E（收藏、我的路線、Dashboard）
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: strava-route-system
+    env:
+      E2E_USER_EMAIL: ${{ secrets.E2E_USER_EMAIL }}
+      E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
+      BACKEND_API_URL: ${{ secrets.BACKEND_API_URL }}
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+      NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
+      NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
+      NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
+      NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
+      NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
+      NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
+      CWB_API_KEY: ${{ secrets.CWB_API_KEY }}
+      TDX_CLIENT_ID: ${{ secrets.TDX_CLIENT_ID }}
+      TDX_CLIENT_SECRET: ${{ secrets.TDX_CLIENT_SECRET }}
+    steps:
+      # 沒設帳號時測試會整組「跳過」而顯示綠燈，這裡先擋下來，避免誤以為通過
+      - name: 檢查必要的 Secrets
+        working-directory: .
+        run: |
+          missing=""
+          for v in E2E_USER_EMAIL E2E_USER_PASSWORD BACKEND_API_URL FIREBASE_SERVICE_ACCOUNT_JSON \
+                   NEXT_PUBLIC_FIREBASE_API_KEY NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN NEXT_PUBLIC_FIREBASE_PROJECT_ID \
+                   NEXT_PUBLIC_FIREBASE_APP_ID; do
+            [ -n "${!v}" ] || missing="$missing $v"
+          done
+          if [ -n "$missing" ]; then echo "::error::缺少 Secrets:$missing"; exit 1; fi
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: strava-route-system/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: strava-route-system/.nvmrc
+          cache: pnpm
+          cache-dependency-path: strava-route-system/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile --filter web...
+
+      - name: 安裝 Chromium
+        run: pnpm --filter web exec playwright install --with-deps chromium
+
+      # auth-setup 登入測試帳號 → e2e-dashboard（dashboard.spec＋favorites.spec）；--no-deps 跳過未登入的桌機／手機組
+      - name: 登入後 E2E
+        run: pnpm --filter web exec playwright test --project=auth-setup --project=e2e-dashboard --no-deps
+
+      - name: 上傳報告與 trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            strava-route-system/apps/web/playwright-report
+            strava-route-system/apps/web/test-results
+          if-no-files-found: ignore
