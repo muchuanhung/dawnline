@@ -5,6 +5,7 @@
 !CLAUDE.md
 !AGENTS.md
 !/.claude/commands/*.md
+!/docs/*.md
 
 # 設計稿與本機示範頁（僅保留本機，不上遠端）
 /docs/design/
