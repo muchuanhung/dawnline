@@ -53,6 +53,8 @@ export async function hasUploadQuota(api: APIRequestContext): Promise<boolean> {
 
 /** 從「我的路線」頁的檔案選擇器上傳，等到成功提示出現；回傳後端建立的路線 */
 export async function uploadViaPage(page: Page, name: string): Promise<PrivateRoute> {
+  // 清單載入完成前頁面不接受檔案（canUpload 為 false），等「上傳新路線 n / 上限」出現再選檔
+  await expect(page.getByRole("button", { name: /^上傳新路線 \d+ \/ \d+$/ })).toBeEnabled({ timeout: 30_000 });
   await page.locator('input[type="file"]').setInputFiles({
     name: `${name}.gpx`,
     mimeType: "application/gpx+xml",

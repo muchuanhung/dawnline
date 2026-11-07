@@ -20,6 +20,8 @@ import {
 
 test.describe("我的路線：上傳 → 判讀 → 刪除（已登入）", () => {
   test.skip(!hasTestAccount(), NO_ACCOUNT_REASON);
+  // 上傳經 S3、後端解析，再等判讀，比預設 30 秒長
+  test.describe.configure({ timeout: 120_000 });
 
   /** 測試中上傳過的路線；不論成功或失敗都在結束時刪掉 */
   const uploaded: string[] = [];

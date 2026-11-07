@@ -15,7 +15,7 @@ async function horizontalOverflow(page: Page): Promise<number> {
 
 test.describe("登入後頁面 RWD 375–1440", () => {
   test.skip(!hasTestAccount(), NO_ACCOUNT_REASON);
-  test.describe.configure({ mode: "serial" });
+  test.describe.configure({ mode: "serial", timeout: 90_000 });
 
   const routeName = uniqueRouteName("RWD");
   let routeId: string | undefined;
