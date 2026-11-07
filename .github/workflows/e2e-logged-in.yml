@@ -57,9 +57,13 @@ jobs:
       - name: 安裝 Chromium
         run: pnpm --filter web exec playwright install --with-deps chromium
 
-      # auth-setup 登入測試帳號 → e2e-dashboard（dashboard.spec＋favorites.spec）；--no-deps 跳過未登入的桌機／手機組
+      # 先登入、存好 playwright/.auth/user.json，再跑需要登入狀態的測試。
+      # 兩組放在同一個指令加 --no-deps 會同時開跑，dashboard 在狀態檔寫好前就去讀而失敗
+      - name: 登入測試帳號
+        run: pnpm --filter web exec playwright test --project=auth-setup
+
       - name: 登入後 E2E
-        run: pnpm --filter web exec playwright test --project=auth-setup --project=e2e-dashboard --no-deps
+        run: pnpm --filter web exec playwright test --project=e2e-dashboard --no-deps
 
       - name: 上傳報告與 trace
         if: always()
