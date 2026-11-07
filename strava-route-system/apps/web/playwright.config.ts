@@ -29,6 +29,9 @@ function isUnitOnly(argv: string[]): boolean {
 // 平行測試會超時。用 3100 port，不影響開著的 pnpm dev（3000）。
 // 直接呼叫 next build。
 const PORT = 3100;
+// 設了 E2E_BASE_URL（例如正式站）就直接測那個網址，不在本機 build 與啟動 server
+const BASE_URL = process.env.E2E_BASE_URL || `http://localhost:${PORT}`;
+const useLocalServer = !process.env.E2E_BASE_URL;
 
 export default defineConfig({
   testDir: "./tests",
@@ -36,7 +39,7 @@ export default defineConfig({
   reporter: [["list"], ["html", { open: "never" }]],
   expect: { timeout: 10_000 },
   use: {
-    baseURL: `http://localhost:${PORT}`,
+    baseURL: BASE_URL,
     trace: "retain-on-failure",
   },
   projects: [
@@ -45,13 +48,13 @@ export default defineConfig({
     {
       name: "e2e-desktop",
       testDir: "./tests/e2e",
-      testIgnore: /dashboard/,
+      testIgnore: /dashboard|favorites/,
       use: { ...devices["Desktop Chrome"] },
     },
     {
       name: "e2e-mobile",
       testDir: "./tests/e2e",
-      testIgnore: /dashboard/,
+      testIgnore: /dashboard|favorites/,
       use: { ...devices["Pixel 7"] },
     },
     // 需要 .env.local 的測試帳號；未設定時整組跳過
@@ -62,12 +65,13 @@ export default defineConfig({
     {
       name: "e2e-dashboard",
       testDir: "./tests/e2e",
-      testMatch: /dashboard/,
+      // favorites.spec 也需要登入狀態（收藏、我的路線），一起放在這組
+      testMatch: /dashboard|favorites/,
       dependencies: ["auth-setup", "e2e-desktop", "e2e-mobile"],
       use: { ...devices["Desktop Chrome"], storageState: AUTH_STATE_PATH },
     },
   ],
-  webServer: isUnitOnly(process.argv)
+  webServer: isUnitOnly(process.argv) || !useLocalServer
     ? undefined
     : {
         command: `pnpm exec next build && pnpm exec next start --port ${PORT}`,

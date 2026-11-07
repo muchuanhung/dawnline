@@ -35,6 +35,10 @@
 | 加入收藏：以 public_id 找私人路線 | `favorite_service._find_route` | `uq_routes_public_id` | ALL／56,856 | index_merge／2 | 44.02 | 0.41 |
 | 加入收藏：收藏數上限檢查 | `favorite_service.add_favorite` | `idx_favorites_user_created` | ref／18 | ref／18 | 0.18 | 0.18 |
 | 刪除私人路線時清掉它的收藏 | `route_service.delete_route` | `idx_favorites_route` | ALL／76,037 | range／1 | — | — |
+| 我的路線自訂順序（T8，依 position）\* | `route_order_service.get_order` | `idx_route_order_user_position` | ref／25＋filesort | ref／25 | 0.95 | 0.97 |
+| 刪除私人路線時清掉它的自訂順序（T8）\* | `route_service.delete_route` | `idx_route_order_route` | ALL／124,885 | range／1 | — | — |
+
+\* T8 加的 `route_order`（migration 0009）在 CI run 41479386670 補量，該次 `route_order` 有 124,975 筆（每位假使用者都排過：收藏＋自己的私人路線），其他表的資料量與上面相同。
 
 `rows` 是優化器估計要讀的列數。
 
@@ -111,6 +115,14 @@ ORDER BY favorites.created_at DESC
 ### 刪除路線時清收藏
 
 `DELETE FROM favorites WHERE route_id = ?`：沒有 `idx_favorites_route` 時要全表掃描 7.6 萬列，而且 InnoDB 會鎖住掃過的列。有索引時只碰到那 1 列。下架公開路線（`unpublish_missing`）用的是同一條語句。
+
+### 我的路線自訂順序（T8）
+
+`get_order`：`route_order JOIN routes WHERE route_order.user_id = ? ORDER BY position`。有 `idx_route_order_user_position (user_id, position)` 時直接依索引順序讀、只讀索引（`Using index`）；拿掉時改走 PK `(user_id, route_id)` 的前綴，列數一樣是 25，但要多一次 filesort 排 `position`。每人最多 100 條，時間差在量測誤差內，索引的主要價值是省掉排序。
+
+### 刪除路線時清自訂順序（T8）
+
+`DELETE FROM route_order WHERE route_id = ?`：與清收藏同一個道理，沒有 `idx_route_order_route` 要全表掃描 12.5 萬列並鎖住掃過的列；有索引只碰 1 列。下架公開路線也走同一條語句。
 
 ## 其他觀察（這次沒改）
 
