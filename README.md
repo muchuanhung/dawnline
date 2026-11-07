@@ -52,7 +52,7 @@ flowchart LR
 | 儲存 | S3（GPX、頭像、每日 DB 備份）、Firestore（判讀輸入、CCTV 清單） | 原始 GPX 保留可重算；短命的外部資料放無伺服器資料庫 |
 | 排程 | Inngest（判讀輸入每 10 分鐘、CCTV 每日） | TDX 限流嚴，統一由排程抓 |
 | 雲端 | Vercel（東京）＋ AWS EC2 東京、ECR、SSM、S3 | 單機＋容器，不用 ALB、RDS（成本） |
-| 部署 | GitHub Actions：OIDC → ECR → SSM，健康檢查失敗自動回滾 | 沒有長期金鑰，不開 SSH |
+| 部署 | GitHub Actions：OIDC → ECR → SSM，健康檢查失敗自動回滾 | 沒有長期金鑰，部署不經過 SSH |
 | 外部資料 | 氣象署 F-D0047 鄉鎮預報、O-A0002-001 雨量站、F-B0046-001 雷達降雨預報；TDX 路況事件、CCTV | — |
 | 地理運算 | 內建台灣鄉鎮 TopoJSON point-in-polygon、polyline 垂足投影 | 不依賴付費地圖 API |
 | 測試 | Playwright（unit＋E2E 桌機／手機）、pytest、ruff；CI 另跑真實 MySQL | — |

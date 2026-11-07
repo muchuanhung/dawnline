@@ -77,8 +77,8 @@
 
 ## 其他可以提的點
 
-- **無金鑰部署**：GitHub Actions 用 OIDC 換 AWS 暫時憑證，推映像到 ECR，再用 SSM Run Command 在 EC2 上換容器，**不開 SSH、repo 沒有任何 AWS 金鑰**；部署後打 `/health`，失敗自動換回舊容器（`backend/deploy/deploy.sh`、`.github/workflows/backend-deploy.yml`）。
-- **備份會被驗證**：每日 mysqldump 上傳 S3，monitor 每天檢查備份新鮮度，每週把最新備份還原到暫時的 MySQL 跑一次（`backend-monitor.yml`）。沒有還原過的備份等於沒有備份。
+- **無金鑰部署**：GitHub Actions 用 OIDC 換 AWS 暫時憑證，推映像到 ECR，再用 SSM Run Command 在 EC2 上換容器，**部署不經過 SSH、repo 沒有任何 AWS 金鑰**（22 port 只開給本人 IP 做手動維護）；部署後打 `/health`，失敗自動換回舊容器（`backend/deploy/deploy.sh`、`.github/workflows/backend-deploy.yml`）。
+- **備份會被驗證**：每日 mysqldump 上傳 S3，monitor 每 15 分鐘檢查最新備份是否在 26 小時內，每週把最新備份還原到暫時的 MySQL 跑一次（`backend-monitor.yml`）。沒有還原過的備份等於沒有備份。
 - **排程與失敗告警**：Inngest 每 10 分鐘更新判讀輸入，`onFailure` 與失敗率門檻推 Discord；單一行政區失敗不吵人，整批失敗才告警（見 [D5](data-pipeline.md)）。
 - **對外部 API 限流的防禦**：TDX 連續 6 次就 429，改成排程統一抓、縣市依序請求、間隔 500 ms、429 等 5 秒重試一次就停，使用者請求不直接打 TDX。
 - **索引用數據說話**：灌 6 萬條路線的假資料，在 CI 用 optimizer hint 產生「沒有索引」的對照，查詢沒用上預期索引 CI 就轉紅（`backend/docs/db-tuning.md`）。
