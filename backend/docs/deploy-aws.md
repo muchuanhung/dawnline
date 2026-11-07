@@ -229,6 +229,7 @@ sudo install -m 755 backend/deploy/mysql-backup.sh /etc/cron.daily/dawnline-mysq
 sudo /etc/cron.daily/dawnline-mysql-backup && journalctl -t dawnline-backup -n 1   # 立刻跑一次
 ```
 
+- 主機上的是手動安裝的副本，PR 合併不會自動更新：每次改了 `mysql-backup.sh`（例如改成 `--defaults-extra-file` 不再把密碼放命令列），都要在 EC2 `git pull` 後重跑上面的 `sudo install -m 755 backend/deploy/mysql-backup.sh /etc/cron.daily/dawnline-mysql-backup`，並手動跑一次確認沒有 `Using a password on the command line` 警告、`journalctl` 有新的 uploaded 紀錄。
 - cron.daily 由 `/etc/crontab` 每天 06:25（主機時區，Ubuntu 預設 UTC）觸發。
 - 監控每 15 分鐘檢查最新備份是否在 26 小時內、大於 1 KB；每週一把最新備份還原到 GitHub Actions 裡的暫時 MySQL，確認 `alembic_version` 與各表筆數（第 9 節）。
 
