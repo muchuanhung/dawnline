@@ -1,6 +1,6 @@
 # D2 雲端系統架構
 
-> 依 `backend/docs/deploy-aws.md`、`backend/deploy/`、`.github/workflows/` 與 `next.config.js` 實際設定整理（main `b7f936d`）。
+> 依 `backend/docs/deploy-aws.md`、`backend/deploy/`、`.github/workflows/` 與 `next.config.js` 實際設定整理（T5b 異地備份完成後定稿，2026-11-07）。
 > 重建步驟與每一條指令在 [`backend/docs/deploy-aws.md`](../backend/docs/deploy-aws.md)，這份只說明架構與理由。
 
 ## 結論
@@ -8,6 +8,7 @@
 - **前端留在 Vercel**，**後端在 AWS 東京一台 EC2**：Nginx 終止 TLS，FastAPI 與 MySQL 各跑一個 Docker 容器，GPX 與備份放 S3。
 - 瀏覽器只連兩個地方：Vercel（頁面與 `/api/*`）和 S3（presigned 直傳 GPX）。FastAPI 由 Vercel rewrite `/api/v1/*` 轉過去，所以登入 cookie 是 Vercel 網域上的同站 cookie。
 - 對外只開 80、443；8000、8001、3306 只綁 127.0.0.1 或 Docker 內網。
+- **資料每天異地備份到大阪**：DB 備份與使用者上傳的檔案，連東京整區出事都救得回來；機器本身不備份，照文件重建。
 - 部署與監控全在 GitHub Actions：OIDC 換暫時憑證、SSM 下指令，**repo 與 Actions 都沒有長期 AWS 金鑰，也不需要 SSH**。
 
 ## 架構圖
@@ -30,6 +31,10 @@ flowchart LR
         S3[("S3 dawnline-gpx（私有）<br/>users/…/routes/*.gpx<br/>users/…/avatar/*.jpg<br/>backups/*.sql.gz（30 天）")]
         ECR[("ECR dawnline-api<br/>映像 tag = commit SHA")]
         SSM["SSM Run Command"]
+    end
+
+    subgraph Osaka["AWS ap-northeast-3（大阪）"]
+        S3DR[("S3 dawnline-gpx-osaka（私有）<br/>backups/*.sql.gz（30 天）<br/>users/ 每日同步")]
     end
 
     subgraph Google["Google Cloud"]
@@ -60,6 +65,7 @@ flowchart LR
     I --> TDX
     N --> CWAS3
     EC2 -- "cron.daily mysqldump" --> S3
+    EC2 -- "同一份備份＋users/ 同步" --> S3DR
     GHA -- "OIDC → push" --> ECR
     GHA -- "OIDC → send-command" --> SSM
     SSM -- "deploy.sh：換容器、/health、失敗回滾" --> EC2
@@ -81,6 +87,7 @@ flowchart LR
 | FastAPI → S3 | HTTPS | EC2 instance role（metadata hop limit 2，容器內才拿得到） |
 | GitHub Actions → AWS | HTTPS | OIDC → IAM role `dawnline-gha-deploy`，只限本 repo 的 main |
 | EC2 → ECR | HTTPS | instance role `AmazonEC2ContainerRegistryReadOnly` |
+| EC2 → S3 大阪 | HTTPS | instance role，只能寫入與讀取，**沒有刪除權限** |
 
 ## Security Group
 
@@ -119,8 +126,9 @@ sequenceDiagram
 |---|---|---|
 | `backend-ci.yml` | 每個 PR | pytest、ruff、真實 MySQL 跑 migration 與 EXPLAIN 報告（T7） |
 | `backend-deploy.yml` | merge 到 main | 如上圖；migration 只加不刪，回滾不必退 schema |
-| `backend-monitor.yml` | 每 15 分鐘 | `/health`、TLS 憑證剩不到 14 天、主機資源、`backups/` 超過 26 小時或小於 1 KB |
-| `backend-monitor.yml` 還原測試 | 每週一 07:40 UTC | 把最新備份還原到暫時的 MySQL 驗證 |
+| `backend-monitor.yml` | 每 15 分鐘 | `/health`、TLS 憑證剩不到 14 天、主機資源、東京與大阪的 `backups/` 超過 26 小時或小於 1 KB |
+| `backend-monitor.yml` 還原測試 | 每週一 07:40 UTC | 把大阪的最新備份還原到暫時的 MySQL 驗證 |
+| AWS Budgets | 每月 | 月預算 US$1，達 85%、100% 或預測超過時寄信 |
 | 前端 `ci.yml` | 每個 PR | `tsc --noEmit`＋單元測試；Vercel 另產生預覽網址 |
 
 ## 技術選擇的理由
@@ -132,6 +140,7 @@ sequenceDiagram
 | MySQL 跑在同一台 EC2 容器，不用 RDS | 10/19 估算 RDS micro 每月約 15–18 美元，是帳單最大一項；資料量小，每日備份＋每週還原測試補足可靠度 | RDS：自動備份、維運省事，但成本比 EC2 本身還高 |
 | Nginx＋Let's Encrypt 終止 TLS | 免費、自動續期（`/etc/cron.weekly/dawnline-certbot`），與同機另一個網站共用 | ACM：只能掛在 ALB／CloudFront 上 |
 | ECR＋SSM 部署 | 映像 tag 用 commit SHA，回滾就是換回上一個 tag；SSM 不需要開 SSH、不需要金鑰 | SSH＋`git pull`：要在 Actions 放私鑰，主機上還要能 build |
+| 異地備份只備資料，由備份腳本每天複製到大阪 | S3 本身跨 3 個可用區，扛得住單一資料中心故障；再複製到大阪，連東京整區出事都救得回來。機器設定都在 repo 與文件裡，可以重建 | S3 跨區複製（CRR）：要開版本控制，舊版本累積費用；EBS 跨區快照：每月約 NT$30–60，救的是可以重建的東西 |
 | 監控用 GitHub Actions 排程 | 不用另外付費或架服務，結果與部署紀錄在同一個地方 | CloudWatch Alarms：需要另外裝 agent 才看得到記憶體與磁碟 |
 | 判讀輸入存 Firestore，使用者資料存 MySQL | 判讀管線跑在 Vercel，只活 15 分鐘、不需要關聯；路線、收藏需要權限、配額與外鍵（見 [D1](erd.md)、[D5](data-pipeline.md)） | 全部放 MySQL：Vercel 每次都要跨網路連到 EC2 |
 
@@ -139,5 +148,7 @@ sequenceDiagram
 
 - **單點**：EC2 掛掉時 API 停止；前端公開頁仍可看，已看過的路線有離線快照（見 [D7](tech-highlight.md)）。
 - **記憶體**：1 GB（實際可用 909 MB）＋1 GB swap 上同時跑 Nginx、另一個網站、API、MySQL。11/7 實測（`free -m`、`docker stats`）：記憶體已用 528 MB、可用 381 MB，swap 已用 576 MB；`velorder-api` 容器 152 MiB、`dawnline-mysql` 容器 41 MiB，其餘是 Nginx、另一個網站與系統。swap 長期用掉一半以上，是升級規格前最先會撞到的限制。
-- **異地備份（大阪）與 AWS Budgets（T5b）**：計畫中，尚未完成。目前備份與主機在同一區。
+- **異地備份的範圍**：只有 MySQL 備份與 `users/`。東京整區出事時，要在別的區域照 `deploy-aws.md` 重建主機、重新申請憑證，再從大阪還原；這段期間 API 停止。
+- **刪除不會同步到大阪**：EC2 沒有大阪的刪除權限（防止誤刪或入侵時連異地一起刪掉），使用者在東京刪掉的檔案大阪會留著，要手動清。
+- **憑證私鑰**：只在主機 `/etc/letsencrypt`（`700 root`，私鑰 `600`），不進 repo、不進備份；重建時重新申請。
 - 沒有 IaC：所有設定以 `deploy-aws.md` 文字紀錄，主機與 repo 不一致時以主機為準再補回 repo。

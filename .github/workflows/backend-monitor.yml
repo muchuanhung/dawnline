@@ -1,7 +1,7 @@
 name: Backend monitor
 
-# 每 15 分鐘檢查正式環境：對外 /health、TLS 憑證、主機資源與容器、DB 備份新鮮度。
-# 每週一另外把最新備份還原到暫時的 MySQL，確認備份真的能用。
+# 每 15 分鐘檢查正式環境：對外 /health、TLS 憑證、主機資源與容器、DB 備份新鮮度（東京與大阪）。
+# 每週一另外把大阪的最新備份還原到暫時的 MySQL，確認異地備份真的能用。
 # 狀態改變時（正常→異常、異常→恢復）才推 ALERT_WEBHOOK_URL，避免每 15 分鐘洗版。
 on:
   schedule:
@@ -27,6 +27,9 @@ env:
   AWS_REGION: ap-northeast-1
   API_HOST: dawnline-api.message-board.bid
   BACKUP_BUCKET: dawnline-gpx
+  # 異地備份（大阪）。mysql-backup.sh 每天把同一份備份也傳到這裡
+  DR_BUCKET: dawnline-gpx-osaka
+  DR_REGION: ap-northeast-3
   # 備份每天一次，留 2 小時餘裕
   BACKUP_MAX_AGE_HOURS: 26
   CERT_MIN_DAYS: 14
@@ -76,17 +79,22 @@ jobs:
           SSM_TIMEOUT_SECONDS: 60
         run: backend/deploy/ssm-run.sh backend/deploy/host-check.sh
 
-      - name: 最新備份在 26 小時內
+      - name: 最新備份在 26 小時內（東京與大阪）
         if: always()
         run: |
-          latest=$(aws s3api list-objects-v2 --bucket "$BACKUP_BUCKET" --prefix backups/ \
-            --query 'sort_by(Contents, &LastModified)[-1].[Key, LastModified, Size]' --output text)
-          echo "最新備份：$latest"
-          read -r key modified size <<<"$latest"
-          [ "$key" != "None" ] || { echo "::error::backups/ 底下沒有任何備份"; exit 1; }
-          age=$(( ($(date +%s) - $(date -d "$modified" +%s)) / 3600 ))
-          [ "$age" -lt "$BACKUP_MAX_AGE_HOURS" ] || { echo "::error::最新備份已 $age 小時"; exit 1; }
-          [ "$size" -gt 1024 ] || { echo "::error::最新備份只有 $size bytes"; exit 1; }
+          fail=0
+          for target in "$BACKUP_BUCKET $AWS_REGION" "$DR_BUCKET $DR_REGION"; do
+            read -r bucket region <<<"$target"
+            latest=$(aws s3api list-objects-v2 --bucket "$bucket" --region "$region" --prefix backups/ \
+              --query 'sort_by(Contents, &LastModified)[-1].[Key, LastModified, Size]' --output text)
+            echo "$bucket 最新備份：$latest"
+            read -r key modified size <<<"$latest"
+            if [ "$key" = "None" ]; then echo "::error::$bucket 的 backups/ 底下沒有任何備份"; fail=1; continue; fi
+            age=$(( ($(date +%s) - $(date -d "$modified" +%s)) / 3600 ))
+            [ "$age" -lt "$BACKUP_MAX_AGE_HOURS" ] || { echo "::error::$bucket 最新備份已 $age 小時"; fail=1; }
+            [ "$size" -gt 1024 ] || { echo "::error::$bucket 最新備份只有 $size bytes"; fail=1; }
+          done
+          exit "$fail"
 
   restore-test:
     name: 備份還原測試
@@ -109,13 +117,14 @@ jobs:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      # 從大阪還原：驗證的是東京整區出事時真正會用到的那一份。
       # repo 是公開的：只印表格與筆數，不印任何資料內容
-      - name: 下載最新備份並還原
+      - name: 下載大阪的最新備份並還原
         run: |
-          key=$(aws s3api list-objects-v2 --bucket "$BACKUP_BUCKET" --prefix backups/ \
+          key=$(aws s3api list-objects-v2 --bucket "$DR_BUCKET" --region "$DR_REGION" --prefix backups/ \
             --query 'sort_by(Contents, &LastModified)[-1].Key' --output text)
-          echo "還原 $key"
-          aws s3 cp "s3://$BACKUP_BUCKET/$key" - --only-show-errors | gunzip \
+          echo "還原 s3://$DR_BUCKET/$key"
+          aws s3 cp "s3://$DR_BUCKET/$key" - --region "$DR_REGION" --only-show-errors | gunzip \
             | mysql -h 127.0.0.1 -uroot -prestore velorder
 
       - name: 驗證 schema 與資料

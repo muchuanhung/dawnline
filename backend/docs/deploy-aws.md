@@ -20,6 +20,7 @@
 
 瀏覽器 ──HTTPS（presigned POST / GET）──> S3 dawnline-gpx（私有）
 EC2 instance role ──> S3（GPX 讀寫刪、每日 DB 備份）、ECR（拉映像）
+                  └──> S3 dawnline-gpx-osaka（ap-northeast-3，每日異地備份：DB 備份＋users/）
 
 GitHub Actions ──OIDC──> IAM role dawnline-gha-deploy
    ├─ build 映像 → ECR dawnline-api:<commit SHA>
@@ -39,7 +40,7 @@ GitHub Actions ──OIDC──> IAM role dawnline-gha-deploy
 | OS | Ubuntu（SSH 帳號 `ubuntu`） |
 | 規格 | 1 GB 記憶體級距，另加 1 GB swap（Nginx、留言板、API、MySQL 同機） |
 | IP | Elastic IP；DNS `dawnline-api.message-board.bid` 的 A 記錄指向它 |
-| IAM role | `dawnline-ec2-role`：`AmazonSSMManagedInstanceCore` + `AmazonEC2ContainerRegistryReadOnly` + inline policy `dawnline-gpx-s3`（見第 5 節） |
+| IAM role | `dawnline-ec2-role`：`AmazonSSMManagedInstanceCore` + `AmazonEC2ContainerRegistryReadOnly` + inline policy `dawnline-gpx-s3`、`dawnline-osaka-backup`（見第 5 節） |
 | Metadata | hop limit **2**（容器內才拿得到 role 憑證） |
 
 Security Group inbound：
@@ -161,6 +162,17 @@ sudo docker run --rm -v /etc/letsencrypt:/etc/letsencrypt -v /var/www/certbot:/v
   certbot/certbot renew --webroot -w /var/www/certbot --dry-run
 ```
 
+### 私鑰保管
+
+憑證私鑰只在主機的 `/etc/letsencrypt`，不進 repo，也不進任何備份（每日備份只有 mysqldump 與 S3 上的 `users/`）。檢查方式（萬用字元要在 root 的 shell 裡展開，因為 `ubuntu` 讀不到 archive 目錄）：
+
+```bash
+sudo sh -c 'ls -l /etc/letsencrypt/archive/*/privkey*.pem; stat -c "%a %U %n" /etc/letsencrypt/archive /etc/letsencrypt/live'
+cd ~/dawnline && git ls-files | grep -iE 'privkey|\.pem$' ; echo "exit=$?"
+```
+
+2026-11-07 檢查結果：`privkey1.pem` 是 `-rw------- root root`；`archive`、`live` 都是 `700 root`；repo 內沒有私鑰或 `.pem` 檔（`exit=1`）。
+
 ### 為什麼 HTTPS 是必要條件
 
 - `rc_session` 設了 `Secure`（`SESSION_COOKIE_SECURE=true`），只在 HTTPS 下送出。
@@ -219,9 +231,47 @@ CORS：
 - `s3:PutObject` 給 presigned POST 用（URL 以 role 的身分簽名）。
 - `s3:ListBucket` 讓檔案不存在時 HEAD 回 404 而不是 403，API 才能回「找不到這次上傳」。
 
+### 異地備份 bucket（大阪）
+
+Bucket `dawnline-gpx-osaka`（`ap-northeast-3`）：Block Public Access 四項全開、ACL 停用、SSE-S3、**不開版本控制**；lifecycle rule `expire-backups`（prefix `backups/`）30 天後刪除。不用 S3 跨區複製（CRR），因為 CRR 必須開版本控制，舊版本會一直累積費用；改由第 6 節的備份腳本每天複製。只備份資料，不做 EBS 跨區快照：主機可以照這份文件重建，救不回來的只有 MySQL 資料與使用者上傳的檔案。
+
+`dawnline-ec2-role` 的 inline policy `dawnline-osaka-backup`：
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "s3:PutObject",
+      "Resource": ["arn:aws:s3:::dawnline-gpx-osaka/backups/*", "arn:aws:s3:::dawnline-gpx-osaka/users/*"]
+    },
+    {
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::dawnline-gpx-osaka"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::dawnline-gpx-osaka/backups/*"
+    }
+  ]
+}
+```
+
+- 刻意不給大阪的 `s3:DeleteObject`：主機被入侵或腳本出錯時，也刪不掉異地那一份。
+- `users/` 的同步要讀東京的 `users/*`，用的是上面 `dawnline-gpx-s3` 已有的 `GetObject` 與 `ListBucket`。
+
 ## 6. 每日 DB 備份
 
-腳本在 repo 的 [`backend/deploy/mysql-backup.sh`](../deploy/mysql-backup.sh)：mysqldump 失敗、gzip 壞掉或缺少 `-- Dump completed` 結尾都會中止，不會上傳半截檔案。安裝或更新（檔名不能有 `.sh`，run-parts 會跳過有點的檔名）：
+腳本在 repo 的 [`backend/deploy/mysql-backup.sh`](../deploy/mysql-backup.sh)：mysqldump 失敗、gzip 壞掉或缺少 `-- Dump completed` 結尾都會中止，不會上傳半截檔案。檢查通過後依序：
+
+1. 上傳到東京 `dawnline-gpx/backups/`。
+2. 同一個檔案上傳到大阪 `dawnline-gpx-osaka/backups/`。
+3. `aws s3 sync` 把東京的 `users/`（GPX、頭像）複製到大阪的 `users/`，只複製新增或變更的檔案，S3 之間直接複製、不經過主機。
+
+每一步都會寫一行 `journalctl -t dawnline-backup`。安裝或更新（檔名不能有 `.sh`，run-parts 會跳過有點的檔名）：
 
 ```bash
 cd ~/dawnline && git pull
@@ -233,12 +283,16 @@ sudo /etc/cron.daily/dawnline-mysql-backup && journalctl -t dawnline-backup -n 1
 - cron.daily 由 `/etc/crontab` 每天 06:25（主機時區，Ubuntu 預設 UTC）觸發。
 - 監控每 15 分鐘檢查最新備份是否在 26 小時內、大於 1 KB；每週一把最新備份還原到 GitHub Actions 裡的暫時 MySQL，確認 `alembic_version` 與各表筆數（第 9 節）。
 
-還原：
+- `users/` 同步不帶 `--delete`（EC2 role 沒有大阪的刪除權限）：使用者在東京刪掉的檔案，大阪那份會留著。要清掉時由本人在 console 手動刪。
+
+還原（東京整區出事時把 `dawnline-gpx` 換成 `dawnline-gpx-osaka`、region 換成 `ap-northeast-3`）：
 
 ```bash
 sudo docker run --rm amazon/aws-cli s3 cp s3://dawnline-gpx/backups/velorder-<日期>.sql.gz - --region ap-northeast-1 \
   | gunzip | sudo docker exec -i dawnline-mysql sh -c 'mysql -u velorder -p"$MYSQL_PASSWORD" velorder'
 ```
+
+`users/` 在新區域重建時，把大阪的 `users/` 整個 `aws s3 sync` 到新 bucket，並把 `api.env` 的 `S3_BUCKET`、`S3_REGION` 指到新 bucket。
 
 ## 7a. 公開路線匯入（T6）
 
@@ -289,13 +343,27 @@ Workflow：[`.github/workflows/backend-deploy.yml`](../../.github/workflows/back
 2. **EC2 role 加 ECR 讀取**：IAM → Roles → `dawnline-ec2-role` → Add permissions → Attach `AmazonEC2ContainerRegistryReadOnly`。
 3. **建 ECR repository**：ECR → Create repository，名稱 `dawnline-api`，Private，Tag immutability 關閉，加密 AES-256。建好後 Lifecycle policy → Create rule，填：Rule priority `1`、Image tag status **Any**、Match criteria **Image count**、Count `10`、Rule action **Expire**（只保留最新 10 版；設定內容同 [`backend/deploy/ecr-lifecycle.json`](../deploy/ecr-lifecycle.json)）。不要選 Days since image created，那會把超過天數的映像全部刪掉，連正在跑的那版也是。
 4. **GitHub OIDC provider**：IAM → Identity providers → Add provider → OpenID Connect，URL `https://token.actions.githubusercontent.com`，Audience `sts.amazonaws.com`。
-5. **部署用 role**：IAM → Roles → Create role → Custom trust policy，貼 [`backend/deploy/iam/gha-trust-policy.json`](../deploy/iam/gha-trust-policy.json)（換掉 `<ACCOUNT_ID>`），不加 managed policy，名稱 `dawnline-gha-deploy`。建好後 Add permissions → Create inline policy → JSON，貼 [`backend/deploy/iam/gha-deploy-policy.json`](../deploy/iam/gha-deploy-policy.json)（換掉 `<ACCOUNT_ID>`、`<INSTANCE_ID>`），名稱 `dawnline-gha-deploy`。
+5. **部署用 role**：IAM → Roles → Create role → Custom trust policy，貼 [`backend/deploy/iam/gha-trust-policy.json`](../deploy/iam/gha-trust-policy.json)（換掉 `<ACCOUNT_ID>`），不加 managed policy，名稱 `dawnline-gha-deploy`。建好後 Add permissions → Create inline policy → JSON，貼 [`backend/deploy/iam/gha-deploy-policy.json`](../deploy/iam/gha-deploy-policy.json)（換掉 `<ACCOUNT_ID>`、`<INSTANCE_ID>`），名稱 `dawnline-gha-deploy`。再建第二條 inline policy，貼 [`backend/deploy/iam/gha-osaka-backup-policy.json`](../deploy/iam/gha-osaka-backup-policy.json)，名稱 `dawnline-gha-osaka-backup`（監控讀大阪備份用）。
 6. **GitHub 設定**（repo → Settings）：
    - Environments：用既有的 `Production`（Vercel 建的；GitHub 環境名稱不分大小寫，workflow 寫 `production` 就是它），沒有就 New environment。Deployment branches and tags 選 Selected branches and tags，只加 `main`。
    - 下面的 Variables 與 Secret 都建在 **Repository** 層級（不是 Environment），因為監控 job 不走 environment。
    - Secrets and variables → Actions → Variables：`AWS_DEPLOY_ROLE_ARN`＝`arn:aws:iam::<ACCOUNT_ID>:role/dawnline-gha-deploy`、`EC2_INSTANCE_ID`＝`<INSTANCE_ID>`；EC2 是 Graviton（`t4g`）時再加 `EC2_PLATFORM`＝`linux/arm64`（預設 `linux/amd64`）。
    - Secrets：`ALERT_WEBHOOK_URL`，與 Vercel 同一個值（Discord webhook 加 `/slack` 結尾）。
 7. **第一次部署**：Actions → Backend deploy → Run workflow（`image_tag` 留空）。成功後 `sudo docker ps` 會看到 `velorder-api` 的映像變成 `<ACCOUNT_ID>.dkr.ecr...dawnline-api:<SHA>`；舊的本機 `velorder-api:latest` 保留作手動回滾。
+
+### 部署方式比較
+
+T5 之前是在 EC2 上 `git pull` 後直接 build；T5 起改成 GitHub Actions build、推 ECR、EC2 只拉映像。
+
+| | 在 EC2 上 build（T5 前） | GitHub Actions build → ECR → EC2 拉取（現在） |
+| --- | --- | --- |
+| 在哪裡 build | EC2 本機 | GitHub 的機器 |
+| EC2 負擔 | build 時吃 CPU 與記憶體；EC2 只有 1 GB，還跑 MySQL 與另一個網站，可能被拖垮 | 只拉映像、啟動 |
+| 一致性 | 依 EC2 當下環境 build | CI 測過的同一個 commit build 出的映像直接上線 |
+| 退版 | 要在 EC2 自己保留舊映像 | ECR 保留最近 10 版（tag＝commit SHA），Run workflow 填舊 SHA 即可；不健康時 deploy.sh 自動換回舊容器 |
+| 成本與複雜度 | 免費、簡單 | ECR 500 MB 免費額度內；要設 IAM role 與 GitHub OIDC |
+
+選 ECR 的主要理由：EC2 只有 1 GB 記憶體，在上面 build 有風險；上線的也一定是 CI 測過的那個 commit。
 
 流程：push main → Backend CI（pytest、ruff、MySQL 驗證）通過 → build（GHA cache）→ 推 `dawnline-api:<SHA>` → SSM 執行 deploy.sh（ECR 登入、pull、換容器、等 HEALTHCHECK healthy、清舊映像；不健康就換回舊映像並讓 workflow 失敗）→ 對外 HTTPS `/health` 煙霧測試。失敗會推一則告警。
 
@@ -308,8 +376,8 @@ Workflow：[`.github/workflows/backend-monitor.yml`](../../.github/workflows/bac
 | 對外 `/health` | 重試 3 次仍非 200 或 `database` 不是 ok |
 | TLS 憑證 | 剩不到 14 天（代表 cron.weekly 續期壞了） |
 | 主機（SSM 執行 [`host-check.sh`](../deploy/host-check.sh)） | 根目錄磁碟 ≥ 85%、可用記憶體＋swap < 100 MB、`velorder-api` 不是 healthy、`dawnline-mysql` 沒在跑、nginx 不是 active |
-| 備份新鮮度 | `backups/` 最新物件超過 26 小時或 ≤ 1 KB |
-| 還原測試（每週一） | 最新備份還原失敗，或 `users` 是空的 |
+| 備份新鮮度 | 東京 `dawnline-gpx` 或大阪 `dawnline-gpx-osaka` 的 `backups/` 最新物件超過 26 小時或 ≤ 1 KB |
+| 還原測試（每週一） | 大阪的最新備份還原失敗，或 `users` 是空的 |
 
 告警只在狀態改變時送出（正常→異常、異常→恢復），送到 `ALERT_WEBHOOK_URL`，格式與前端 `lib/observability/report.ts` 相同（`{ text }`）。手動檢查：Actions → Backend monitor → Run workflow。
 
@@ -338,6 +406,10 @@ free -m
 ```
 
 線上網站（`https://dawnline-tw.vercel.app`）：登入 →「我的路線」→ 上傳 GPX → 清單出現距離與爬升 → 下載 → 刪除；刪除後 S3 `dawnline-gpx/users/...` 裡的檔案應該不見。
+
+## 11. 費用告警（AWS Budgets）
+
+Billing and Cost Management → Budgets：`dawnline-monthly`，Monthly cost budget，US$1.00，實際花費達 85%、100% 與預測超過 100% 時寄信（前兩個 budget 免費）。大阪 bucket 的儲存與每日跨區複製量都很小，預估每月不到 NT$1。
 
 ## 常見問題
 
