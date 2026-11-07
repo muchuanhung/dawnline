@@ -1,9 +1,7 @@
 # 暫時用：在 GitHub 的機器上跑登入後 E2E（PR #89 的收藏與我的路線測試），跑完就刪掉這個檔案。
-# 需要的 Secrets（Settings → Secrets and variables → Actions）：
-#   E2E_USER_EMAIL, E2E_USER_PASSWORD, BACKEND_API_URL, FIREBASE_SERVICE_ACCOUNT_JSON,
-#   NEXT_PUBLIC_FIREBASE_API_KEY, NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN, NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-#   NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET, NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID, NEXT_PUBLIC_FIREBASE_APP_ID
-# 選填（沒有時判讀會是「未判定」，測試仍可通過）：CWB_API_KEY, TDX_CLIENT_ID, TDX_CLIENT_SECRET
+# 直接測正式站（E2E_BASE_URL），所以只需要測試帳號兩個 Secrets（Settings → Secrets and variables → Actions）：
+#   E2E_USER_EMAIL, E2E_USER_PASSWORD
+# PR #89 沒有改網站程式，只加測試，所以測正式站等於測這個 PR 的測試。
 name: 登入後 E2E（暫時）
 
 on:
@@ -28,28 +26,16 @@ jobs:
       run:
         working-directory: strava-route-system
     env:
+      E2E_BASE_URL: https://dawnline-tw.vercel.app
       E2E_USER_EMAIL: ${{ secrets.E2E_USER_EMAIL }}
       E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
-      BACKEND_API_URL: ${{ secrets.BACKEND_API_URL }}
-      FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
-      NEXT_PUBLIC_FIREBASE_API_KEY: ${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}
-      NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}
-      NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}
-      NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}
-      NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
-      NEXT_PUBLIC_FIREBASE_APP_ID: ${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}
-      CWB_API_KEY: ${{ secrets.CWB_API_KEY }}
-      TDX_CLIENT_ID: ${{ secrets.TDX_CLIENT_ID }}
-      TDX_CLIENT_SECRET: ${{ secrets.TDX_CLIENT_SECRET }}
     steps:
       # 沒設帳號時測試會整組「跳過」而顯示綠燈，這裡先擋下來，避免誤以為通過
       - name: 檢查必要的 Secrets
         working-directory: .
         run: |
           missing=""
-          for v in E2E_USER_EMAIL E2E_USER_PASSWORD BACKEND_API_URL FIREBASE_SERVICE_ACCOUNT_JSON \
-                   NEXT_PUBLIC_FIREBASE_API_KEY NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN NEXT_PUBLIC_FIREBASE_PROJECT_ID \
-                   NEXT_PUBLIC_FIREBASE_APP_ID; do
+          for v in E2E_USER_EMAIL E2E_USER_PASSWORD; do
             [ -n "${!v}" ] || missing="$missing $v"
           done
           if [ -n "$missing" ]; then echo "::error::缺少 Secrets:$missing"; exit 1; fi

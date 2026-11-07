@@ -29,6 +29,9 @@ function isUnitOnly(argv: string[]): boolean {
 // 平行測試會超時。用 3100 port，不影響開著的 pnpm dev（3000）。
 // 直接呼叫 next build。
 const PORT = 3100;
+// 設了 E2E_BASE_URL（例如正式站）就直接測那個網址，不在本機 build 與啟動 server
+const BASE_URL = process.env.E2E_BASE_URL || `http://localhost:${PORT}`;
+const useLocalServer = !process.env.E2E_BASE_URL;
 
 export default defineConfig({
   testDir: "./tests",
@@ -36,7 +39,7 @@ export default defineConfig({
   reporter: [["list"], ["html", { open: "never" }]],
   expect: { timeout: 10_000 },
   use: {
-    baseURL: `http://localhost:${PORT}`,
+    baseURL: BASE_URL,
     trace: "retain-on-failure",
   },
   projects: [
@@ -68,7 +71,7 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"], storageState: AUTH_STATE_PATH },
     },
   ],
-  webServer: isUnitOnly(process.argv)
+  webServer: isUnitOnly(process.argv) || !useLocalServer
     ? undefined
     : {
         command: `pnpm exec next build && pnpm exec next start --port ${PORT}`,
