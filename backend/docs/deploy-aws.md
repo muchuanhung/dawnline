@@ -285,11 +285,18 @@ sudo /etc/cron.daily/dawnline-mysql-backup && journalctl -t dawnline-backup -n 1
 
 - `users/` 同步不帶 `--delete`（EC2 role 沒有大阪的刪除權限）：使用者在東京刪掉的檔案，大阪那份會留著。要清掉時由本人在 console 手動刪。
 
-還原（東京整區出事時把 `dawnline-gpx` 換成 `dawnline-gpx-osaka`、region 換成 `ap-northeast-3`）：
+還原（密碼一樣經暫時 option file 交給 `mysql`，不放命令列；含雙引號或換行的密碼會中止。東京整區出事時把 `dawnline-gpx` 換成 `dawnline-gpx-osaka`、region 換成 `ap-northeast-3`）：
 
 ```bash
 sudo docker run --rm amazon/aws-cli s3 cp s3://dawnline-gpx/backups/velorder-<日期>.sql.gz - --region ap-northeast-1 \
-  | gunzip | sudo docker exec -i dawnline-mysql sh -c 'mysql -u velorder -p"$MYSQL_PASSWORD" velorder'
+  | gunzip | sudo docker exec -i dawnline-mysql sh -c '
+    set -eu
+    case "$MYSQL_PASSWORD" in *\"* | *"
+"*) echo "MYSQL_PASSWORD contains a double quote or newline" >&2; exit 1 ;; esac
+    umask 077; cnf=$(mktemp); trap "rm -f \"\$cnf\"" EXIT
+    esc=$(printf "%s" "$MYSQL_PASSWORD" | sed "s/\\\\/\\\\\\\\/g")
+    printf "[client]\nuser=velorder\npassword=\"%s\"\n" "$esc" >"$cnf"
+    mysql --defaults-extra-file="$cnf" velorder'
 ```
 
 `users/` 在新區域重建時，把大阪的 `users/` 整個 `aws s3 sync` 到新 bucket，並把 `api.env` 的 `S3_BUCKET`、`S3_REGION` 指到新 bucket。
