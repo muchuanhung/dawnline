@@ -1,0 +1,86 @@
+# 暫時用：在 GitHub 的機器上對正式站跑 T9 收尾的登入後 E2E 並產生 docs/rwd 截圖，跑完就刪掉這個檔案。
+# 需要 repo Secrets：E2E_USER_EMAIL, E2E_USER_PASSWORD（#89 已加）。
+# 這個 PR 沒有改網站程式，只加測試，所以測正式站等於測這個 PR 的測試。
+name: 登入後 E2E（暫時）
+
+on:
+  push:
+    branches: [claude/t9-rwd-upload-e2e]
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-logged-in-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  e2e-logged-in:
+    name: 登入後 E2E（上傳、登入後 RWD）與 RWD 截圖
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: strava-route-system
+    env:
+      E2E_BASE_URL: https://dawnline-tw.vercel.app
+      E2E_USER_EMAIL: ${{ secrets.E2E_USER_EMAIL }}
+      E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
+    steps:
+      # 沒設帳號時測試會整組「跳過」而顯示綠燈，這裡先擋下來，避免誤以為通過
+      - name: 檢查必要的 Secrets
+        working-directory: .
+        run: |
+          for v in E2E_USER_EMAIL E2E_USER_PASSWORD; do
+            [ -n "${!v}" ] || { echo "::error::缺少 Secret $v"; exit 1; }
+          done
+
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: strava-route-system/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: strava-route-system/.nvmrc
+          cache: pnpm
+          cache-dependency-path: strava-route-system/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile --filter web...
+
+      - name: 安裝 Chromium
+        run: pnpm --filter web exec playwright install --with-deps chromium
+
+      # 先登入、存好登入狀態，再跑需要登入的組（同一個指令加 --no-deps 會同時開跑而讀不到狀態）
+      - name: 登入測試帳號
+        run: pnpm --filter web exec playwright test --project=auth-setup
+
+      - name: 登入後 E2E（桌機：dashboard、收藏、上傳、登入後 RWD；手機：上傳）
+        run: pnpm --filter web exec playwright test --project=e2e-dashboard --project=e2e-auth-mobile --no-deps
+
+      - name: RWD 截圖
+        if: always()
+        env:
+          RWD_SCREENSHOT_DIR: ${{ github.workspace }}/rwd-screens
+        # 另存輸出目錄、只用 list reporter，不蓋掉上一步失敗時的報告與 trace
+        run: pnpm --filter web exec playwright test --project=rwd-screens --no-deps --reporter=list --output=test-results-screens
+
+      - name: 上傳截圖
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rwd-screens
+          path: rwd-screens
+          if-no-files-found: ignore
+
+      - name: 上傳報告與 trace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            strava-route-system/apps/web/playwright-report
+            strava-route-system/apps/web/test-results
+          if-no-files-found: ignore
