@@ -138,6 +138,6 @@ sequenceDiagram
 ## 已知限制與未完成事項
 
 - **單點**：EC2 掛掉時 API 停止；前端公開頁仍可看，已看過的路線有離線快照（見 [D7](tech-highlight.md)）。
-- **記憶體**：1 GB＋1 GB swap 上同時跑 Nginx、另一個網站、API、MySQL，swap 曾用到約 636 MB。
+- **記憶體**：1 GB（實際可用 909 MB）＋1 GB swap 上同時跑 Nginx、另一個網站、API、MySQL。11/7 實測（`free -m`、`docker stats`）：記憶體已用 528 MB、可用 381 MB，swap 已用 576 MB；`velorder-api` 容器 152 MiB、`dawnline-mysql` 容器 41 MiB，其餘是 Nginx、另一個網站與系統。swap 長期用掉一半以上，是升級規格前最先會撞到的限制。
 - **異地備份（大阪）與 AWS Budgets（T5b）**：計畫中，尚未完成。目前備份與主機在同一區。
 - 沒有 IaC：所有設定以 `deploy-aws.md` 文字紀錄，主機與 repo 不一致時以主機為準再補回 repo。
