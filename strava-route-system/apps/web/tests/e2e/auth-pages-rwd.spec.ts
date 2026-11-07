@@ -4,7 +4,7 @@ import { deleteRoutesNamed, hasUploadQuota, uniqueRouteName, uploadViaPage } fro
 
 /**
  * T9 RWD（登入後）：登入後才看得到的頁面在 375–1440 px 都不能橫向捲動。
- * 公開頁面在 responsive.spec.ts；這裡打真的後端，所以只在 e2e-dashboard（已登入、桌機）跑，
+ * 公開頁面在 responsive.spec.ts；這裡打真的後端，所以只在 e2e-private-routes（已登入、桌機）跑，
  * viewport 每支測試自己設。路線詳情頁需要一條私人路線：開始前上傳一條暫存路線，結束時刪掉。
  */
 const WIDTHS = [375, 768, 1024, 1440] as const;

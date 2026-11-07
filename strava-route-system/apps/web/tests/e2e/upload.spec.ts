@@ -14,7 +14,7 @@ import {
  * T3「我的路線」上傳 E2E：上傳 → 判讀 → 刪除，桌機與手機各跑一次（T9 收尾）。
  *
  * 用測試帳號打真的後端與 S3（presigned 直傳），所以只在登入組跑：
- * 桌機在 e2e-dashboard，手機在 e2e-auth-mobile（Pixel 7）。沒有測試帳號時整組跳過。
+ * 桌機在 e2e-private-routes，手機在 e2e-auth-mobile（Pixel 7），都排在 e2e-dashboard 之後。沒有測試帳號時整組跳過。
  * 每次上傳的路線名稱都不同，結束時一定刪掉，帳號原本的路線不受影響。
  */
 

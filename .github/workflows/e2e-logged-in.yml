@@ -57,8 +57,13 @@ jobs:
       - name: 登入測試帳號
         run: pnpm --filter web exec playwright test --project=auth-setup
 
-      - name: 登入後 E2E（桌機：dashboard、收藏、上傳、登入後 RWD；手機：上傳）
-        run: pnpm --filter web exec playwright test --project=e2e-dashboard --project=e2e-auth-mobile --no-deps
+      - name: 登入後 E2E（dashboard、收藏）
+        run: pnpm --filter web exec playwright test --project=e2e-dashboard --no-deps
+
+      # 上傳暫存路線的測試排在 dashboard 之後，避免暫存路線改變「我的路線」順序
+      - name: 登入後 E2E（上傳：桌機與手機；登入後頁面 RWD）
+        if: always()
+        run: pnpm --filter web exec playwright test --project=e2e-private-routes --project=e2e-auth-mobile --no-deps --output=test-results-private
 
       - name: RWD 截圖
         if: always()
@@ -83,4 +88,5 @@ jobs:
           path: |
             strava-route-system/apps/web/playwright-report
             strava-route-system/apps/web/test-results
+            strava-route-system/apps/web/test-results-private
           if-no-files-found: ignore

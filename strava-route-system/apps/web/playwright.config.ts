@@ -67,9 +67,18 @@ export default defineConfig({
     {
       name: "e2e-dashboard",
       testDir: "./tests/e2e",
-      // favorites／upload／auth-pages-rwd 也需要登入狀態，一起放在這組
-      testMatch: /dashboard|favorites|upload|auth-pages-rwd/,
+      // favorites.spec 也需要登入狀態（收藏、我的路線），一起放在這組
+      testMatch: /dashboard|favorites/,
       dependencies: ["auth-setup", "e2e-desktop", "e2e-mobile"],
+      use: { ...devices["Desktop Chrome"], storageState: AUTH_STATE_PATH },
+    },
+    // 會上傳暫存私人路線的測試：暫存路線會出現在今日判讀的「我的路線」，
+    // 和 dashboard／favorites 同時跑會改變它們看到的路線順序，所以排在 e2e-dashboard 之後
+    {
+      name: "e2e-private-routes",
+      testDir: "./tests/e2e",
+      testMatch: /upload|auth-pages-rwd/,
+      dependencies: ["e2e-dashboard"],
       use: { ...devices["Desktop Chrome"], storageState: AUTH_STATE_PATH },
     },
     // 手機的登入後流程（上傳 → 判讀 → 左滑刪除）
@@ -77,7 +86,7 @@ export default defineConfig({
       name: "e2e-auth-mobile",
       testDir: "./tests/e2e",
       testMatch: /upload/,
-      dependencies: ["auth-setup"],
+      dependencies: ["e2e-dashboard"],
       use: { ...devices["Pixel 7"], storageState: AUTH_STATE_PATH },
     },
     // docs/rwd 截圖：只在設了 RWD_SCREENSHOT_DIR 時產生，見 tests/e2e/rwd-screens.spec.ts
