@@ -76,6 +76,7 @@ flowchart LR
 | [前端架構與狀態](docs/frontend-architecture.md) | 組件樹、狀態放在哪裡、Context 與 Custom Hooks 的用法 |
 | [資料管線（ETL／ELT）](docs/data-pipeline.md) | 判讀輸入、CCTV、雷達、GPX、備份五條管線 |
 | [技術重點](docs/tech-highlight.md) | 離線 PWA 與「安全會過期」、地理運算 |
+| [RWD](docs/rwd.md) | 斷點規則、各頁在 375／768／1024／1440 的截圖 |
 | [資料庫索引調校](backend/docs/db-tuning.md) | 6 萬條路線假資料下的 EXPLAIN 前後對照 |
 | [AWS 部署紀錄](backend/docs/deploy-aws.md) | EC2、Nginx、MySQL、S3、IAM、備份的重建步驟 |
 | [降雨信心規則](strava-route-system/apps/web/docs/rain-confidence.md) | 降雨機率高但雨勢小時的降級規則與門檻依據 |

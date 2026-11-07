@@ -29,6 +29,8 @@ function isUnitOnly(argv: string[]): boolean {
 // 平行測試會超時。用 3100 port，不影響開著的 pnpm dev（3000）。
 // 直接呼叫 next build。
 const PORT = 3100;
+// 需要測試帳號（登入狀態）的測試檔；未登入的桌機／手機組排除它們。rwd-screens 只產截圖，另開 project
+const LOGGED_IN_SPECS = /dashboard|favorites|upload|auth-pages-rwd|rwd-screens/;
 // 設了 E2E_BASE_URL（例如正式站）就直接測那個網址，不在本機 build 與啟動 server
 const BASE_URL = process.env.E2E_BASE_URL || `http://localhost:${PORT}`;
 const useLocalServer = !process.env.E2E_BASE_URL;
@@ -48,13 +50,13 @@ export default defineConfig({
     {
       name: "e2e-desktop",
       testDir: "./tests/e2e",
-      testIgnore: /dashboard|favorites/,
+      testIgnore: LOGGED_IN_SPECS,
       use: { ...devices["Desktop Chrome"] },
     },
     {
       name: "e2e-mobile",
       testDir: "./tests/e2e",
-      testIgnore: /dashboard|favorites/,
+      testIgnore: LOGGED_IN_SPECS,
       use: { ...devices["Pixel 7"] },
     },
     // 需要 .env.local 的測試帳號；未設定時整組跳過
@@ -69,6 +71,31 @@ export default defineConfig({
       testMatch: /dashboard|favorites/,
       dependencies: ["auth-setup", "e2e-desktop", "e2e-mobile"],
       use: { ...devices["Desktop Chrome"], storageState: AUTH_STATE_PATH },
+    },
+    // 會上傳暫存私人路線的測試：暫存路線會出現在今日判讀的「我的路線」，
+    // 和 dashboard／favorites 同時跑會改變它們看到的路線順序，所以排在 e2e-dashboard 之後
+    {
+      name: "e2e-private-routes",
+      testDir: "./tests/e2e",
+      testMatch: /upload|auth-pages-rwd/,
+      dependencies: ["e2e-dashboard"],
+      use: { ...devices["Desktop Chrome"], storageState: AUTH_STATE_PATH },
+    },
+    // 手機的登入後流程（上傳 → 判讀 → 左滑刪除）
+    {
+      name: "e2e-auth-mobile",
+      testDir: "./tests/e2e",
+      testMatch: /upload/,
+      dependencies: ["e2e-dashboard"],
+      use: { ...devices["Pixel 7"], storageState: AUTH_STATE_PATH },
+    },
+    // docs/rwd 截圖：只在設了 RWD_SCREENSHOT_DIR 時產生，見 tests/e2e/rwd-screens.spec.ts
+    {
+      name: "rwd-screens",
+      testDir: "./tests/e2e",
+      testMatch: /rwd-screens/,
+      dependencies: ["auth-setup"],
+      use: { ...devices["Desktop Chrome"] },
     },
   ],
   webServer: isUnitOnly(process.argv) || !useLocalServer
