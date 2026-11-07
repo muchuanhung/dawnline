@@ -233,11 +233,18 @@ sudo /etc/cron.daily/dawnline-mysql-backup && journalctl -t dawnline-backup -n 1
 - cron.daily 由 `/etc/crontab` 每天 06:25（主機時區，Ubuntu 預設 UTC）觸發。
 - 監控每 15 分鐘檢查最新備份是否在 26 小時內、大於 1 KB；每週一把最新備份還原到 GitHub Actions 裡的暫時 MySQL，確認 `alembic_version` 與各表筆數（第 9 節）。
 
-還原：
+還原（密碼一樣經暫時 option file 交給 `mysql`，不放命令列；含雙引號或換行的密碼會中止）：
 
 ```bash
 sudo docker run --rm amazon/aws-cli s3 cp s3://dawnline-gpx/backups/velorder-<日期>.sql.gz - --region ap-northeast-1 \
-  | gunzip | sudo docker exec -i dawnline-mysql sh -c 'mysql -u velorder -p"$MYSQL_PASSWORD" velorder'
+  | gunzip | sudo docker exec -i dawnline-mysql sh -c '
+    set -eu
+    case "$MYSQL_PASSWORD" in *\"* | *"
+"*) echo "MYSQL_PASSWORD contains a double quote or newline" >&2; exit 1 ;; esac
+    umask 077; cnf=$(mktemp); trap "rm -f \"\$cnf\"" EXIT
+    esc=$(printf "%s" "$MYSQL_PASSWORD" | sed "s/\\\\/\\\\\\\\/g")
+    printf "[client]\nuser=velorder\npassword=\"%s\"\n" "$esc" >"$cnf"
+    mysql --defaults-extra-file="$cnf" velorder'
 ```
 
 ## 7a. 公開路線匯入（T6）
