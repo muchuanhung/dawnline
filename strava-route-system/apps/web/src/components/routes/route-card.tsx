@@ -10,6 +10,13 @@ import type { CardStatus } from "@/lib/routes/route-statuses";
 import { ROUTE_TYPE_ICONS } from "@/constants";
 import { routeCardClassName } from "@/components/routes/route-card-style";
 
+/**
+ * 標籤文字：狀態色與前景色混合，淺色模式變深、深色模式變亮，
+ * 10px 小字在淡色底上也能達到 WCAG AA 4.5:1（原本純狀態色只有約 2:1；選中卡片的淡綠底也保留餘裕）。
+ */
+const badgeText = (color: string | undefined) =>
+  color && `color-mix(in oklab, ${color} 35%, var(--foreground))`;
+
 interface RouteCardProps {
   route: Route;
   isSelected: boolean;
@@ -60,7 +67,7 @@ export function RouteCard({ route, isSelected, onSelect, index, statusOverride, 
             variant="outline"
             className="shrink-0 text-[10px] px-2 py-0.5 font-semibold border-0"
             style={{
-              color: statusColor,
+              color: badgeText(statusColor),
               backgroundColor: `${statusColor}15`,
             }}
           >
@@ -95,7 +102,7 @@ export function RouteCard({ route, isSelected, onSelect, index, statusOverride, 
           variant="outline"
           className="text-[10px] px-2 py-0.5 capitalize border-0"
           style={{
-            color: diffColor,
+            color: badgeText(diffColor),
             backgroundColor: `${diffColor}12`,
           }}
         >
