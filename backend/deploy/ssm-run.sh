@@ -23,7 +23,11 @@ for kv in "$@"; do
   exports+="export $(printf '%q' "$kv"); "
 done
 
-params=$(jq -nc --arg cmd "${exports}echo $payload | base64 -d > /tmp/dawnline-ssm.sh && bash /tmp/dawnline-ssm.sh" \
+# Each run gets its own temp file: bash reads scripts incrementally, so a shared path would let an
+# overlapping run (deploy vs. the 15-minute monitor) overwrite a script that is still executing.
+# shellcheck disable=SC2016 # $f must expand on the host, not here
+remote='f=$(mktemp /tmp/dawnline-ssm.XXXXXX) && trap '"'"'rm -f "$f"'"'"' EXIT && echo '"$payload"' | base64 -d > "$f" && bash "$f"'
+params=$(jq -nc --arg cmd "${exports}${remote}" \
   --arg t "$timeout" '{commands: [$cmd], executionTimeout: [$t]}')
 
 command_id=$(aws ssm send-command \

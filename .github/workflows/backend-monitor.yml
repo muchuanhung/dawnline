@@ -148,7 +148,8 @@ jobs:
           ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
           RESULTS: ${{ toJSON(needs) }}
         run: |
-          failed=$(echo "$RESULTS" | jq -r 'to_entries | map(select(.value.result == "failure")) | map(.key) | join(", ")')
+          # 除了成功與略過（AWS 未設定、非還原測試時段），取消、逾時等都算失敗，不可默默變綠
+          failed=$(echo "$RESULTS" | jq -r 'to_entries | map(select(.value.result != "success" and .value.result != "skipped")) | map(.key) | join(", ")')
           prev=$(gh api "repos/${{ github.repository }}/actions/workflows/backend-monitor.yml/runs?status=completed&per_page=1" \
             --jq '.workflow_runs[0].conclusion // "success"')
           run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
