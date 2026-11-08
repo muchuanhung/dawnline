@@ -34,6 +34,15 @@ export function isSnapshotExpired(savedAt: number, now: number): boolean {
   return now - savedAt >= SNAPSHOT_MAX_AGE_MS;
 }
 
+/**
+ * 伺服器端渲染的判讀（今日判讀、首頁精選路線）是否已過期：以判讀產生時間 generatedAt 起算，
+ * 規則同快照（SNAPSHOT_MAX_AGE_MS）。時間無法解析一律視為過期（未判定 ≠ 安全）。
+ */
+export function isBriefingExpired(generatedAt: string, now: number): boolean {
+  const t = Date.parse(generatedAt);
+  return !Number.isFinite(t) || isSnapshotExpired(t, now);
+}
+
 /** 線上判讀過期後已知示警的加註 */
 export const BRIEFING_EXPIRED_NOTE = "資料可能已變化";
 

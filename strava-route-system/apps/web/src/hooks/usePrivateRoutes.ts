@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   BackendError,
@@ -46,20 +46,30 @@ export function usePrivateRoutes() {
   const { user, sessionReady } = useAuth();
   const [state, setState] = useState<State>({ routes: [], limit: null, loading: true, error: null });
   const withSessionRetry = useSessionRetry();
+  // 最新一次列表請求的序號：換帳號或連續重讀時，晚回來的舊請求不覆蓋新狀態
+  const requestSeq = useRef(0);
 
   const refetch = useCallback(async () => {
+    const mine = ++requestSeq.current;
     setState((s) => ({ ...s, loading: true, error: null }));
     try {
       const { routes, limit } = await withSessionRetry(listPrivateRoutes);
-      setState({ routes, limit, loading: false, error: null });
+      if (mine === requestSeq.current) setState({ routes, limit, loading: false, error: null });
     } catch (err) {
+      if (mine !== requestSeq.current) return;
       setState((s) => ({ ...s, loading: false, error: err instanceof Error ? err.message : "無法載入路線" }));
     }
   }, [withSessionRetry]);
 
-  // 等 AuthContext 換完 session（sessionReady）再讀列表，才帶得到有效的 rc_session
+  // 等 AuthContext 換完 session（sessionReady）再讀列表，才帶得到有效的 rc_session；
+  // 登出或換人登入時先清掉上一位的路線，並讓進行中的請求作廢
   useEffect(() => {
-    if (sessionReady && user) refetch();
+    if (sessionReady && user) {
+      refetch();
+      return;
+    }
+    requestSeq.current++;
+    setState({ routes: [], limit: null, loading: Boolean(user), error: null });
   }, [sessionReady, user, refetch]);
 
   const upload = useCallback(

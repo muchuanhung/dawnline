@@ -44,8 +44,11 @@ export function useFavorites(): Favorites {
         setIds(favorites.map((f) => f.id));
         setLimit(limit);
       })
-      // 讀不到收藏不擋路線頁，只是星號都是空的
-      .catch((err) => console.warn("收藏讀取失敗:", err instanceof Error ? err.message : err));
+      // 讀不到收藏不擋路線頁，但要說出來：否則星號全空，使用者會以為收藏不見了
+      .catch((err) => {
+        console.warn("收藏讀取失敗:", err instanceof Error ? err.message : err);
+        if (!cancelled) setError("收藏暫時讀不到，星號可能不準，請稍後重新整理");
+      });
     return () => {
       cancelled = true;
     };
