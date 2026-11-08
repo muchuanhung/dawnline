@@ -53,3 +53,23 @@ def test_me_slides_expiry_forward(client, db):
     db.expire_all()
     remaining = db.scalar(select(AuthSession.expires_at)) - utcnow()
     assert timedelta(days=6, hours=23) < remaining <= timedelta(days=7)
+
+
+def test_me_with_non_ascii_cookie_is_401_not_500(client):
+    # 被竄改成非 ASCII 的 cookie：查不到 session 就是未登入，不能 UnicodeEncodeError 變 500
+    bad = {"cookie": "rc_session=caf\xe9".encode("latin-1")}
+    res = client.get("/api/v1/me", headers=bad)
+    assert res.status_code == 401
+    res = client.delete("/api/v1/auth/session", headers=bad)
+    assert res.status_code == 204
+
+
+def test_fresh_session_is_not_rewritten_on_every_request(client, db):
+    """效期還剩一半以上就不延長：不寫資料庫、不重設 cookie。"""
+    login(client)
+    before = db.scalar(select(AuthSession.expires_at))
+    res = client.get("/api/v1/me")
+    assert res.status_code == 200
+    assert "set-cookie" not in res.headers
+    db.expire_all()
+    assert db.scalar(select(AuthSession.expires_at)) == before

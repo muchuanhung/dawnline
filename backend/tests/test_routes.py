@@ -64,7 +64,8 @@ def test_presigned_post_is_scoped_to_user_and_size(api):
     res = api.post("/api/v1/routes/uploads", json={"fileSize": 100})
     assert res.status_code == 201
     body = res.json()
-    assert body["fields"]["key"] == f"users/1/routes/{body['uploadId']}.gpx"
+    # 先傳到暫存區（lifecycle 1 天清掉），完成後才寫到 users/1/routes/
+    assert body["fields"]["key"] == f"tmp-uploads/1/{body['uploadId']}.gpx"
     policy = json.loads(base64.b64decode(body["fields"]["policy"]))
     assert ["content-length-range", 1, 2048] in policy["conditions"]
     assert body["maxBytes"] == 2048
@@ -215,3 +216,35 @@ def test_route_type_follows_frontend_rules(api, s3, meta, file_name, expected):
     res = upload(api, s3, data=_gpx_with(meta), name=file_name)
     assert res.status_code == 201, res.text
     assert res.json()["type"] == expected
+
+
+def test_complete_moves_file_out_of_staging(api, s3):
+    route = upload(api, s3).json()
+    keys = [o["Key"] for o in s3.list_objects_v2(Bucket=BUCKET).get("Contents", [])]
+    assert keys == [f"users/1/routes/{route['id']}.gpx"]
+
+
+def test_quota_full_at_complete_cleans_staging(api, s3):
+    """兩次上傳都拿到 presigned POST，第 3 條在完成時才超過額度：回 409，暫存檔也清掉。"""
+    first = api.post("/api/v1/routes/uploads", json={"fileSize": len(GPX)}).json()
+    assert upload(api, s3).status_code == 201
+    assert upload(api, s3).status_code == 201
+    s3.put_object(Bucket=BUCKET, Key=first["fields"]["key"], Body=GPX)
+    res = api.post("/api/v1/routes", json={"uploadId": first["uploadId"]})
+    assert res.status_code == 409
+    assert res.json()["error"]["code"] == "route_limit_reached"
+    keys = [o["Key"] for o in s3.list_objects_v2(Bucket=BUCKET).get("Contents", [])]
+    assert not any(k.startswith("tmp-uploads/") for k in keys)
+
+
+class _DeleteFails(GpxStorage):
+    def delete(self, key: str) -> None:
+        raise RuntimeError("S3 down")
+
+
+def test_delete_succeeds_even_if_s3_cleanup_fails(api, s3):
+    """DB 已 commit 才刪檔；刪檔失敗只記 log，不讓刪除變成 500。"""
+    route = upload(api, s3).json()
+    api.app.dependency_overrides[get_storage] = lambda: _DeleteFails(s3, BUCKET)
+    assert api.delete(f"/api/v1/routes/{route['id']}").status_code == 204
+    assert api.get("/api/v1/routes").json()["routes"] == []

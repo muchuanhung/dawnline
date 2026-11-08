@@ -1,13 +1,17 @@
 """使用者上傳的 GPX 路線：配額、建立上傳、完成上傳、列表、改名、刪除。router 只負責 HTTP。
 
-流程：create_upload 發 presigned POST（不寫 DB）→ 瀏覽器直傳 S3 →
-complete_upload 從 S3 讀檔解析，成功才 insert routes（status=ready），失敗刪檔。
+流程：create_upload 發 presigned POST 到暫存區（不寫 DB）→ 瀏覽器直傳 S3 →
+complete_upload 讀暫存檔解析，成功才寫到正式位置並 insert routes（status=ready）。
+暫存檔由 router 在 commit 之後刪掉；刪不掉也會被 bucket lifecycle 清掉。
+
+S3 刪除一律在 DB commit 之後（router 負責）：commit 失敗時資料庫不會指向已刪掉的檔案。
 """
 
 import hashlib
 from decimal import Decimal
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
@@ -17,7 +21,7 @@ from app.core.types import geometry_from_wkt
 from app.core.ulid import is_ulid, new_ulid
 from app.models import Favorite, Route, RouteOrder, User
 from app.services.gpx import InvalidGpxError, infer_route_type, parse_gpx
-from app.services.storage import GpxStorage, PresignedUpload, gpx_key
+from app.services.storage import GpxStorage, PresignedUpload, gpx_key, upload_key
 
 NAME_MAX = 100
 
@@ -51,9 +55,16 @@ def create_upload(
     _ensure_quota(db, user, settings)
     upload_id = new_ulid()
     presigned = storage.presign_upload(
-        gpx_key(user.id, upload_id), settings.gpx_max_bytes, settings.s3_upload_expires_seconds
+        upload_key(user.id, upload_id, "gpx"),
+        settings.gpx_max_bytes,
+        settings.s3_upload_expires_seconds,
     )
     return upload_id, presigned
+
+
+def _lock_user(db: Session, user: User) -> None:
+    """同一使用者的完成上傳排隊執行：兩個分頁同時完成時，配額與重複檢查不會都看到舊的數字。"""
+    db.execute(select(User.id).where(User.id == user.id).with_for_update())
 
 
 def _route_name(requested: str | None, gpx_name: str | None) -> str:
@@ -72,27 +83,26 @@ def complete_upload(
     upload_id: str,
     name: str | None,
 ) -> Route:
-    """讀 S3 上的檔案、驗證與解析，成功後寫入 routes。"""
+    """讀暫存檔、驗證與解析，成功後寫到正式位置並 insert routes。暫存檔由呼叫端刪除。"""
     if not is_ulid(upload_id):
         raise ApiError(404, "upload_not_found", "找不到這次上傳")
+    _lock_user(db, user)
     if db.scalar(select(Route.id).where(Route.public_id == upload_id)) is not None:
         raise ApiError(409, "upload_already_completed", "這次上傳已完成")
 
-    key = gpx_key(user.id, upload_id)
-    data = storage.read(key, settings.gpx_max_bytes)
+    data = storage.read(upload_key(user.id, upload_id, "gpx"), settings.gpx_max_bytes)
     if data is None:
         raise ApiError(404, "upload_not_found", "找不到這次上傳，請重新上傳")
 
+    _ensure_quota(db, user, settings)
     try:
-        _ensure_quota(db, user, settings)
         summary = parse_gpx(data)
     except InvalidGpxError as e:
-        storage.delete(key)
         raise ApiError(422, "invalid_gpx", f"GPX 無法解析：{e}") from e
-    except ApiError:
-        storage.delete(key)
-        raise
 
+    key = gpx_key(user.id, upload_id)
+    # 先寫 S3 再寫 DB：DB 失敗頂多留一個沒人指到的檔案，反過來會有指向不存在檔案的路線
+    storage.put(key, data)
     now = utcnow()
     route = Route(
         public_id=upload_id,
@@ -109,8 +119,12 @@ def complete_upload(
         created_at=now,
         updated_at=now,
     )
-    db.add(route)
-    db.flush()
+    try:
+        with db.begin_nested():
+            db.add(route)
+    except IntegrityError as e:
+        # 鎖之外的極端情況（例如不支援 FOR UPDATE 的資料庫）仍回 409，不是 500
+        raise ApiError(409, "upload_already_completed", "這次上傳已完成") from e
     return route
 
 
@@ -137,11 +151,11 @@ def rename_route(db: Session, user: User, public_id: str, name: str) -> Route:
     return route
 
 
-def delete_route(db: Session, user: User, storage: GpxStorage, public_id: str) -> None:
-    """軟刪除 routes 並刪掉 S3 檔案（檔案不保留，配額立即釋出）；收藏與自訂排序一併清掉。"""
+def delete_route(db: Session, user: User, public_id: str) -> str:
+    """軟刪除 routes（配額立即釋出），收藏與自訂排序一併清掉；回傳要在 commit 後刪掉的 S3 key。"""
     route = get_route(db, user, public_id)
     route.deleted_at = utcnow()
     db.execute(delete(Favorite).where(Favorite.route_id == route.id))
     db.execute(delete(RouteOrder).where(RouteOrder.route_id == route.id))
     db.flush()
-    storage.delete(route.s3_key)
+    return route.s3_key

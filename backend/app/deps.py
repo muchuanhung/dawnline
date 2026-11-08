@@ -18,14 +18,16 @@ AppSettings = Annotated[Settings, Depends(get_settings)]
 def get_current_user(
     request: Request, response: Response, db: DbSession, settings: AppSettings
 ) -> User:
-    """讀 session cookie 取得目前會員；成功時滑動延長 session 與 cookie。"""
+    """讀 session cookie 取得目前會員；剩不到一半效期時滑動延長 session 與 cookie。"""
     raw_token = request.cookies.get(settings.session_cookie_name)
     ttl = timedelta(days=settings.session_ttl_days)
-    session = auth_service.resolve_session(db, raw_token, ttl)
-    if session is None:
+    resolved = auth_service.resolve_session(db, raw_token, ttl)
+    if resolved is None:
         raise ApiError(401, "unauthenticated", "尚未登入或登入已過期")
-    db.commit()
-    set_session_cookie(response, raw_token, settings)
+    session, extended = resolved
+    if extended:
+        db.commit()
+        set_session_cookie(response, raw_token, settings)
     return session.user
 
 
