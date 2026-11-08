@@ -13,6 +13,8 @@ import { BriefingLoading } from "./briefing-loading";
 import { HazardSummary } from "./hazard-summary";
 import { RouteSwitcher, type SwitcherRoute } from "./route-switcher";
 import { DataNotice } from "@/components/verdict/data-notice";
+import { ExpiryGate } from "@/components/verdict/expiry-gate";
+import { expireVerdict } from "@/lib/routes/snapshot";
 import { TripSettings } from "@/components/trip/trip-settings";
 import {
   activityOfRouteType,
@@ -166,14 +168,21 @@ async function BriefingResult({
     speedKmh,
   });
   if (!featured) return null;
+  // 頁面開著不動或從背景回來超過 30 分鐘：改顯示過期版本（安全 → 未判定），回前景時重新判讀
+  const expired = { ...featured, verdict: expireVerdict(featured.verdict, false) };
+  const cards = (b: typeof featured) => (
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] lg:items-start">
+      <BriefingCard featured={b} trip={tripParams} isPrivate={isPrivate} />
+      <HazardSummary briefing={b} />
+    </div>
+  );
 
   return (
     <div className="space-y-4">
       {/* 桌機左主卡、右沿途示警；手機依序往下 */}
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] lg:items-start">
-        <BriefingCard featured={featured} trip={tripParams} isPrivate={isPrivate} />
-        <HazardSummary briefing={featured} />
-      </div>
+      <ExpiryGate generatedAt={featured.generatedAt} expired={cards(expired)} refreshOnReturn>
+        {cards(featured)}
+      </ExpiryGate>
       <DataNotice generatedAt={featured.generatedAt} />
     </div>
   );

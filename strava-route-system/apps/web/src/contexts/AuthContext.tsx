@@ -246,14 +246,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // 兩份 session 都換完（成功或失敗）才算 ready；失敗仍顯示使用者，後續 API 若 401 再處理
       const exchange = startSessionExchange(u);
       void exchange.backend.then((profile) => {
-        // 後端連不上（null）時沿用快取，不把頭像清掉
-        if (cancelled || !profile) return;
+        // 後端連不上（null）時沿用快取，不把頭像清掉；
+        // 回來時已經換人登入（或登出）就丟掉，不把上一位的頭像、管理員身分套到新使用者
+        if (cancelled || !profile || authRef.current?.currentUser?.uid !== u.uid) return;
         setAvatarUrlState(profile.avatarUrl);
         setIsAdmin(profile.isAdmin);
         writeCachedProfile(u, profile.avatarUrl);
       });
       await exchange.done;
-      if (!cancelled) setSessionReady(true);
+      if (!cancelled && authRef.current?.currentUser?.uid === u.uid) setSessionReady(true);
     });
     return () => {
       cancelled = true;
@@ -307,14 +308,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = useCallback(async () => {
     const auth = authRef.current ?? getAuthClient();
-    await firebaseSignOut(auth);
-    await Promise.all([
+    // 先清伺服器端的兩份 session cookie，再登出 Firebase；任一請求失敗（網路不穩）都不中斷登出，
+    // 否則 Firebase 已登出、HttpOnly cookie 卻還在，伺服器渲染的頁面會繼續當成已登入
+    await Promise.allSettled([
       fetch("/api/auth/signout", { method: "POST" }),
-      // 後端 session 一併登出；後端未設定時失敗不影響
-      fetch("/api/v1/auth/session", { method: "DELETE", credentials: "include" }).catch(() => undefined),
-      // onAuthStateChanged 也會刪，這裡等它刪完再回傳，呼叫端換頁時快照已清空
-      clearPrivateSnapshots(),
+      fetch("/api/v1/auth/session", { method: "DELETE", credentials: "include" }),
     ]);
+    await firebaseSignOut(auth);
+    // onAuthStateChanged 也會刪，這裡等它刪完再回傳，呼叫端換頁時快照已清空
+    await clearPrivateSnapshots();
   }, []);
 
   const setAvatarUrl = useCallback((url: string | null) => {

@@ -9,6 +9,7 @@ import {
   SNAPSHOT_HEADER,
   SNAPSHOT_MAX_AGE_MS,
   expireVerdict,
+  isBriefingExpired,
   isSnapshotExpired,
   snapshotAgeLabel,
   snapshotAtOf,
@@ -111,5 +112,27 @@ test.describe("snapshotAgeLabel", () => {
 
   test("clock skew in the future reads as just now", () => {
     expect(snapshotAgeLabel(NOW + 5 * MIN, NOW)).toBe("剛剛");
+  });
+});
+
+test.describe("isBriefingExpired（伺服器端渲染的判讀：今日判讀、首頁精選路線）", () => {
+  const generatedAt = "2026-11-08T08:00:00+08:00";
+  const at = (min: number) => Date.parse(generatedAt) + min * 60_000;
+
+  test("30 分鐘內有效，剛好 30 分鐘算過期", () => {
+    expect(isBriefingExpired(generatedAt, at(0))).toBe(false);
+    expect(isBriefingExpired(generatedAt, at(29))).toBe(false);
+    expect(isBriefingExpired(generatedAt, at(30))).toBe(true);
+    expect(isBriefingExpired(generatedAt, at(60 * 24 * 5))).toBe(true);
+  });
+
+  test("時間無法解析一律視為過期，不可當成新鮮的安全", () => {
+    expect(isBriefingExpired("", at(0))).toBe(true);
+    expect(isBriefingExpired("not-a-date", at(0))).toBe(true);
+  });
+
+  test("過期後安全改未判定（今日判讀卡與首頁 chip 用的就是這個版本）", () => {
+    const expired = expireVerdict({ level: "clear", headline: "沿途無示警", note: "" }, false);
+    expect(expired).toMatchObject({ level: "unknown", reasons: ["briefing_expired"] });
   });
 });
