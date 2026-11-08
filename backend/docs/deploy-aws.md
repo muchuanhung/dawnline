@@ -99,6 +99,7 @@ sudo docker run -d --name dawnline-mysql --restart unless-stopped \
 | `GPX_MAX_BYTES` | `5242880` | 每檔 5 MB |
 | `GPX_MAX_ROUTES_PER_USER` | `10` | |
 | `ADMIN_FIREBASE_UIDS` | 你的 Firebase UID | 逗號分隔；可在網站上新增／下架公開路線（§7a） |
+| `API_DOCS_ENABLED` | 不設（預設 `false`） | `/docs`、`/openapi.json` 正式站關閉；本機開發要看 API 文件時設 `true` |
 
 不要放 `AWS_ACCESS_KEY_ID`：有的話 boto3 會改用那把 key，不走 instance role。
 
@@ -185,6 +186,8 @@ cd ~/dawnline && git ls-files | grep -iE 'privkey|\.pem$' ; echo "exit=$?"
 Bucket `dawnline-gpx`（`ap-northeast-1`）：Block Public Access 四項全開、ACL 停用（Bucket owner enforced）、SSE-S3。物件 key：
 
 - `users/{user_id}/routes/{route_id}.gpx`：使用者上傳的 GPX
+- `users/{user_id}/avatar/{upload_id}.jpg`：自訂頭像
+- `tmp-uploads/{user_id}/{upload_id}.gpx|jpg`：presigned POST 的暫存區。瀏覽器先傳到這裡，API 驗證通過才寫到 `users/...` 並刪掉暫存檔；沒完成的上傳由 lifecycle rule `expire-tmp-uploads`（prefix `tmp-uploads/`）1 天後刪除，不會一直累積，也不在每日同步到大阪的 `users/` 裡
 - `backups/velorder-YYYY-MM-DD.sql.gz`：每日 DB 備份，lifecycle rule `expire-backups` 30 天後刪除
 
 CORS：
@@ -212,7 +215,10 @@ CORS：
     {
       "Effect": "Allow",
       "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
-      "Resource": "arn:aws:s3:::dawnline-gpx/users/*"
+      "Resource": [
+        "arn:aws:s3:::dawnline-gpx/users/*",
+        "arn:aws:s3:::dawnline-gpx/tmp-uploads/*"
+      ]
     },
     {
       "Effect": "Allow",
@@ -228,7 +234,7 @@ CORS：
 }
 ```
 
-- `s3:PutObject` 給 presigned POST 用（URL 以 role 的身分簽名）。
+- `s3:PutObject` 給 presigned POST 用（URL 以 role 的身分簽名）；`tmp-uploads/*` 是上傳暫存區（2026-11-08 加入，review ① PR）。
 - `s3:ListBucket` 讓檔案不存在時 HEAD 回 404 而不是 403，API 才能回「找不到這次上傳」。
 
 ### 異地備份 bucket（大阪）

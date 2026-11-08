@@ -7,7 +7,7 @@ from app.deps import AppSettings, CurrentUser, DbSession
 from app.schemas.route import RouteOrderIn, RouteOrderOut
 from app.schemas.user import AvatarConfirm, AvatarUploadCreate, AvatarUploadOut, UserOut, user_out
 from app.services import avatar_service, route_order_service
-from app.services.storage import GpxStorage, get_storage
+from app.services.storage import GpxStorage, get_storage, upload_key
 
 router = APIRouter(prefix="/api/v1", tags=["me"])
 
@@ -43,16 +43,23 @@ def create_avatar_upload(
 def confirm_avatar(
     body: AvatarConfirm, user: CurrentUser, db: DbSession, settings: AppSettings, storage: Storage
 ):
-    """第 2 步：檔案已傳到 S3，檢查是 JPEG 後換成新頭像、刪掉舊檔。"""
-    user = avatar_service.confirm_upload(db, user, storage, settings, body.upload_id)
-    db.commit()
+    """第 2 步：檔案已傳到 S3 暫存區，檢查是 JPEG 後換成新頭像；commit 後才刪暫存檔與舊頭像。"""
+    try:
+        old_key = avatar_service.confirm_upload(db, user, storage, settings, body.upload_id)
+        db.commit()
+    finally:
+        storage.delete_quietly(upload_key(user.id, body.upload_id, "jpg"))
+    if old_key:
+        storage.delete_quietly(old_key)
     return user_out(user, settings.is_admin(user.firebase_uid))
 
 
 @router.delete("/me/avatar", status_code=status.HTTP_204_NO_CONTENT)
 def delete_avatar(user: CurrentUser, db: DbSession, storage: Storage) -> Response:
-    avatar_service.delete_avatar(db, user, storage)
+    old_key = avatar_service.delete_avatar(db, user)
     db.commit()
+    if old_key:
+        storage.delete_quietly(old_key)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

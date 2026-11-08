@@ -14,7 +14,7 @@ from app.schemas.route import (
     UploadOut,
 )
 from app.services import route_service
-from app.services.storage import GpxStorage, get_storage
+from app.services.storage import GpxStorage, get_storage, upload_key
 
 router = APIRouter(prefix="/api/v1/routes", tags=["routes"])
 
@@ -52,9 +52,14 @@ def create_upload(
 def complete_upload(
     body: RouteCreate, user: CurrentUser, db: DbSession, settings: AppSettings, storage: Storage
 ):
-    """第 2 步：檔案已傳到 S3，解析並建立路線。"""
-    route = route_service.complete_upload(db, user, storage, settings, body.upload_id, body.name)
-    db.commit()
+    """第 2 步：檔案已傳到 S3 暫存區，解析並建立路線；不論成敗都刪掉暫存檔。"""
+    try:
+        route = route_service.complete_upload(
+            db, user, storage, settings, body.upload_id, body.name
+        )
+        db.commit()
+    finally:
+        storage.delete_quietly(upload_key(user.id, body.upload_id, "gpx"))
     return _route_out(route)
 
 
@@ -86,6 +91,7 @@ def rename_route(route_id: str, body: RouteUpdate, user: CurrentUser, db: DbSess
 
 @router.delete("/{route_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_route(route_id: str, user: CurrentUser, db: DbSession, storage: Storage) -> Response:
-    route_service.delete_route(db, user, storage, route_id)
+    key = route_service.delete_route(db, user, route_id)
     db.commit()
+    storage.delete_quietly(key)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

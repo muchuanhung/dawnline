@@ -31,13 +31,13 @@ def api(client, s3):  # noqa: F811
 
 
 def upload(api, s3, data: bytes = JPEG):  # noqa: F811
-    """拿 presigned POST → 模擬瀏覽器傳檔 → 確認；回傳 (確認的 response, S3 key)。"""
+    """拿 presigned POST → 模擬瀏覽器傳檔 → 確認；回傳 (確認的 response, 正式位置的 S3 key)。"""
     res = api.post("/api/v1/me/avatar/uploads", json={"fileSize": len(data)})
     assert res.status_code == 201, res.text
     body = res.json()
-    key = body["fields"]["key"]
-    s3.put_object(Bucket=BUCKET, Key=key, Body=data, ContentType="image/jpeg")
-    return api.put("/api/v1/me/avatar", json={"uploadId": body["uploadId"]}), key
+    s3.put_object(Bucket=BUCKET, Key=body["fields"]["key"], Body=data, ContentType="image/jpeg")
+    confirmed = api.put("/api/v1/me/avatar", json={"uploadId": body["uploadId"]})
+    return confirmed, f"users/1/avatar/{body['uploadId']}.jpg"
 
 
 def keys(s3) -> list[str]:  # noqa: F811
@@ -48,8 +48,8 @@ def test_presigned_post_is_jpeg_only_and_size_limited(api):
     res = api.post("/api/v1/me/avatar/uploads", json={"fileSize": 500})
     assert res.status_code == 201
     body = res.json()
-    assert body["fields"]["key"].startswith("users/1/avatar/")
-    assert body["fields"]["key"].endswith(".jpg")
+    # 先傳到暫存區（lifecycle 1 天清掉），確認後才寫到 users/1/avatar/
+    assert body["fields"]["key"] == f"tmp-uploads/1/{body['uploadId']}.jpg"
     policy = json.loads(base64.b64decode(body["fields"]["policy"]))
     assert {"Content-Type": "image/jpeg"} in policy["conditions"]
     assert ["content-length-range", 1, 1024] in policy["conditions"]
@@ -118,7 +118,15 @@ def test_confirm_twice_is_idempotent(api, s3):  # noqa: F811
     first = api.put("/api/v1/me/avatar", json={"uploadId": body["uploadId"]})
     second = api.put("/api/v1/me/avatar", json={"uploadId": body["uploadId"]})
     assert first.status_code == second.status_code == 200
-    assert keys(s3) == [body["fields"]["key"]]
+    assert keys(s3) == [f"users/1/avatar/{body['uploadId']}.jpg"]
+
+
+def test_confirm_moves_file_out_of_staging(api, s3):  # noqa: F811
+    res, key = upload(api, s3)
+    assert res.status_code == 200
+    assert keys(s3) == [key]
+    obj = s3.head_object(Bucket=BUCKET, Key=key)
+    assert obj["ContentType"] == "image/jpeg"
 
 
 def test_delete_removes_file_and_url(api, s3):  # noqa: F811

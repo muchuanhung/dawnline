@@ -23,7 +23,7 @@ from app.core.types import geometry_from_wkt
 from app.core.ulid import is_ulid, new_ulid
 from app.models import Favorite, Route, RouteOrder, User
 from app.services.gpx import InvalidGpxError, infer_route_type, parse_gpx
-from app.services.storage import GpxStorage, PresignedUpload, gpx_key
+from app.services.storage import GpxStorage, PresignedUpload, gpx_key, upload_key
 
 NAME_MAX = 100
 # slug 沿用原 GPX 檔名（常含空白、+、括號、中文），前端一律 encodeURIComponent。
@@ -111,12 +111,12 @@ def import_public_route(
     return ImportResult(slug, "created" if existing is None else "updated")
 
 
-def _unpublish(db: Session, storage: GpxStorage, route: Route) -> None:
-    """Soft-delete one public route, drop its favourites/order rows and its S3 file."""
+def _unpublish(db: Session, route: Route) -> str:
+    """Soft-delete one public route and drop its favourites/order rows; returns its S3 key."""
     route.deleted_at = utcnow()
     db.execute(delete(Favorite).where(Favorite.route_id == route.id))
     db.execute(delete(RouteOrder).where(RouteOrder.route_id == route.id))
-    storage.delete(route.s3_key)
+    return route.s3_key
 
 
 def unpublish_missing(db: Session, storage: GpxStorage, keep_slugs: set[str]) -> list[str]:
@@ -125,22 +125,25 @@ def unpublish_missing(db: Session, storage: GpxStorage, keep_slugs: set[str]) ->
     for route in db.scalars(_active_public()):
         if route.slug in keep_slugs:
             continue
-        _unpublish(db, storage, route)
+        # 匯入腳本緊接著就 commit；這裡直接刪檔，維持原本的行為
+        storage.delete(_unpublish(db, route))
         removed.append(route.slug or route.public_id)
     db.flush()
     return removed
 
 
-def unpublish_route(db: Session, storage: GpxStorage, slug: str) -> None:
-    """Admin: unpublish a single public route (same effect as --prune for that slug)."""
+def unpublish_route(db: Session, slug: str) -> str:
+    """Admin: unpublish one public route; returns the S3 key to delete after commit."""
     route = get_public_route(db, slug)
-    _unpublish(db, storage, route)
+    key = _unpublish(db, route)
     db.flush()
+    return key
 
 
 # --- Admin upload from the site (same import logic as the script) ---------------------------
-# Step 1 hands out a presigned POST to a temporary key under the admin's own users/{id}/routes/
-# prefix (no IAM change); step 2 reads it, runs import_public_route, then deletes the temp file.
+# Step 1 hands out a presigned POST to the tmp-uploads/ staging prefix (never the admin's own
+# users/{id}/routes/ keys, so a wrong upload_id cannot touch an existing private route);
+# step 2 reads it and runs import_public_route; the router deletes the temp file afterwards.
 # Public routes never count against the 10-route quota, so no quota check here.
 
 
@@ -151,7 +154,9 @@ def create_admin_upload(
         raise ApiError(413, "file_too_large", "GPX 檔案超過大小上限")
     upload_id = new_ulid()
     presigned = storage.presign_upload(
-        gpx_key(user.id, upload_id), settings.gpx_max_bytes, settings.s3_upload_expires_seconds
+        upload_key(user.id, upload_id, "gpx"),
+        settings.gpx_max_bytes,
+        settings.s3_upload_expires_seconds,
     )
     return upload_id, presigned
 
@@ -164,20 +169,17 @@ def complete_admin_upload(
     upload_id: str,
     slug: str,
 ) -> tuple[ImportResult, Route]:
+    """Import the staged upload as a public route; the caller deletes the temp file."""
     if not is_ulid(upload_id):
         raise ApiError(404, "upload_not_found", "找不到這次上傳")
-    temp_key = gpx_key(user.id, upload_id)
     slug = slug.strip()
+    if not is_valid_slug(slug):
+        raise ApiError(422, "invalid_slug", "網址 id 最長 64 字，不能有 / \\ ? # %")
+    data = storage.read(upload_key(user.id, upload_id, "gpx"), settings.gpx_max_bytes)
+    if data is None:
+        raise ApiError(404, "upload_not_found", "找不到這次上傳，請重新上傳")
     try:
-        if not is_valid_slug(slug):
-            raise ApiError(422, "invalid_slug", "網址 id 最長 64 字，不能有 / \\ ? # %")
-        data = storage.read(temp_key, settings.gpx_max_bytes)
-        if data is None:
-            raise ApiError(404, "upload_not_found", "找不到這次上傳，請重新上傳")
         result = import_public_route(db, storage, user, slug, data)
     except InvalidGpxError as e:
         raise ApiError(422, "invalid_gpx", f"GPX 無法解析：{e}") from e
-    finally:
-        # The import copies the bytes to the route's own key; the temp file is never needed again
-        storage.delete(temp_key)
     return result, get_public_route(db, slug)

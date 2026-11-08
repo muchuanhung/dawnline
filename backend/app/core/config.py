@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     # Empty = nobody; changing it only needs an api.env edit + container restart.
     admin_firebase_uids: str = ""
 
+    # /docs、/redoc、/openapi.json：正式站關閉，避免公開列出所有端點（含管理員 API）。
+    # 本機開發要看文件時設 API_DOCS_ENABLED=true
+    api_docs_enabled: bool = False
+
     @property
     def admin_uid_set(self) -> frozenset[str]:
         return frozenset(u.strip() for u in self.admin_firebase_uids.split(",") if u.strip())

@@ -2,13 +2,13 @@
 // cookie 存的是 Firebase session cookie（5 天有效）；Authorization header 仍是 idToken（1 小時）
 
 import { getAuthAdmin } from "@/lib/firebase/admin";
+import { readCookie } from "@/lib/auth/session-cookie";
 
 const SESSION_COOKIE_NAME = "firebase-id-token";
 
 /** Read the session cookie value from a raw Cookie header. */
 function readSessionCookie(cookieHeader: string): string | null {
-  const match = cookieHeader.match(new RegExp(`${SESSION_COOKIE_NAME}=([^;]+)`));
-  return match?.[1] ? decodeURIComponent(match[1].trim()) : null;
+  return readCookie(cookieHeader, SESSION_COOKIE_NAME);
 }
 
 /**

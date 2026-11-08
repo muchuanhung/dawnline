@@ -119,3 +119,19 @@ def test_unpublish(admin, s3):
     assert admin.delete("/api/v1/admin/public-routes/yangjin").status_code == 404
     # Re-publishing an unpublished slug brings it back
     assert publish(admin, s3, "yangjin").status_code == 200
+
+
+def test_upload_id_of_own_private_route_does_not_touch_its_file(admin, s3):
+    """管理員的暫存區和自己的私人路線分開：拿私人路線的 id 當 uploadId 也刪不到它的檔案。"""
+    res = test_routes.upload(admin, s3)
+    assert res.status_code == 201, res.text
+    private = res.json()
+    private_key = f"users/1/routes/{private['id']}.gpx"  # 管理員是第一個登入的使用者
+    assert private_key in _keys(s3)
+
+    res = admin.post(
+        "/api/v1/admin/public-routes", json={"uploadId": private["id"], "slug": "stolen"}
+    )
+    assert res.status_code == 404
+    assert private_key in _keys(s3)
+    assert admin.get(f"/api/v1/routes/{private['id']}/gpx").status_code == 200

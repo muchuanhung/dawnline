@@ -2,8 +2,12 @@
 
 瀏覽器直傳 S3，檔案不經過 API；API 只發 URL、事後讀檔驗證。
 EC2 上用 instance role 取得權限（boto3 預設憑證鏈），不在設定裡放 access key。
+
+上傳一律先進暫存區 tmp-uploads/（bucket lifecycle 1 天後自動刪除），確認內容合格後
+才寫到正式位置 users/...。沒完成的上傳不會永遠留在 S3，也不會被每日備份同步到大阪。
 """
 
+import logging
 from dataclasses import dataclass
 from functools import lru_cache
 from urllib.parse import quote
@@ -16,9 +20,20 @@ from botocore.exceptions import ClientError
 from app.core.config import get_settings
 from app.core.errors import ApiError
 
+logger = logging.getLogger(__name__)
+
 GPX_CONTENT_TYPE = "application/gpx+xml"
 # 頭像一律是瀏覽器重新編碼的 JPEG：不收 SVG／HTML 等可夾帶腳本的格式
 AVATAR_CONTENT_TYPE = "image/jpeg"
+
+
+# bucket lifecycle 規則 expire-tmp-uploads 以這個前綴刪除 1 天前的暫存檔（deploy-aws.md 第 5 節）
+UPLOAD_PREFIX = "tmp-uploads/"
+
+
+def upload_key(user_id: int, upload_id: str, ext: str) -> str:
+    """presigned POST 的暫存位置；和正式檔案分開，送錯 id 也碰不到既有的路線或頭像。"""
+    return f"{UPLOAD_PREFIX}{user_id}/{upload_id}.{ext}"
 
 
 def gpx_key(user_id: int, route_public_id: str) -> str:
@@ -71,9 +86,9 @@ class GpxStorage:
         obj = self.client.get_object(Bucket=self.bucket, Key=key)
         return obj["Body"].read()
 
-    def put(self, key: str, data: bytes) -> None:
-        """直接寫檔（匯入公開路線用；使用者上傳仍走 presigned POST）。"""
-        self.client.put_object(Bucket=self.bucket, Key=key, Body=data, ContentType=GPX_CONTENT_TYPE)
+    def put(self, key: str, data: bytes, content_type: str = GPX_CONTENT_TYPE) -> None:
+        """直接寫檔：匯入公開路線，以及把驗證過的暫存上傳寫到正式位置。"""
+        self.client.put_object(Bucket=self.bucket, Key=key, Body=data, ContentType=content_type)
 
     def presign_download(self, key: str, filename: str, expires: int) -> str:
         # 中文檔名用 RFC 5987 的 filename*
@@ -99,6 +114,13 @@ class GpxStorage:
 
     def delete(self, key: str) -> None:
         self.client.delete_object(Bucket=self.bucket, Key=key)
+
+    def delete_quietly(self, key: str) -> None:
+        """DB 已 commit 之後的清理：失敗只記 log，不讓已成功的請求變成 500。"""
+        try:
+            self.delete(key)
+        except Exception:  # noqa: BLE001 - 清理失敗不影響結果；暫存檔另有 lifecycle 兜底
+            logger.warning("S3 刪除失敗：%s", key, exc_info=True)
 
 
 def build_s3_client(region: str) -> BaseClient:

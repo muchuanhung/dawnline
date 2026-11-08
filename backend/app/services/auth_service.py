@@ -14,7 +14,8 @@ from app.models import AuthSession, User
 
 
 def hash_token(raw_token: str) -> str:
-    return hashlib.sha256(raw_token.encode("ascii")).hexdigest()
+    # utf-8：cookie 被竄改成非 ASCII 時只會查不到（401），不會 UnicodeEncodeError 變 500
+    return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
 
 def _clip(value: str | None, limit: int) -> str | None:
@@ -59,17 +60,25 @@ def create_session(db: Session, user: User, ttl: timedelta, user_agent: str | No
     return raw_token
 
 
-def resolve_session(db: Session, raw_token: str | None, ttl: timedelta) -> AuthSession | None:
-    """查有效 session 並滑動延長；無 cookie、過期、已登出都回 None。"""
+def resolve_session(
+    db: Session, raw_token: str | None, ttl: timedelta
+) -> tuple[AuthSession, bool] | None:
+    """查有效 session；無 cookie、過期、已登出都回 None。
+
+    剩不到一半效期才滑動延長（回傳的 bool 為 True，呼叫端要 commit 並重設 cookie），
+    避免每個請求都寫一次資料庫；仍在使用的 session 不會過期。
+    """
     if not raw_token:
         return None
     session = db.get(AuthSession, hash_token(raw_token))
     now = utcnow()
     if session is None or session.revoked_at is not None or session.expires_at <= now:
         return None
+    if session.expires_at - now >= ttl / 2:
+        return session, False
     session.expires_at = now + ttl
     db.flush()
-    return session
+    return session, True
 
 
 def revoke_session(db: Session, raw_token: str | None) -> None:

@@ -17,7 +17,7 @@ from app.schemas.route import (
     UploadOut,
 )
 from app.services import public_route_service
-from app.services.storage import GpxStorage, get_storage
+from app.services.storage import GpxStorage, get_storage, upload_key
 
 router = APIRouter(prefix="/api/v1/admin/public-routes", tags=["admin"])
 
@@ -46,17 +46,21 @@ def complete_upload(
     settings: AppSettings,
     storage: Storage,
 ):
-    """第 2 步：新增或覆寫同 slug 的公開路線（收藏與網址保留）。"""
-    result, route = public_route_service.complete_admin_upload(
-        db, user, storage, settings, body.upload_id, body.slug
-    )
-    db.commit()
+    """第 2 步：新增或覆寫同 slug 的公開路線（收藏與網址保留）；不論成敗都刪掉暫存檔。"""
+    try:
+        result, route = public_route_service.complete_admin_upload(
+            db, user, storage, settings, body.upload_id, body.slug
+        )
+        db.commit()
+    finally:
+        storage.delete_quietly(upload_key(user.id, body.upload_id, "gpx"))
     return AdminPublicRouteResult(action=result.action, route=public_route_out(route))
 
 
 @router.delete("/{slug}", status_code=status.HTTP_204_NO_CONTENT)
 def unpublish(slug: str, _: AdminUser, db: DbSession, storage: Storage) -> Response:
-    """下架：軟刪除、刪 S3 檔、清收藏與排序。"""
-    public_route_service.unpublish_route(db, storage, slug)
+    """下架：軟刪除、清收藏與排序，commit 後才刪 S3 檔。"""
+    key = public_route_service.unpublish_route(db, slug)
     db.commit()
+    storage.delete_quietly(key)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

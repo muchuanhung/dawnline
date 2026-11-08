@@ -37,7 +37,6 @@ from app.services import (
     route_order_service,
     route_service,
 )
-from app.services.storage import GpxStorage
 
 PUBLIC_ROUTES = 200  # 公開路線數（目前線上 4 條，抓日後規模）
 PRIVATE_PER_USER = 12  # 每人 12 條私人路線，其中 2 條已軟刪除（配額 10）
@@ -163,19 +162,6 @@ def capture(engine: Engine):
         event.remove(engine, "before_cursor_execute", _listener)
 
 
-class _NoopStorage(GpxStorage):
-    """delete_route 會刪 S3 檔；這裡只要它送出的 SQL。"""
-
-    def __init__(self) -> None:  # noqa: D107 - 不需要 client
-        pass
-
-    def put(self, key: str, data: bytes) -> None:
-        return None
-
-    def delete(self, key: str) -> None:
-        return None
-
-
 # ---------------------------------------------------------------- scenarios
 
 
@@ -286,7 +272,7 @@ CASES = [
     Case(
         "刪除私人路線時清掉它的收藏",
         "route_service.delete_route",
-        lambda db, s: route_service.delete_route(db, s.user, _NoopStorage(), s.private_id),
+        lambda db, s: route_service.delete_route(db, s.user, s.private_id),
         lambda sql: sql.lstrip().lower().startswith("delete from favorites"),
         ("favorites", "idx_favorites_route"),
         timed=False,
@@ -302,7 +288,7 @@ CASES = [
     Case(
         "刪除私人路線時清掉它在自訂順序裡的位置",
         "route_service.delete_route",
-        lambda db, s: route_service.delete_route(db, s.user, _NoopStorage(), s.private_id),
+        lambda db, s: route_service.delete_route(db, s.user, s.private_id),
         lambda sql: sql.lstrip().lower().startswith("delete from route_order"),
         ("route_order", "idx_route_order_route"),
         timed=False,
