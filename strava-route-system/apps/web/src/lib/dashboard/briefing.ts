@@ -71,14 +71,19 @@ export const districtKey = (county: string, district: string) => `${county}|${di
 const weatherOf = (seg: RouteSegment, lookup: WeatherLookup) =>
   seg.county && seg.districtZh ? lookup.get(districtKey(seg.county, seg.districtZh)) : undefined;
 
-/** 路段騎經時間所落在的降雨時段；沒有出發時間或時段資料時回傳 null */
+/**
+ * 路段離開時間超出降雨機率或風速的預報時段（任一個超出就算）。
+ * 風速時段比降雨機率短時，超出的部分不可拿「現在」的風速頂替。
+ */
 function isOutOfCoverage(
   seg: RouteSegment,
   w: DistrictWeather,
   { departureTime, pace = DEFAULT_CYCLING_SPEED_KMH }: ApplyWeatherOptions
 ): boolean {
-  if (!departureTime || !w.rainfallBuckets?.length) return false;
-  return isBeyondForecast(seg.sampleKms, departureTime, w.rainfallBuckets, pace);
+  if (!departureTime) return false;
+  const beyond = (buckets: readonly { endTime: string }[] | undefined) =>
+    !!buckets?.length && isBeyondForecast(seg.sampleKms, departureTime, buckets, pace);
+  return beyond(w.rainfallBuckets) || beyond(w.windBuckets);
 }
 
 function bucketForSegment(
@@ -98,6 +103,17 @@ function windForSegment(
 ): number {
   if (!departureTime || !w.windBuckets?.length) return w.windSpeedKmh;
   return pickWindForSegment(seg.sampleKms, departureTime, w.windBuckets, pace) ?? w.windSpeedKmh;
+}
+
+/**
+ * 天氣現象文字（可能是多個時段以「、」串接）→ 路段 condition；取最嚴重的：雷 → stormy、雨 → rainy，
+ * 其餘為 cloudy（晴、多雲在判定上相同）。沒有文字時回 null，由呼叫端沿用第一個時段的 condition。
+ */
+export function conditionFromWeatherText(text: string | undefined): RouteSegment["condition"] | null {
+  if (!text) return null;
+  if (text.includes("雷")) return "stormy";
+  if (text.includes("雨")) return "rainy";
+  return "cloudy";
 }
 
 /** CWB condition → 路段 condition */
@@ -231,7 +247,7 @@ function weatherTextForSegment(
 
 /**
  * 把天氣合併進路段；查不到的路段標 hasWeather=false（數值不可當真）。
- * 氣溫、condition 仍是第一個預報時段（CWB 這些欄位目前只取第一筆）；降雨機率、風速、天氣現象文字依 ETA 挑時段。
+ * 氣溫仍是第一個預報時段（CWB 這個欄位目前只取第一筆）；降雨機率、風速、天氣現象文字與 condition 依 ETA 挑時段。
  */
 export function applyWeather(route: Route, lookup: WeatherLookup, options: ApplyWeatherOptions = {}): Route {
   return {
@@ -239,15 +255,17 @@ export function applyWeather(route: Route, lookup: WeatherLookup, options: Apply
     segments: route.segments.map((seg) => {
       const w = weatherOf(seg, lookup);
       if (!w) return { ...seg, hasWeather: false };
+      const weatherText = weatherTextForSegment(seg, w, options);
       return {
         ...seg,
         rainProbability: bucketForSegment(seg, w, options)?.pop ?? w.rainProbability,
         windSpeed: windForSegment(seg, w, options),
         temperature: w.temperature,
-        condition: w.condition,
+        // 雷雨、有雨依騎經時段的天氣現象判斷；沒有天氣現象時段時退回第一個時段
+        condition: conditionFromWeatherText(weatherText) ?? w.condition,
         hasWeather: true,
         observedRainMmPerHr: w.observedRainMmPerHr,
-        weatherText: weatherTextForSegment(seg, w, options),
+        weatherText,
         nowcastRainMm: w.nowcast?.mm,
         nowcastValidUntil: w.nowcast?.validUntil,
         weatherStale: w.stale ?? false,

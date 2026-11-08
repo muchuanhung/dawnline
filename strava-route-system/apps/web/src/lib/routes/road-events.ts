@@ -12,6 +12,7 @@
  * - 災害(6) → 判「危險」
  * - 交通事故(1)、特殊管制(4)、天氣(5)、異常告警(8) → 判「注意」
  * - 施工(2)、壅塞(3)、活動(7) → 列出但不影響判定
+ * - 類型缺漏或不認得（other）→ 判「注意」：不知道是什麼事件，不可當成不影響
  * - 其他的施工（298：多為道管中心的道路維護許可，無到期時間、數量大）→ 收合成一行，避免洗版；
  *   同一處常有多張許可（不同 EventID、說明都是「道路維護」），展開時再併成一列標 ×N
  */
@@ -37,6 +38,11 @@ export interface RoadEvent {
   description: string;
   lat: number;
   lon: number;
+  /**
+   * 線狀或多點事件（LINESTRING、MULTIPOINT…）的所有頂點 [lat, lon]；對應路線時取離路線最近的頂點。
+   * 單點事件沒有這個欄位，lat／lon 即事件位置。
+   */
+  points?: [number, number][];
   source: string;
   /** ISO 字串（含 +08:00） */
   effectiveTime: string | null;
@@ -86,7 +92,7 @@ export function categoryOf(type: number): RoadEventCategory {
   return CATEGORY_BY_TYPE[type] ?? "other";
 }
 
-const VERDICT_CATEGORIES = new Set<RoadEventCategory>(["disaster", "accident", "control", "weather", "anomaly"]);
+const VERDICT_CATEGORIES = new Set<RoadEventCategory>(["disaster", "accident", "control", "weather", "anomaly", "other"]);
 
 type TdxRawEvent = {
   EventID?: string;
@@ -101,13 +107,27 @@ type TdxRawEvent = {
   LastUpdateTime?: string;
 };
 
-/** TDX 原始資料 → RoadEvent；沒有可用座標（POINT）的事件回傳 null */
+/**
+ * WKT（POINT、MULTIPOINT、LINESTRING、MULTILINESTRING…）的所有座標，轉成 [lat, lon]。
+ * WKT 座標是「經度 緯度」；超出台灣附近合理範圍或不是數字的點略過。
+ */
+export function wktPoints(wkt: string): [number, number][] {
+  const body = wkt.slice(wkt.indexOf("(") + 1, wkt.lastIndexOf(")"));
+  if (!body) return [];
+  const out: [number, number][] = [];
+  for (const pair of body.replace(/[()]/g, " ").split(",")) {
+    const [x, y] = pair.trim().split(/\s+/).map(Number);
+    if (Number.isFinite(x) && Number.isFinite(y) && Math.abs(y!) <= 90 && Math.abs(x!) <= 180) out.push([y!, x!]);
+  }
+  return out;
+}
+
+/** TDX 原始資料 → RoadEvent；沒有任何可用座標的事件回傳 null */
 export function parseTdxEvent(raw: TdxRawEvent): RoadEvent | null {
-  const m = String(raw.Positions ?? "").match(/POINT\s*\(\s*(-?[\d.]+)\s+(-?[\d.]+)\s*\)/i);
-  if (!m || !raw.EventID) return null;
-  const lon = Number(m[1]);
-  const lat = Number(m[2]);
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  if (!raw.EventID) return null;
+  const pts = wktPoints(String(raw.Positions ?? ""));
+  if (pts.length === 0) return null;
+  const [lat, lon] = pts[0]!;
   return {
     id: raw.EventID,
     type: raw.EventType ?? 0,
@@ -116,6 +136,7 @@ export function parseTdxEvent(raw: TdxRawEvent): RoadEvent | null {
     description: (raw.Description ?? "").trim(),
     lat,
     lon,
+    ...(pts.length > 1 ? { points: pts } : {}),
     source: raw.Source ?? "",
     effectiveTime: raw.EffectiveTime ?? null,
     expireTime: raw.ExpireTime ?? null,
@@ -152,9 +173,16 @@ export function matchEventsToRoute(
   const seen = new Set<string>();
   for (const e of events) {
     if (seen.has(e.id)) continue;
-    if (e.lat < minLat || e.lat > maxLat || e.lon < minLon || e.lon > maxLon) continue;
+    const vertices = e.points?.length ? e.points : [[e.lat, e.lon] as [number, number]];
+    const inBox = vertices.filter(([lat, lon]) => lat >= minLat && lat <= maxLat && lon >= minLon && lon <= maxLon);
+    if (inBox.length === 0) continue;
     if (!isActive(e, now)) continue;
-    const hit = mapLatLonToKm(e.lat, e.lon, polyline.points, polyline.cumulativeKm);
+    // 線狀事件（封路路段、坍方範圍）取離路線最近的頂點
+    let hit: ReturnType<typeof mapLatLonToKm> = null;
+    for (const [lat, lon] of inBox) {
+      const h = mapLatLonToKm(lat, lon, polyline.points, polyline.cumulativeKm);
+      if (h && (!hit || h.distKm < hit.distKm)) hit = h;
+    }
     if (!hit || hit.distKm > maxDistKm) continue;
     const category = categoryOf(e.type);
     seen.add(e.id);
@@ -170,7 +198,7 @@ export function matchEventsToRoute(
   return out.sort((a, b) => a.km - b.km);
 }
 
-/** 影響判定的事件 → 示警：災害判「危險」；其餘（含 402 預警性封閉）判「注意」 */
+/** 影響判定的事件 → 示警：災害判「危險」；其餘（含 402 預警性封閉、不認得的類型）判「注意」 */
 export function eventHazards(routeEvents: RouteEvent[]): Hazard[] {
   return routeEvents
     .filter((e) => e.affectsVerdict)

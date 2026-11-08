@@ -52,6 +52,38 @@
                     ]
                   }
                 ]
+              },
+              {
+                "ElementName": "風速",
+                "Time": [
+                  {
+                    "DataTime": "2026-10-01T06:00:00+08:00",
+                    "ElementValue": [
+                      {
+                        "WindSpeed": "2",
+                        "BeaufortScale": "2"
+                      }
+                    ]
+                  },
+                  {
+                    "DataTime": "2026-10-01T09:00:00+08:00",
+                    "ElementValue": [
+                      {
+                        "WindSpeed": "2",
+                        "BeaufortScale": "2"
+                      }
+                    ]
+                  },
+                  {
+                    "DataTime": "2026-10-01T12:00:00+08:00",
+                    "ElementValue": [
+                      {
+                        "WindSpeed": "2",
+                        "BeaufortScale": "2"
+                      }
+                    ]
+                  }
+                ]
               }
             ]
           },
@@ -98,6 +130,38 @@
                     "ElementValue": [
                       {
                         "Temperature": "25"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "ElementName": "風速",
+                "Time": [
+                  {
+                    "DataTime": "2026-10-01T06:00:00+08:00",
+                    "ElementValue": [
+                      {
+                        "WindSpeed": "2",
+                        "BeaufortScale": "2"
+                      }
+                    ]
+                  },
+                  {
+                    "DataTime": "2026-10-01T09:00:00+08:00",
+                    "ElementValue": [
+                      {
+                        "WindSpeed": "2",
+                        "BeaufortScale": "2"
+                      }
+                    ]
+                  },
+                  {
+                    "DataTime": "2026-10-01T12:00:00+08:00",
+                    "ElementValue": [
+                      {
+                        "WindSpeed": "2",
+                        "BeaufortScale": "2"
                       }
                     ]
                   }

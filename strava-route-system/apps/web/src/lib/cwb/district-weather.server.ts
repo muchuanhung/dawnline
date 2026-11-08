@@ -160,6 +160,32 @@ function computeVerdict(
   return { verdict: "適合戶外運動", verdictType: "good" };
 }
 
+/** 降雨機率數值；空白、「-」等缺值回傳 null（不可當成 0%） */
+function parsePop(v: Record<string, string> | undefined): number | null {
+  const raw = (v?.ProbabilityOfPrecipitation ?? v?.value ?? "").trim();
+  if (!/^\d+$/.test(raw)) return null;
+  const n = Number(raw);
+  return n <= 100 ? n : null;
+}
+
+type PopTime = { StartTime?: string; EndTime?: string; ElementValue?: Array<Record<string, string>> };
+
+/**
+ * 降雨機率時段：遇到第一個缺值或時間無法解析的時段就停，只保留前面連續可用的時段。
+ * 不跳過缺值往後接：判讀找不到對應時段時會改用下一個時段頂替，缺的時段要變成「超出預報時段」（unknown）。
+ */
+export function popBuckets(times: readonly PopTime[]) {
+  const out: { startTime: string; endTime: string; pop: number; label: string; endLabel: string }[] = [];
+  for (const t of times) {
+    const pop = parsePop(t.ElementValue?.[0]);
+    const start = t.StartTime ?? "";
+    const end = t.EndTime ?? "";
+    if (pop === null || Number.isNaN(Date.parse(start)) || Number.isNaN(Date.parse(end))) break;
+    out.push({ startTime: start, endTime: end, pop, label: timeLabel(start), endLabel: timeLabel(end) });
+  }
+  return out;
+}
+
 const timeLabel = (iso: string) =>
   iso ? new Date(iso).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone: TIME_ZONE }) : "—";
 
@@ -186,7 +212,7 @@ export async function getCountyRainfallStations(county: string): Promise<Station
       console.warn(`[CWB] 雨量站 ${cwbCounty} HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
       return null;
     }
-    return parseRainfallStations(await res.json(), cwbCounty);
+    return parseRainfallStations(await res.json(), cwbCounty, Date.now());
   } catch (e) {
     console.warn(`[CWB] 雨量站 ${cwbCounty} 失敗: ${e instanceof Error ? e.message : String(e)}`);
     return null;
@@ -249,7 +275,7 @@ export async function getDistrictWeather(
   let rainfall: RainfallSummary = { mmPerHr: null, scope: "none", stationCount: 0 };
   if (rainRes.ok) {
     try {
-      rainfall = summarizeRainfall(parseRainfallStations(await rainRes.json(), cwbCounty), near);
+      rainfall = summarizeRainfall(parseRainfallStations(await rainRes.json(), cwbCounty, Date.now()), near);
     } catch {
       // 雨量 API 失敗不影響主流程
     }
@@ -290,10 +316,12 @@ export async function getDistrictWeather(
   const descEl = getVal("天氣預報綜合描述");
   const description = descEl?.WeatherDescription ?? descEl?.value ?? "—";
 
-  const windEl = getVal("風速");
-  const windMs = parseFloat(windEl?.WindSpeed ?? windEl?.value ?? "0") || 0;
-  const windKmh = Math.round(windMs * 3.6);
+  // 風速缺值不可當成 0 km/h（無風）：沒有任何風速時段就視為這一區沒有天氣資料，由判讀改判 unknown
   const windBuckets = windBucketsFromCwb(weatherElements.find((e) => e.ElementName === "風速")?.Time);
+  if (windBuckets.length === 0) throw new CwbError(`無風速預報：${cwbCounty}${district ?? ""}`, 502);
+  const windEl = getVal("風速");
+  const windMs = parseFloat(windEl?.WindSpeed ?? windEl?.value ?? "");
+  const windKmh = Number.isFinite(windMs) ? Math.round(windMs * 3.6) : windBuckets[0]!.kmh;
 
   const rhEl = getVal("平均相對濕度");
   const humidity = parseInt(rhEl?.RelativeHumidity ?? rhEl?.value ?? "0", 10) || 0;
@@ -307,18 +335,12 @@ export async function getDistrictWeather(
   const popElName =
     RAINFALL_ELEMENT_NAMES.find((n) => weatherElements.some((e) => e.ElementName === n)) ?? "12小時降雨機率";
 
-  const popEl = getVal(popElName);
-  const popFirst = parseInt(popEl?.ProbabilityOfPrecipitation ?? popEl?.value ?? "0", 10) || 0;
-
   const popTimes = weatherElements.find((e) => e.ElementName === popElName)?.Time ?? [];
   const maxPeriods = popElName === "3小時降雨機率" ? 24 : 12;
-  const rainfall12h = popTimes.slice(0, maxPeriods).map((t) => {
-    const v = t.ElementValue?.[0];
-    const pop = parseInt(v?.ProbabilityOfPrecipitation ?? v?.value ?? "0", 10) || 0;
-    const start = t.StartTime ?? "";
-    const end = t.EndTime ?? "";
-    return { startTime: start, endTime: end, pop, label: timeLabel(start), endLabel: timeLabel(end) };
-  });
+  const rainfall12h = popBuckets(popTimes.slice(0, maxPeriods));
+  // 降雨機率缺值不可當成 0%：一個可用時段都沒有就視為這一區沒有天氣資料，由判讀改判 unknown
+  if (rainfall12h.length === 0) throw new CwbError(`無降雨機率預報：${cwbCounty}${district ?? ""}`, 502);
+  const popFirst = rainfall12h[0]!.pop;
 
   const today = todayInTaipei();
   const sunsetLocList = sunsetData?.records?.locations?.location;

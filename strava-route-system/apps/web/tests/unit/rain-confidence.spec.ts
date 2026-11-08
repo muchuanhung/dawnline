@@ -50,8 +50,13 @@ test.describe("forecastRainLevel：三種情境", () => {
   });
 
   test("預估雨量 0 mm 也只降到注意，不會判成安全", () => {
-    const { verdict } = verdictOf(90, { nowcastRainMm: 0 });
+    const { verdict } = verdictOf(90, { nowcastRainMm: 0, weatherText: "短暫陣雨" });
     expect(verdict.level).toBe("caution");
+  });
+
+  test("沒有天氣現象文字：無從排除雷雨，不降級", () => {
+    expect(forecastRainLevel({ rainProbability: 80, nowcastRainMm: 0.2 })).toEqual({ level: "risky", downgraded: false });
+    expect(forecastRainLevel({ rainProbability: 80, nowcastRainMm: 0.2, weatherText: "" }).level).toBe("risky");
   });
 
   test("機率在注意區間（40–59%）：不受預估雨量影響", () => {
@@ -67,14 +72,15 @@ test.describe("forecastRainLevel：三種情境", () => {
   });
 
   test("即時雨量站已量到中雨時不降級", () => {
-    expect(forecastRainLevel({ rainProbability: 80, nowcastRainMm: 0.2, observedRainMmPerHr: 3 }).level).toBe("risky");
-    expect(forecastRainLevel({ rainProbability: 80, nowcastRainMm: 0.2, observedRainMmPerHr: 0.5 }).level).toBe("caution");
+    const light = { rainProbability: 80, nowcastRainMm: 0.2, weatherText: "短暫陣雨" };
+    expect(forecastRainLevel({ ...light, observedRainMmPerHr: 3 }).level).toBe("risky");
+    expect(forecastRainLevel({ ...light, observedRainMmPerHr: 0.5 }).level).toBe("caution");
   });
 
   test("相鄰的降級與未降級路段不合併標籤", () => {
     const route = makeRoute({
       segments: [
-        segment("士林區", [0, 5], withWeather(80, { nowcastRainMm: 0.3 })),
+        segment("士林區", [0, 5], withWeather(80, { nowcastRainMm: 0.3, weatherText: "短暫陣雨" })),
         segment("北投區", [15, 20], withWeather(45)),
       ],
     });
@@ -155,6 +161,9 @@ test.describe("briefRoute：預估雨量只用在 1 小時內會走完的路段"
     condition: "rainy",
     periodLabel: null,
     rainfallBuckets: allDayRain,
+    weatherTextBuckets: [
+      { startTime: "2026-10-01T06:00:00+08:00", endTime: "2026-10-01T18:00:00+08:00", text: "短暫陣雨" },
+    ],
   };
   const lookup = new Map([
     [districtKey("台北市", "士林區"), weather],

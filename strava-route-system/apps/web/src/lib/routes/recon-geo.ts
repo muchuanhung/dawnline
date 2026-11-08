@@ -480,7 +480,7 @@ export interface ForecastRainLevel {
  * 只在以下條件全部成立時把「危險」降成「注意」，其餘一律維持降雨機率的判定：
  * - 有未來 1 小時預估雨量（沒有、過期、路段超過 1 小時才會到，呼叫端已設為 undefined）
  * - 預估雨量 < NOWCAST_LIGHT_MAX_MM
- * - 天氣現象沒有雷、大雨、豪雨，condition 不是 stormy
+ * - 有天氣現象文字，且沒有雷、大雨、豪雨，condition 不是 stormy（沒有文字就無從排除雷雨，不降級）
  * - 即時雨量站沒有量到中雨以上
  * 只降一級、最低到「注意」：降雨機率高仍代表會下雨，不能因雨量小判成安全。
  */
@@ -491,7 +491,9 @@ export function forecastRainLevel(
   if (level !== "risky") return { level, downgraded: false };
   const mm = s.nowcastRainMm;
   if (mm == null || !Number.isFinite(mm) || mm < 0 || mm >= NOWCAST_LIGHT_MAX_MM) return { level, downgraded: false };
-  if (s.condition === "stormy" || NO_DOWNGRADE_WX.test(s.weatherText ?? "")) return { level, downgraded: false };
+  if (!s.weatherText || s.condition === "stormy" || NO_DOWNGRADE_WX.test(s.weatherText)) {
+    return { level, downgraded: false };
+  }
   if (s.observedRainMmPerHr != null && s.observedRainMmPerHr >= RAIN_NOW_RISKY) return { level, downgraded: false };
   return { level: "caution", downgraded: true };
 }
@@ -666,6 +668,9 @@ export function summarizeVerdict(
   if (worst && hazards.length > 1) notes.push(`另有 ${hazards.length - 1} 項示警`);
   if (noWeather && worst) notes.push("尚無天氣資料");
   if (partial) notes.push("部分路段無天氣資料");
+  // 已有示警時等級照示警，但其餘路段若預報過期或超出預報時段，那些路段並沒有被判讀過，要說出來
+  if (worst && stages.some((s) => s.hasWeather && s.weatherStale)) notes.push("部分路段預報過期");
+  if (worst && stages.some((s) => s.hasWeather && s.outOfCoverage)) notes.push("部分路段超出預報時段");
   if (eventsFailed === null) notes.push("路況事件暫時取不到");
   else if (eventsFailed?.length) notes.push(`${eventsFailed.join("、")}路況事件取不到`);
   const note = notes.join("・");

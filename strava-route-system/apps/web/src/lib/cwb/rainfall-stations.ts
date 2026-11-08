@@ -66,8 +66,21 @@ function stationRain(st: Obj): number | null {
   return parseMm(Array.isArray(values) ? obj(values[0])?.value : undefined);
 }
 
-/** 指定縣市（接受台／臺）有有效時雨量的測站 */
-export function parseRainfallStations(raw: unknown, county: string): StationRain[] {
+/** 觀測時間比現在早超過此值的測站不採用（O-A0002 每 10 分鐘更新；離線測站會一直停在最後一筆） */
+export const STATION_MAX_AGE_MS = 70 * 60_000;
+
+/** 測站觀測時間（epoch ms）；沒有或無法解析回 null */
+function stationObsTime(st: Obj): number | null {
+  const raw = obj(st.ObsTime)?.DateTime ?? st.ObsTime ?? st.obsTime;
+  const t = typeof raw === "string" ? Date.parse(raw) : NaN;
+  return Number.isFinite(t) ? t : null;
+}
+
+/**
+ * 指定縣市（接受台／臺）有有效時雨量的測站。
+ * 提供 now 時，觀測時間超過 STATION_MAX_AGE_MS 的測站略過（沒有觀測時間的舊格式照舊採用）。
+ */
+export function parseRainfallStations(raw: unknown, county: string, now?: number): StationRain[] {
   const target = county.replace(/台/g, "臺");
   const records = obj(obj(raw)?.records);
   const list = records?.Station ?? records?.station;
@@ -78,6 +91,8 @@ export function parseRainfallStations(raw: unknown, county: string): StationRain
     if (!st) continue;
     const stationCounty = String(obj(st.GeoInfo)?.CountyName ?? st.CountyName ?? st.countyName ?? "").replace(/台/g, "臺");
     if (!stationCounty.includes(target)) continue;
+    const obsAt = now == null ? null : stationObsTime(st);
+    if (now != null && obsAt != null && now - obsAt > STATION_MAX_AGE_MS) continue;
     const mmPerHr = stationRain(st);
     if (mmPerHr === null) continue;
     out.push({ mmPerHr, ...stationCoords(st) });
