@@ -14,7 +14,8 @@ import { routeCardClassName } from "@/components/routes/route-card-style";
  * 標籤文字：狀態色與前景色混合，淺色模式變深、深色模式變亮，
  * 10px 小字在淡色底上也能達到 WCAG AA 4.5:1（原本純狀態色只有約 2:1；選中卡片的淡綠底也保留餘裕）。
  */
-const badgeText = (color: string) => `color-mix(in oklab, ${color} 35%, var(--foreground))`;
+const badgeText = (color: string | undefined) =>
+  color && `color-mix(in oklab, ${color} 35%, var(--foreground))`;
 
 interface RouteCardProps {
   route: Route;
