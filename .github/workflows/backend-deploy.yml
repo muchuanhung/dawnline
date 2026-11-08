@@ -60,11 +60,19 @@ jobs:
 
       - name: 決定映像 tag
         id: meta
+        # 手動輸入走環境變數，不直接展開進 shell；只接受 40 碼 commit SHA
+        env:
+          INPUT_TAG: ${{ inputs.image_tag }}
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
-          tag="${{ inputs.image_tag }}"
+          tag="$INPUT_TAG"
           [ -n "$tag" ] || tag=$(git rev-parse HEAD)
+          if ! [[ $tag =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::image_tag 必須是 40 碼 commit SHA"
+            exit 1
+          fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "image=${{ steps.ecr.outputs.registry }}/$ECR_REPOSITORY:$tag" >> "$GITHUB_OUTPUT"
+          echo "image=$REGISTRY/$ECR_REPOSITORY:$tag" >> "$GITHUB_OUTPUT"
 
       - if: inputs.image_tag == ''
         uses: docker/setup-buildx-action@v3
@@ -82,7 +90,9 @@ jobs:
 
       - name: 確認 tag 存在於 ECR
         if: inputs.image_tag != ''
-        run: aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="${{ steps.meta.outputs.tag }}" >/dev/null
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$TAG" >/dev/null
 
       - name: SSM 在 EC2 換容器（不健康自動回滾）
         run: backend/deploy/ssm-run.sh backend/deploy/deploy.sh "IMAGE=${{ steps.meta.outputs.image }}" "REGION=$AWS_REGION"
