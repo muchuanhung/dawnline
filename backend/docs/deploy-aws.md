@@ -424,6 +424,55 @@ free -m
 
 Billing and Cost Management → Budgets：`dawnline-monthly`，Monthly cost budget，US$1.00，實際花費達 85%、100% 與預測超過 100% 時寄信（前兩個 budget 免費）。大阪 bucket 的儲存與每日跨區複製量都很小，預估每月不到 NT$1。
 
+## 12. 限流（Nginx `limit_req`）
+
+設定在 [`nginx.conf`](../deploy/nginx.conf) 開頭與 443 的 `server` 區塊。只用 Nginx，不改 FastAPI。
+
+| zone | 套用路徑 | 每個使用者 | 用途 |
+|---|---|---|---|
+| `dawnline_auth` | `/api/v1/auth/session`（登入、登出） | 每分鐘 10 次，可瞬間多 10 次 | 擋大量換 session |
+| `dawnline_upload` | `/api/v1/{routes,me/avatar,admin/public-routes}/uploads` | 每分鐘 30 次，可瞬間多 20 次 | 擋大量發 S3 presigned 上傳 |
+| `dawnline_api` | 其他所有路徑 | 每秒 10 次，可瞬間多 50 次 | 一般防護 |
+| `dawnline_peer` | 全部 | 每個連線來源 IP 每秒 50 次，可瞬間多 100 次 | 直接打 EC2、偽造 `X-Forwarded-For` 時的上限 |
+
+超過回 `429`，`error.log` 記一筆 `limiting requests`。
+
+**為什麼不能直接用來源 IP**：瀏覽器經 Vercel 的 `/api/v1/*` rewrite 進來，Nginx 看到的 `$remote_addr` 是 Vercel 的出口 IP，很多使用者共用。所以使用者的 key 取 `X-Forwarded-For` 的第一個 IP（Vercel 帶過來的真實用戶端），沒有這個標頭才用 `$remote_addr`。直接打 EC2 的人可以偽造這個標頭繞過個人上限，所以再用 `dawnline_peer` 依連線 IP 設一個總上限。
+
+### 第一次套用：先 dry-run
+
+repo 裡的設定是 `limit_req_dry_run on;`：**只記錄會被擋的請求，不真的擋**。
+
+```bash
+cd ~/dawnline && git checkout main && git pull
+sudo cp backend/deploy/nginx.conf /etc/nginx/conf.d/dawnline-api.conf
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+套用後到正式站正常操作一輪（登入、上傳、刪除、今日判讀），再檢查：
+
+```bash
+# 1) key 是不是真的使用者 IP：client= 應該是你自己的 IP，不是每筆都一樣
+sudo tail -n 20 /var/log/nginx/dawnline-api.access.log
+
+# 2) 正常使用有沒有撞到上限：應該是 0
+sudo grep -c 'limiting requests, dry run' /var/log/nginx/error.log
+```
+
+- `client=` 每筆都一樣、或都是 Vercel 的 IP：Vercel 沒帶 `X-Forwarded-For`，先不要關 dry-run，回報給執行者調整。
+- dry run 筆數不是 0：看 `by zone "..."` 是哪個 zone，回報給執行者放寬。
+
+### 正式開啟
+
+確認正常後，把主機上的 `limit_req_dry_run on;` 改成 `off`，並同步改 repo：
+
+```bash
+sudo sed -i 's/limit_req_dry_run   on;/limit_req_dry_run   off;/' /etc/nginx/conf.d/dawnline-api.conf
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+**退回**：改回 `on`（只記錄）再 reload，或把 `limit_req` 那幾行刪掉。不需要重啟容器。
+
 ## 常見問題
 
 - **certbot 失敗，提到 unauthorized 或 connection**：DNS 沒指到 Elastic IP，或 Security Group 沒對外開 80。
