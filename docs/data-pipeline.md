@@ -1,6 +1,6 @@
 # D5 資料管線（ETL／ELT）
 
-> 依 main `b7f936d` 的程式碼整理。前端與排程在 `strava-route-system/apps/web`（Vercel），後端在 `backend/`（EC2）。
+> 依 main `b7f936d` 的程式碼整理；11/9 依 main `c22ad2a`（凍結前 review #95–#103 後）核對。前端與排程在 `strava-route-system/apps/web`（Vercel），後端在 `backend/`（EC2）。
 
 ## 結論
 
@@ -104,8 +104,8 @@ flowchart LR
 
 | 階段 | 做什麼 |
 |---|---|
-| Extract | 前端向 FastAPI 要 presigned POST，瀏覽器**直接上傳到 S3**（不經過 Vercel 與 EC2，5 分鐘有效、限檔案大小） |
-| Load | 原始 GPX 原封不動存在 S3 `users/{user_id}/routes/{public_id}.gpx`（key 由後端推得，前端無法指定）；公開路線掛在匯入者帳號下，路徑規則相同 |
+| Extract | 前端向 FastAPI 要 presigned POST，瀏覽器**直接上傳到 S3 暫存區** `tmp-uploads/`（不經過 Vercel 與 EC2，5 分鐘有效、限檔案大小；暫存區 1 天後由 lifecycle 清掉） |
+| Load | 驗證通過後，原始 GPX 原封不動存到 S3 `users/{user_id}/routes/{public_id}.gpx`（key 由後端推得，前端無法指定）；公開路線掛在匯入者帳號下，路徑規則相同 |
 | Transform（後端） | `complete_upload` 從 S3 讀檔，用 defusedxml 解析（擋 XXE），算距離、爬升、bbox、路線類型與 SHA-256，成功才 insert `routes`（`status = ready`），解析失敗就刪檔 |
 | Transform（前端） | 判讀時下載 GPX，沿軌跡每 0.5 km 取樣，用內建 TopoJSON 做 point-in-polygon 反查鄉鎮，連續同區合併成一段；公開路線結果快取 10 分鐘，私人路線 1 天（檔案不會變，改名不影響軌跡） |
 
@@ -115,7 +115,7 @@ flowchart LR
 2. 轉換規則一直在改（切段方式從逐公里改成 0.5 km 取樣、T1 的爬升修正），保留原檔就能用新規則重算，不必請使用者重傳；快取鍵帶版本（`segments-v2`），規則一改就自動重算。
 3. MySQL 只存清單頁需要的摘要（距離、爬升、bbox），逐點軌跡不進資料庫。
 
-**失敗處理：** 先寫 S3 再寫 DB，DB 失敗頂多留一個沒人指到的檔案。後端讀不到時公開路線回空清單（畫面顯示空狀態），失敗不進快取，下次會重試。
+**失敗處理：** 先寫 S3 再寫 DB，DB 失敗頂多留一個沒人指到的檔案；刪除、換頭像時反過來，**DB commit 成功後才刪 S3**，DB 回滾時檔案還在（#95）。後端讀不到時公開路線回空清單（畫面顯示空狀態），失敗不進快取，下次會重試。
 
 ## 5. 資料庫備份（EL）
 

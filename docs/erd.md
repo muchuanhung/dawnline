@@ -1,6 +1,6 @@
 # D1 資料表關係結構（ERD）
 
-> 依 `backend/app/models/*.py` 與 `backend/alembic/versions/0001`–`0009` 實際內容整理（main `b7f936d`）。
+> 依 `backend/app/models/*.py` 與 `backend/alembic/versions/0001`–`0009` 實際內容整理（main `b7f936d`）；11/9 依 main `c22ad2a`（凍結前 review #95–#103 後）核對。
 > 資料庫：MySQL 8.4（EC2 上的 Docker 容器），ORM：SQLAlchemy 2，schema 由 Alembic 管理。
 
 ## 結論
@@ -108,7 +108,7 @@ erDiagram
 1. **對外 id 與內部 id 分開。** `routes.id` 是自增整數，只拿來 JOIN；API 與網址只出現 `public_id`（ULID，26 字）或 `slug`。這樣別人無法從網址猜出路線總數或逐號掃描別人的私人路線。
 2. **公開路線用 `slug`，不用 `public_id`。** slug 沿用搬家前 Firebase 上的 GPX 檔名，網址 `/routes/<slug>`、判讀快取 key、使用者既有收藏都不用改。私人路線的 slug 一律是 NULL；MySQL 的 UNIQUE 允許多個 NULL，所以同一個唯一索引可以同時保護公開路線。
 3. **同一張 `routes` 放公開與私人。** 收藏、排序只要一個 FK；權限判斷集中在 `favorite_service.visible_to(user)`：`visibility = 'public'`，或 `user_id = 自己`。公開路線掛在匯入者帳號下，但配額只數 `visibility = 'private'`。
-4. **軟刪除 `deleted_at`，但 S3 檔案立刻刪。** 刪除後配額馬上釋出、檔案不留；資料列留著是為了稽核與避免 ULID 重用。管理員重新上傳同一個 slug 時會把 `deleted_at` 清回 NULL，沿用同一個 `public_id` 與 S3 key，所以舊收藏不會斷。
+4. **軟刪除 `deleted_at`，但 S3 檔案跟著刪。** 刪除後配額馬上釋出、檔案不留（DB commit 成功後才刪 S3，#95）；資料列留著是為了稽核與避免 ULID 重用。管理員重新上傳同一個 slug 時會把 `deleted_at` 清回 NULL，沿用同一個 `public_id` 與 S3 key，所以舊收藏不會斷。
 5. **收藏、排序用複合主鍵 `(user_id, route_id)`。** 重複收藏同一條路線不會多一列，API 因此是冪等的（重送 PUT 不出錯）。
 6. **FK 的刪除行為：** `sessions`、`favorites`、`route_order`、`segments` 都是 `ON DELETE CASCADE`；`routes.user_id` 沒設 CASCADE（刪帳號不該順手刪掉他匯入的公開路線）。因為路線是軟刪除，FK 的 CASCADE 不會觸發，所以 `route_service.delete_route` 與 `public_route_service._unpublish` 會**主動**刪掉該路線的 `favorites` 與 `route_order`。
 7. **時間一律 `DATETIME(3)`、UTC。** 毫秒精度讓「新收藏在前」這類排序穩定；時區由前端轉成台灣時間。

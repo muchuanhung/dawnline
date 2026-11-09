@@ -1,11 +1,11 @@
 # D3、D4 前端組件架構與狀態
 
-> 依 `strava-route-system/apps/web/src` 實際程式碼整理（main `b7f936d`）。Next.js 16 App Router、React 19、TypeScript、Tailwind＋shadcn/ui。
+> 依 `strava-route-system/apps/web/src` 實際程式碼整理（main `b7f936d`）；11/9 依 main `c22ad2a`（凍結前 review #95–#103 後）核對。Next.js 16 App Router、React 19、TypeScript、Tailwind＋shadcn/ui。
 
 ## 結論
 
 - **全域狀態只有一個：登入**（`AuthContext`）。其他狀態不是「伺服器資料」就是「畫面暫時狀態」，所以不需要 Redux、Zustand 之類的套件。
-- **判讀在伺服器算，前端不重算。** 今日判讀頁由 Server Component 直接算好判讀再送 HTML；路線頁由 Custom Hook 打 `/api/routes/briefing` 拿結果，前端只負責顯示與「過期就降級」。
+- **判讀在伺服器算，前端不重算。** 今日判讀頁由 Server Component 直接算好判讀再送 HTML；路線頁由 Custom Hook 打 `/api/routes/briefing` 拿結果，前端只負責顯示與「過期就降級」。伺服器渲染的判讀（今日判讀、首頁精選路線）由用戶端組件 `ExpiryGate` 計時，超過 30 分鐘換成伺服器預先渲染好的過期版本（#98）。
 - 公開路線頁與私人路線詳情**共用同一組 Hook 與組件**（`useRouteRecon` → `RouteReconBody`），私人路線只換判讀 API。
 - 行程設定（出發時間、運動類型）放網址，自訂均速放 cookie：Server Component 讀得到，第一次渲染就是對的，不會閃。
 

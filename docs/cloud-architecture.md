@@ -1,6 +1,6 @@
 # D2 雲端系統架構
 
-> 依 `backend/docs/deploy-aws.md`、`backend/deploy/`、`.github/workflows/` 與 `next.config.js` 實際設定整理（T5b 異地備份完成後定稿，2026-11-07）。
+> 依 `backend/docs/deploy-aws.md`、`backend/deploy/`、`.github/workflows/` 與 `next.config.js` 實際設定整理（T5b 異地備份完成後定稿，2026-11-07；11/9 依 main `c22ad2a` 補上 #95 上傳暫存區、#97 OIDC 限 production、#102 Nginx 限流）。
 > 重建步驟與每一條指令在 [`backend/docs/deploy-aws.md`](../backend/docs/deploy-aws.md)，這份只說明架構與理由。
 
 ## 結論
@@ -80,12 +80,12 @@ flowchart LR
 | 從 → 到 | 協定／port | 認證 |
 |---|---|---|
 | 瀏覽器 → Vercel | HTTPS 443 | Next.js session cookie（Firebase，5 天）＋ FastAPI `rc_session`（HttpOnly） |
-| 瀏覽器 → S3 | HTTPS 443 | presigned POST／GET，5 分鐘有效，限檔案大小，key 由後端決定 |
-| Vercel → Nginx | HTTPS 443（`dawnline-api.message-board.bid`） | 轉發使用者的 cookie |
+| 瀏覽器 → S3 | HTTPS 443 | presigned POST／GET，5 分鐘有效，限檔案大小，key 由後端決定；上傳先進暫存區 `tmp-uploads/`（1 天 lifecycle），驗證通過才搬到 `users/` |
+| Vercel → Nginx | HTTPS 443（`dawnline-api.message-board.bid`） | 轉發使用者的 cookie；Nginx 依使用者 IP（`X-Forwarded-For`）限流，目前 dry-run 只記錄（#102） |
 | Nginx → FastAPI | HTTP 127.0.0.1:8001 → 容器 :8000 | 只在本機，uvicorn `--proxy-headers` |
 | FastAPI → MySQL | TCP 3306，Docker 內網 `dawnline` | 帳號密碼在 `/opt/velorder/api.env`（不進 repo） |
 | FastAPI → S3 | HTTPS | EC2 instance role（metadata hop limit 2，容器內才拿得到） |
-| GitHub Actions → AWS | HTTPS | OIDC → IAM role `dawnline-gha-deploy`，只限本 repo 的 main |
+| GitHub Actions → AWS | HTTPS | OIDC → IAM role `dawnline-gha-deploy`，只限本 repo 的 main 與 `production` environment（#97） |
 | EC2 → ECR | HTTPS | instance role `AmazonEC2ContainerRegistryReadOnly` |
 | EC2 → S3 大阪 | HTTPS | instance role，只能寫入與讀取，**沒有刪除權限** |
 
@@ -151,4 +151,5 @@ sequenceDiagram
 - **異地備份的範圍**：只有 MySQL 備份與 `users/`。東京整區出事時，要在別的區域照 `deploy-aws.md` 重建主機、重新申請憑證，再從大阪還原；這段期間 API 停止。
 - **刪除不會同步到大阪**：EC2 沒有大阪的刪除權限（防止誤刪或入侵時連異地一起刪掉），使用者在東京刪掉的檔案大阪會留著，要手動清。
 - **憑證私鑰**：只在主機 `/etc/letsencrypt`（`700 root`，私鑰 `600`），不進 repo、不進備份；重建時重新申請。
+- **限流仍是 dry-run**：Nginx `limit_req` 已上線但只記錄不擋（#102）。瀏覽器經 Vercel 轉發的請求帶得到使用者 IP；Next.js 伺服器端自己打後端的請求沒有帶，會共用 Vercel IP 的額度，正式開啟前要先讓伺服器端轉發使用者 IP。
 - 沒有 IaC：所有設定以 `deploy-aws.md` 文字紀錄，主機與 repo 不一致時以主機為準再補回 repo。
