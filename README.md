@@ -76,6 +76,7 @@ flowchart LR
 | [技術重點](docs/tech-highlight.md) | 離線 PWA 與「安全會過期」、地理運算、凍結前 review |
 | [RWD](docs/rwd.md) | 斷點規則、各頁在 375／768／1024／1440 的截圖 |
 | [Lighthouse 檢查](docs/lighthouse.md) | 效能、無障礙分數，已修正項目與手機版探索頁的已知限制 |
+| [Demo 腳本](docs/demo.md) | 期末報告的 Demo 流程、彩排清單與出狀況備案 |
 | [資料庫索引調校](backend/docs/db-tuning.md) | 6 萬條路線假資料下的 EXPLAIN 前後對照 |
 | [AWS 部署紀錄](backend/docs/deploy-aws.md) | EC2、Nginx、MySQL、S3、IAM、備份的重建步驟 |
 | [降雨信心規則](strava-route-system/apps/web/docs/rain-confidence.md) | 降雨機率高但雨勢小時的降級規則與門檻依據 |
