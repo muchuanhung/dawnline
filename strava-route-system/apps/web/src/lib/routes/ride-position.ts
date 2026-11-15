@@ -17,3 +17,13 @@ export function shouldRebrief(last: AppliedKm | null, km: number, now: number): 
   if (Math.abs(km - last.km) >= RIDE_REBRIEF_MIN_KM) return true;
   return now - last.at >= RIDE_REBRIEF_MAX_AGE_MS;
 }
+
+/** 途中里程的來源：gps 跟隨定位；manual 為使用者在軌道上手動放置或微調 */
+export type RideKmSource = "gps" | "manual";
+/** 定位回報的來源：tap 為使用者按定位，auto 為自動單次定位，watch 為途中模式持續定位 */
+export type FixSource = "tap" | "auto" | "watch";
+
+/** 定位回報能不能改目前里程：手動放置後只有使用者按定位才改回跟隨 GPS，自動與持續定位都不能蓋掉 */
+export function fixOverridesKm(kmSource: RideKmSource, fix: FixSource): boolean {
+  return kmSource === "gps" || fix === "tap";
+}
