@@ -2,7 +2,7 @@
  * 途中模式持續定位：重新判讀節流
  */
 import { test, expect } from "@playwright/test";
-import { RIDE_REBRIEF_MAX_AGE_MS, shouldRebrief } from "@/lib/routes/ride-position";
+import { fixOverridesKm, RIDE_REBRIEF_MAX_AGE_MS, shouldRebrief } from "@/lib/routes/ride-position";
 
 const NOW = Date.parse("2026-10-01T09:00:00+08:00");
 const MIN = 60_000;
@@ -25,5 +25,22 @@ test.describe("shouldRebrief", () => {
   test("5 minutes since last brief re-briefs even when standing still", () => {
     expect(shouldRebrief({ km: 3.2, at: NOW - RIDE_REBRIEF_MAX_AGE_MS + 1 }, 3.2, NOW)).toBe(false);
     expect(shouldRebrief({ km: 3.2, at: NOW - RIDE_REBRIEF_MAX_AGE_MS }, 3.2, NOW)).toBe(true);
+  });
+});
+
+test.describe("fixOverridesKm", () => {
+  test("following GPS: every fix can move the position", () => {
+    expect(fixOverridesKm("gps", "watch")).toBe(true);
+    expect(fixOverridesKm("gps", "auto")).toBe(true);
+    expect(fixOverridesKm("gps", "tap")).toBe(true);
+  });
+
+  test("after manual placement, background GPS fixes do not pull the position back", () => {
+    expect(fixOverridesKm("manual", "watch")).toBe(false);
+    expect(fixOverridesKm("manual", "auto")).toBe(false);
+  });
+
+  test("tapping locate after manual placement resumes following GPS", () => {
+    expect(fixOverridesKm("manual", "tap")).toBe(true);
   });
 });

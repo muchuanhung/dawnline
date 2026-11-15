@@ -2,7 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { locateOnRoute, type RoutePolylineKm, type RoutePosition } from "@/lib/routes/recon-geo";
-import { RIDE_REBRIEF_MAX_AGE_MS, shouldRebrief, type AppliedKm } from "@/lib/routes/ride-position";
+import {
+  fixOverridesKm,
+  RIDE_REBRIEF_MAX_AGE_MS,
+  shouldRebrief,
+  type AppliedKm,
+  type FixSource,
+  type RideKmSource,
+} from "@/lib/routes/ride-position";
 
 /**
  * 途中模式定位：在手機端把高精度定位換算成路線里程；座標不上傳、不儲存，只記里程。
@@ -11,6 +18,7 @@ import { RIDE_REBRIEF_MAX_AGE_MS, shouldRebrief, type AppliedKm } from "@/lib/ro
  * - 已授權定位時自動定位：進路線頁、切路線、回到畫面；第一次授權仍要使用者按按鈕（不主動跳權限詢問）。
  * - 途中模式且畫面在前景時持續定位，移動滿 0.5 km 或距上次判讀滿 5 分鐘才重新判讀。
  * - 自動定位不準、不在路線上時不打擾使用者（多半是在家規劃路線）；按按鈕才顯示原因。
+ * - 使用者在軌道上手動放置或微調後不再跟隨 GPS，按「重新定位」才恢復。
  */
 export type PositionOnRouteState =
   | { status: "idle" }
@@ -21,9 +29,6 @@ export type PositionOnRouteState =
   /** 使用者按「手動定位」：在軌道上手動放置 */
   | { status: "placing" }
   | RoutePosition;
-
-/** 定位來源：tap 為使用者按按鈕，auto 為自動單次定位，watch 為途中模式持續定位 */
-type FixSource = "tap" | "auto" | "watch";
 
 /** 山區 GPS 第一次收訊慢，逾時放寬到 20 秒；30 秒內的舊定位可直接用 */
 const GEO_OPTIONS: PositionOptions = { enableHighAccuracy: true, timeout: 20_000, maximumAge: 30_000 };
@@ -57,6 +62,10 @@ export function usePositionOnRoute({ routeId, polyline, riding, onKm }: Options)
   // 按按鈕定位的請求序號：使用者改走手動放置、離開途中模式或再按一次後，舊的定位結果丟掉
   const locateSeqRef = useRef(0);
   const onKmRef = useRef(onKm);
+  // 里程來源：手動放置後持續定位不能蓋掉，按定位才改回 gps
+  const kmSourceRef = useRef<RideKmSource>("gps");
+  // 進入放置模式前的里程來源，取消放置時還原
+  const kmSourceBeforePlaceRef = useRef<RideKmSource>("gps");
 
   useEffect(() => {
     routeIdRef.current = routeId;
@@ -67,6 +76,7 @@ export function usePositionOnRoute({ routeId, polyline, riding, onKm }: Options)
   useEffect(() => {
     previousKmRef.current = undefined;
     appliedRef.current = null;
+    kmSourceRef.current = "gps";
     setState({ status: "idle" });
   }, [routeId]);
 
@@ -87,6 +97,8 @@ export function usePositionOnRoute({ routeId, polyline, riding, onKm }: Options)
     (source: FixSource, coords: GeolocationCoordinates, forRouteId: string) => {
       // 定位回來前已換路線：結果屬於上一條路線，丟掉
       if (forRouteId !== routeIdRef.current) return;
+      // 使用者手動放置過：不讓 GPS 把位置拉回去，也不打斷放置模式
+      if (!fixOverridesKm(kmSourceRef.current, source)) return;
       const result = locateOnRoute(
         { lat: coords.latitude, lon: coords.longitude, accuracyM: coords.accuracy },
         polyline,
@@ -153,6 +165,7 @@ export function usePositionOnRoute({ routeId, polyline, riding, onKm }: Options)
       return;
     }
     dismissedRef.current.delete(routeId);
+    kmSourceRef.current = "gps";
     const seq = ++locateSeqRef.current;
     setState({ status: "locating" });
     navigator.geolocation.getCurrentPosition(
@@ -175,6 +188,7 @@ export function usePositionOnRoute({ routeId, polyline, riding, onKm }: Options)
     (km: number) => {
       locateSeqRef.current++;
       dismissedRef.current.delete(routeId);
+      kmSourceRef.current = "manual";
       previousKmRef.current = km;
       apply(km, true);
       setState({ status: "idle" });
@@ -187,17 +201,21 @@ export function usePositionOnRoute({ routeId, polyline, riding, onKm }: Options)
     locateSeqRef.current++;
     dismissedRef.current.add(routeId);
     appliedRef.current = null;
+    kmSourceRef.current = "gps";
     setState({ status: "idle" });
   }, [routeId]);
 
   /** 手動定位：不等定位（定位中也可按），直接進入軌道放置模式 */
   const place = useCallback(() => {
     locateSeqRef.current++;
+    kmSourceBeforePlaceRef.current = kmSourceRef.current;
+    kmSourceRef.current = "manual";
     setState({ status: "placing" });
   }, []);
 
   /** 取消放置：保留目前生效的里程 */
   const cancelPlace = useCallback(() => {
+    kmSourceRef.current = kmSourceBeforePlaceRef.current;
     setState({ status: "idle" });
   }, []);
 
