@@ -2,6 +2,7 @@ name: Backend deploy
 
 # main 的 Backend CI 通過後，建映像推 ECR，再經 SSM 在 EC2 換容器。
 # 手動執行可指定 image_tag 重新部署既有映像（回滾），不重 build。
+# 部署後對外 /health 連續失敗時，自動換回部署前的映像再檢查一次（見「外部檢查失敗」步驟）。
 # AWS 端設定見 backend/docs/deploy-aws.md 第 8 節。
 on:
   workflow_run:
@@ -14,6 +15,11 @@ on:
         description: "要部署的既有 ECR tag（commit SHA）；留空則用目前 main build 新映像"
         required: false
         default: ""
+      simulate_smoke_failure:
+        description: "只供驗證自動回滾：第一次對外檢查強制失敗（image_tag 要填和線上不同的舊 SHA）"
+        type: boolean
+        required: false
+        default: false
 
 # 同時只跑一個部署，後到的排隊，不取消進行中的部署
 concurrency:
@@ -95,15 +101,60 @@ jobs:
         run: aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$TAG" >/dev/null
 
       - name: SSM 在 EC2 換容器（不健康自動回滾）
-        run: backend/deploy/ssm-run.sh backend/deploy/deploy.sh "IMAGE=${{ steps.meta.outputs.image }}" "REGION=$AWS_REGION"
+        id: deploy
+        shell: bash # 含 pipefail：ssm-run.sh 失敗時整個步驟要失敗
+        run: |
+          backend/deploy/ssm-run.sh backend/deploy/deploy.sh "IMAGE=${{ steps.meta.outputs.image }}" "REGION=$AWS_REGION" \
+            | tee "$RUNNER_TEMP/deploy.log"
+          # deploy.sh 會印出 "previous image: <映像>"。只接受 ECR dawnline-api:<40 碼 SHA>，
+          # 其他（none、舊的本機映像）或和新映像相同時不回滾，值也不會進 shell 展開。
+          prev=$(sed -n 's/.*previous image: //p' "$RUNNER_TEMP/deploy.log" | head -n 1 | tr -d '[:space:]')
+          if [[ $prev =~ ^[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com/dawnline-api:[0-9a-f]{40}$ && $prev != "${{ steps.meta.outputs.image }}" ]]; then
+            echo "previous=$prev" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: 對外 HTTPS 煙霧測試
+        id: smoke
+        # 失敗不直接中止：下面的步驟會嘗試回滾，最後再明確標紅
+        continue-on-error: true
+        env:
+          SIMULATE: ${{ inputs.simulate_smoke_failure }}
         run: |
+          if [ "$SIMULATE" = "true" ]; then
+            echo "模擬對外檢查失敗（simulate_smoke_failure）"
+            exit 1
+          fi
           for _ in 1 2 3 4 5; do
             out=$(curl -fsS --max-time 10 "$HEALTH_URL") && echo "$out" | grep -q '"database":"ok"' && { echo "$out"; exit 0; }
             sleep 6
           done
           echo "對外 /health 失敗：$out"
+          exit 1
+
+      - name: 外部檢查失敗，回滾到部署前的映像
+        id: rollback
+        if: steps.smoke.outcome == 'failure' && steps.deploy.outputs.previous != ''
+        env:
+          PREVIOUS_IMAGE: ${{ steps.deploy.outputs.previous }}
+        run: |
+          # 直接重跑 deploy.sh，不經過 workflow，所以不會再觸發下一次回滾（只回滾一次）。
+          # 回滾後再檢查一次，用來分辨問題在新映像（回滾後恢復）還是在 Nginx／憑證／網路（回滾後仍失敗）。
+          result=rollback-deploy-failed
+          if backend/deploy/ssm-run.sh backend/deploy/deploy.sh "IMAGE=$PREVIOUS_IMAGE" "REGION=$AWS_REGION"; then
+            result=rolled-back-still-failing
+            for _ in 1 2 3 4 5; do
+              out=$(curl -fsS --max-time 10 "$HEALTH_URL" || true)
+              if echo "$out" | grep -q '"database":"ok"'; then result=rolled-back; break; fi
+              sleep 6
+            done
+          fi
+          echo "result=$result" >> "$GITHUB_OUTPUT"
+          echo "回滾結果：$result（映像：$PREVIOUS_IMAGE）"
+
+      - name: 外部檢查失敗，標記部署失敗
+        if: steps.smoke.outcome == 'failure'
+        run: |
+          echo "::error::部署後對外 /health 失敗（回滾結果：${{ steps.rollback.outputs.result || 'skipped-no-previous-image' }}）"
           exit 1
 
       - name: 摘要
@@ -112,6 +163,7 @@ jobs:
           {
             echo "### Backend deploy：${{ job.status }}"
             echo "- 映像：\`${{ steps.meta.outputs.image }}\`"
+            echo "- 自動回滾：${{ steps.rollback.outputs.result || '未觸發' }}"
             echo "- 回滾：Actions → Backend deploy → Run workflow，image_tag 填上一版 SHA"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -121,5 +173,5 @@ jobs:
           ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
         run: |
           [ -n "$ALERT_WEBHOOK_URL" ] || exit 0
-          msg="[曉行] 後端部署失敗：${{ steps.meta.outputs.tag }} ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          msg="[曉行] 後端部署失敗：${{ steps.meta.outputs.tag }}（自動回滾：${{ steps.rollback.outputs.result || '未觸發' }}）${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           curl -fsS -X POST -H 'content-type: application/json' -d "$(jq -nc --arg t "$msg" '{text: $t}')" "$ALERT_WEBHOOK_URL"
