@@ -2,14 +2,12 @@ import { test, expect } from "@playwright/test";
 import {
   captureClientError,
   enqueueError,
-  IDLE_FALLBACK_MS,
-  IDLE_TIMEOUT_MS,
-  initSentryWhenIdle,
+  initSentryOnFirstError,
   MAX_EARLY_ERRORS,
-  runWhenIdle,
+  once,
 } from "@/lib/observability/sentry-client";
 
-test.describe("enqueueError：初始化前暫存錯誤", () => {
+test.describe("enqueueError：SDK 載入前暫存錯誤", () => {
   test("依序暫存，滿了就丟掉新的", () => {
     const q: unknown[] = [];
     for (let i = 0; i < MAX_EARLY_ERRORS; i++) expect(enqueueError(q, i)).toBe(true);
@@ -19,51 +17,36 @@ test.describe("enqueueError：初始化前暫存錯誤", () => {
   });
 });
 
-test.describe("runWhenIdle：等瀏覽器閒置", () => {
-  test("支援 requestIdleCallback：帶最長等待時間", () => {
-    const calls: Array<{ timeout?: number }> = [];
-    let timeoutUsed = false;
-    runWhenIdle(
-      {
-        requestIdleCallback: (cb, opts) => {
-          calls.push({ timeout: opts?.timeout });
-          cb();
-        },
-        setTimeout: () => {
-          timeoutUsed = true;
-        },
-      },
-      () => {}
-    );
-    expect(calls).toEqual([{ timeout: IDLE_TIMEOUT_MS }]);
-    expect(timeoutUsed).toBe(false);
+test.describe("once：第一次出錯才載入 SDK，只載入一次", () => {
+  test("同時好幾個錯誤也只觸發一次載入", () => {
+    let loads = 0;
+    const trigger = once(() => {
+      loads++;
+    });
+    trigger();
+    trigger();
+    trigger();
+    expect(loads).toBe(1);
   });
 
-  test("不支援（Safari）：改用 setTimeout 延後", () => {
-    let delay = -1;
-    let ran = false;
-    runWhenIdle(
-      {
-        setTimeout: (cb, ms) => {
-          delay = ms;
-          cb();
-        },
-      },
-      () => {
-        ran = true;
-      }
-    );
-    expect(delay).toBe(IDLE_FALLBACK_MS);
-    expect(ran).toBe(true);
+  test("沒有出錯就不載入", () => {
+    let loads = 0;
+    once(() => {
+      loads++;
+    });
+    expect(loads).toBe(0);
   });
 });
 
-test.describe("captureClientError／initSentryWhenIdle", () => {
-  test("沒有 window（伺服器端）：init 什麼都不做，錯誤只暫存不送", () => {
-    expect(() => initSentryWhenIdle("https://publickey@o0.ingest.sentry.io/1")).not.toThrow();
+test.describe("captureClientError／initSentryOnFirstError", () => {
+  test("沒有 window（伺服器端）或未啟用：不暫存、不載入、不丟例外", () => {
+    expect(() => initSentryOnFirstError("https://publickey@o0.ingest.sentry.io/1")).not.toThrow();
     expect(() => captureClientError(new Error("boom"))).not.toThrow();
-    const g = globalThis as unknown as { __dawnlineSentryClient?: { queue: unknown[]; ready: boolean } };
+    const g = globalThis as unknown as {
+      __dawnlineSentryClient?: { queue: unknown[]; ready: boolean; options: unknown };
+    };
+    expect(g.__dawnlineSentryClient?.options).toBeNull();
+    expect(g.__dawnlineSentryClient?.queue).toHaveLength(0);
     expect(g.__dawnlineSentryClient?.ready).toBe(false);
-    expect(g.__dawnlineSentryClient?.queue.length).toBeGreaterThan(0);
   });
 });

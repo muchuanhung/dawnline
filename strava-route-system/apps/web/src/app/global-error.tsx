@@ -7,7 +7,7 @@ import { captureClientError } from "@/lib/observability/sentry-client";
 // 這頁不顯示任何判定結果：出錯就是不知道，不能讓使用者誤以為安全。
 export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
-    // Sentry 還沒初始化時先暫存，初始化後補送
+    // Sentry 還沒載入時先暫存並觸發載入，初始化後補送
     captureClientError(error);
   }, [error]);
 
