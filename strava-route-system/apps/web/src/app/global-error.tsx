@@ -1,13 +1,14 @@
 "use client";
 
-import * as Sentry from "@sentry/nextjs";
 import { useEffect } from "react";
+import { captureClientError } from "@/lib/observability/sentry-client";
 
 // 根 layout 也壞掉時才會用到，所以不能依賴 global.css 或 Providers，樣式寫在 inline。
 // 這頁不顯示任何判定結果：出錯就是不知道，不能讓使用者誤以為安全。
 export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
-    Sentry.captureException(error);
+    // Sentry 還沒初始化時先暫存，初始化後補送
+    captureClientError(error);
   }, [error]);
 
   return (
