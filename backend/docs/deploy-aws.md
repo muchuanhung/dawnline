@@ -125,6 +125,13 @@ curl -s http://127.0.0.1:8001/health   # {"status":"ok","database":"ok"}
 - 容器 CMD 先跑 `alembic upgrade head`，成功才啟動 uvicorn；失敗容器直接退出，`sudo docker logs velorder-api` 看原因。
 - 回滾：Actions → Backend deploy → Run workflow，`image_tag` 填上一版 commit SHA（ECR 保留最近 10 版，主機保留最近 3 版）。
 - 新映像不健康時 deploy.sh 會自動換回舊映像，但新映像已跑過的 migration 不會退回，所以 migration 要維持「只加不刪」，舊程式碼才能在新 schema 上跑。
+- 部署後對外 `/health` 連續 5 次（約 30 秒）失敗時，workflow 會再跑一次 deploy.sh 換回部署前的映像（deploy.sh 印出的 `previous image`，只接受 `dawnline-api:<40 碼 SHA>`），再檢查對外 `/health`，然後仍把這次部署標紅並推 Discord。只回滾一次。回滾結果有四種：
+  - `rolled-back`：回滾後恢復，問題在新映像。
+  - `rolled-back-still-failing`：回滾後仍失敗，問題多半在 Nginx、憑證、DNS 或網路，換映像沒有用，要看主機。
+  - `rollback-deploy-failed`：舊映像也起不來，要人工處理。
+  - 未觸發：沒有可回滾的上一版（第一次部署、上一版是舊的本機映像，或重新部署同一版）。
+  `/health` 在資料庫連不上時回 503，主機內的健康檢查本來就會抓到並自動回滾；這一步補的是「主機內正常、經 Nginx 對外不正常」的情況。
+- 驗證自動回滾：Actions → Backend deploy → Run workflow，`image_tag` 填一個和線上不同的舊 SHA，勾選 `simulate_smoke_failure`。預期：先部署該舊版、對外檢查模擬失敗、回滾到原本的版本、`/health` 恢復、workflow 標紅、Discord 收到「自動回滾：rolled-back」。
 
 ## 4. Nginx 與 HTTPS（Let's Encrypt）
 
