@@ -12,7 +12,15 @@
       ],
       "env": [
         "BACKEND_API_URL",
-        "ALERT_WEBHOOK_URL"
+        "ALERT_WEBHOOK_URL",
+        "NEXT_PUBLIC_SENTRY_DSN",
+        "SENTRY_ORG",
+        "SENTRY_PROJECT"
+      ],
+      "passThroughEnv": [
+        "SENTRY_AUTH_TOKEN",
+        "VERCEL_ENV",
+        "VERCEL_GIT_COMMIT_SHA"
       ],
       "outputs": [
         ".next/**",
