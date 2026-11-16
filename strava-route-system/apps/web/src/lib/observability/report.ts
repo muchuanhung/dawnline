@@ -10,6 +10,8 @@
  * 目的是避免同一個 instance 連續洗版，不是精確的全域節流。
  */
 
+import * as Sentry from "@sentry/nextjs";
+
 export type ErrorScope = "cwb" | "tdx" | "firestore" | "api" | "inngest" | "ai";
 
 /** 同一種失敗在同一個 instance 內的告警間隔 */
@@ -36,6 +38,12 @@ export function reportError(
 ): void {
   const message = describe(err);
   console.error(JSON.stringify({ level: "error", scope, event, message, ...meta }));
+  // Sentry 沒啟用（沒設 DSN）時這行什麼都不做。同一個 scope／event 歸成一組，不隨錯誤訊息分裂。
+  Sentry.captureException(err instanceof Error ? err : new Error(message), {
+    tags: { scope, event },
+    extra: meta,
+    fingerprint: [scope, event],
+  });
   void sendAlert(`[曉行] ${scope}／${event}：${message}`, `${scope}:${event}`, meta);
 }
 

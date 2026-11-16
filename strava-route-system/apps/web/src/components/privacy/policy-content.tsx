@@ -576,6 +576,17 @@ export function PolicyContent() {
                     匿名使用資料
                   </td>
                 </tr>
+                <tr>
+                  <td className="px-4 py-3 font-medium text-foreground">
+                    Sentry
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    錯誤追蹤
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell">
+                    錯誤訊息、發生錯誤的頁面路徑、瀏覽器類型（不含帳號、IP、Cookie、路線內容與網址參數）
+                  </td>
+                </tr>
               </tbody>
             </table>
           </div>
